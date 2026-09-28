@@ -98,6 +98,9 @@ contextBridge.exposeInMainWorld('screenPicker', {
   getQuality() {
     return ipcRenderer.invoke('get-last-picked-quality');
   },
+  getCameraQuality() {
+    return ipcRenderer.invoke('get-camera-quality');
+  },
 });
 
 contextBridge.exposeInMainWorld('appLinks', {

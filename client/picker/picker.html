@@ -256,12 +256,19 @@
 
   <div id="grid"></div>
 
-  <h2>Qualidade da transmissao</h2>
-  <div class="quality-row">
-    <div class="quality-btn" data-quality="720p30">720p 30fps</div>
-    <div class="quality-btn" data-quality="720p60">720p 60fps</div>
-    <div class="quality-btn selected" data-quality="1080p30">1080p 30fps</div>
-    <div class="quality-btn" data-quality="1080p60">1080p 60fps</div>
+  <h2>Resolucao</h2>
+  <div class="quality-row" id="resolution-row">
+    <div class="quality-btn" data-res="720p">720p</div>
+    <div class="quality-btn selected" data-res="1080p">1080p</div>
+    <div class="quality-btn" data-res="1440p">1440p (2K)</div>
+    <div class="quality-btn" data-res="2160p">4K</div>
+  </div>
+
+  <h2>Taxa de quadros</h2>
+  <div class="quality-row" id="fps-row">
+    <div class="quality-btn selected" data-fps="30">30fps</div>
+    <div class="quality-btn" data-fps="60">60fps</div>
+    <div class="quality-btn" data-fps="120">120fps</div>
   </div>
 
   <h2>Audio da transmissao</h2>
@@ -279,13 +286,19 @@
   <script>
     const grid = document.getElementById('grid');
     const tabs = document.querySelectorAll('.tab');
-    const qualityBtns = document.querySelectorAll('.quality-btn');
+    const resolutionBtns = document.querySelectorAll('#resolution-row .quality-btn');
+    const fpsBtns = document.querySelectorAll('#fps-row .quality-btn');
     const confirmBtn = document.getElementById('btn-confirm');
 
     let allSources = [];
     let currentType = 'screen';
     let selectedSourceId = null;
-    let selectedQuality = '1080p30';
+    let selectedResolution = '1080p';
+    let selectedFps = '30';
+
+    function selectedQualityKey() {
+      return selectedResolution + selectedFps;
+    }
 
     function render() {
       grid.innerHTML = '';
@@ -323,11 +336,19 @@
       });
     });
 
-    qualityBtns.forEach((btn) => {
+    resolutionBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
-        qualityBtns.forEach((b) => b.classList.remove('selected'));
+        resolutionBtns.forEach((b) => b.classList.remove('selected'));
         btn.classList.add('selected');
-        selectedQuality = btn.dataset.quality;
+        selectedResolution = btn.dataset.res;
+      });
+    });
+
+    fpsBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        fpsBtns.forEach((b) => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedFps = btn.dataset.fps;
       });
     });
 
@@ -372,7 +393,7 @@
     confirmBtn.addEventListener('click', () => {
       if (!selectedSourceId) return;
       const audioTarget = selectedAudioMode === 'include' ? appSelect.value : 'Discord';
-      window.picker.choose(selectedSourceId, selectedQuality, selectedAudioMode, audioTarget);
+      window.picker.choose(selectedSourceId, selectedQualityKey(), selectedAudioMode, audioTarget);
     });
 
     window.picker.onSources((sources) => {

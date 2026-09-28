@@ -93,9 +93,20 @@ function stopAudioCapture() {
 const QUALITY_PRESETS = {
   '720p30': { width: 1280, height: 720, frameRate: 30, maxBitrate: 2_500_000 },
   '720p60': { width: 1280, height: 720, frameRate: 60, maxBitrate: 3_500_000 },
+  '720p120': { width: 1280, height: 720, frameRate: 120, maxBitrate: 5_000_000 },
   '1080p30': { width: 1920, height: 1080, frameRate: 30, maxBitrate: 4_500_000 },
   '1080p60': { width: 1920, height: 1080, frameRate: 60, maxBitrate: 7_000_000 },
+  '1080p120': { width: 1920, height: 1080, frameRate: 120, maxBitrate: 9_000_000 },
+  '1440p30': { width: 2560, height: 1440, frameRate: 30, maxBitrate: 6_500_000 },
+  '1440p60': { width: 2560, height: 1440, frameRate: 60, maxBitrate: 9_500_000 },
+  '2160p30': { width: 3840, height: 2160, frameRate: 30, maxBitrate: 12_000_000 },
+  '2160p60': { width: 3840, height: 2160, frameRate: 60, maxBitrate: 18_000_000 },
 };
+
+// Preset fixo usado quando a pessoa compartilha so a webcam (sem tela) -
+// nao passa pelo seletor de qualidade, entao nao faz sentido oferecer
+// 4K/120fps pra uma fonte que normalmente nem suporta isso.
+const CAMERA_QUALITY_PRESET = { width: 1280, height: 720, frameRate: 30, maxBitrate: 2_500_000 };
 
 // Qualidade escolhida na ultima vez que o seletor foi usado. O renderer
 // busca isso via IPC (get-last-picked-quality) depois que o getDisplayMedia
@@ -131,7 +142,7 @@ function pickScreenSource(parentWin) {
 
     const pickerWin = new BrowserWindow({
       width: 820,
-      height: 640,
+      height: 700,
       parent: parentWin || undefined,
       modal: !!parentWin,
       resizable: false,
@@ -256,6 +267,7 @@ function createWindow() {
   });
 
   ipcMain.handle('get-last-picked-quality', () => lastPickedQuality);
+  ipcMain.handle('get-camera-quality', () => CAMERA_QUALITY_PRESET);
   ipcMain.handle('get-last-picked-audio-config', () => lastPickedAudioConfig);
   ipcMain.handle('list-running-apps', () => listRunningApps());
 
