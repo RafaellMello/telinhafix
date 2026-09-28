@@ -1,0 +1,33 @@
+{
+  "name": "meudiscordlocal",
+  "version": "1.0.0",
+  "description": "App local para compartilhamento de tela entre amigos, estilo Discord",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.meudiscordlocal.app",
+    "productName": "MeuDiscordLocal",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "MeuDiscordLocal.exe"
+    }
+  }
+}

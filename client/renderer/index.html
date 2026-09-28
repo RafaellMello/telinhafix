@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>MeuDiscordLocal</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="login-screen" class="screen">
+    <div class="login-box">
+      <h1>MeuDiscordLocal</h1>
+      <p class="subtitle">Compartilhamento de tela entre amigos, sem Discord.</p>
+
+      <label>Endereco do servidor</label>
+      <input id="server-url" type="text" placeholder="https://seu-servidor.onrender.com" />
+
+      <label>Senha do servidor (se houver)</label>
+      <input id="server-password" type="password" placeholder="opcional" />
+
+      <label>Seu nome</label>
+      <input id="display-name" type="text" placeholder="Ex: Rafael" />
+
+      <label>Codigo da sala</label>
+      <input id="room-id" type="text" placeholder="Ex: turma-do-rafael" />
+
+      <button id="btn-join">Entrar</button>
+      <p id="login-error" class="error"></p>
+    </div>
+  </div>
+
+  <div id="room-screen" class="screen hidden">
+    <div class="topbar">
+      <div>
+        Sala: <strong id="room-label"></strong>
+      </div>
+      <div class="actions">
+        <button id="btn-share">Compartilhar tela</button>
+        <button id="btn-stop-share" class="hidden">Parar compartilhamento</button>
+        <button id="btn-leave" class="danger">Sair</button>
+      </div>
+    </div>
+
+    <div class="body">
+      <aside id="participants">
+        <h3>Participantes</h3>
+        <ul id="participants-list"></ul>
+      </aside>
+
+      <main id="video-grid"></main>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
