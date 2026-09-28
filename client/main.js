@@ -205,6 +205,11 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Sem isso, o Chromium desacelera timers/requestAnimationFrame quando
+      // a janela perde o foco - o que acontece o tempo todo ao compartilhar
+      // tela (voce fica olhando pra outro programa). Isso travava/dava
+      // ghosting na composicao da webcam (que roda via requestAnimationFrame).
+      backgroundThrottling: false,
     },
   });
 
