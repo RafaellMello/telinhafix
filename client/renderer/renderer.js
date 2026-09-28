@@ -35,7 +35,7 @@ startNamePlaceholderCycle();
 
 // Lembra a ultima senha do servidor digitada, pra nao ter que redigitar
 // toda vez que abrir o app.
-const SERVER_PASSWORD_STORAGE_KEY = 'screenbunny-server-password';
+const SERVER_PASSWORD_STORAGE_KEY = 'telinhafix-server-password';
 
 function restoreSavedServerPassword() {
   try {

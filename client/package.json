@@ -1,11 +1,11 @@
 {
-  "name": "screenbunny",
+  "name": "telinhafix",
   "version": "1.0.0",
   "description": "App local para compartilhamento de tela entre amigos, estilo Discord",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build:native": "dotnet publish native-audio -c Release && node -e \"require('fs').cpSync('native-audio/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/ScreenBunnyAudioHelper.exe','native/ScreenBunnyAudioHelper.exe')\"",
+    "build:native": "dotnet publish native-audio -c Release && node -e \"require('fs').cpSync('native-audio/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/TelinhaFixAudioHelper.exe','native/TelinhaFixAudioHelper.exe')\"",
     "dist": "electron-builder --win zip"
   },
   "dependencies": {
@@ -16,8 +16,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.screenbunny.app",
-    "productName": "ScreenBunny",
+    "appId": "com.telinhafix.app",
+    "productName": "TelinhaFix",
     "files": [
       "main.js",
       "preload.js",
@@ -27,8 +27,8 @@
     ],
     "extraResources": [
       {
-        "from": "native/ScreenBunnyAudioHelper.exe",
-        "to": "native/ScreenBunnyAudioHelper.exe"
+        "from": "native/TelinhaFixAudioHelper.exe",
+        "to": "native/TelinhaFixAudioHelper.exe"
       }
     ],
     "win": {

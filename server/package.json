@@ -1,7 +1,7 @@
 {
-  "name": "screenbunny-server",
+  "name": "telinhafix-server",
   "version": "1.0.0",
-  "description": "Servidor de sinalizacao WebRTC para o ScreenBunny",
+  "description": "Servidor de sinalizacao WebRTC para o TelinhaFix",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

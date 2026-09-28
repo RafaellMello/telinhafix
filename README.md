@@ -1,4 +1,4 @@
-# ScreenBunny
+# TelinhaFix
 
 App proprio, sem custo, para voce e seus amigos compartilharem tela (com audio
 do sistema) pela internet — sem depender do Discord.
@@ -31,8 +31,14 @@ Estrutura:
    uma senha qualquer, so pra impedir que estranhos usem seu servidor caso
    descubram o endereco. Combine essa senha com seus amigos.
 6. Depois do deploy, o Render te da uma URL tipo
-   `https://screenbunny.onrender.com`. E esse endereco que vai no campo
+   `https://telinhafix.onrender.com`. E esse endereco que vai no campo
    "Endereco do servidor" do app.
+
+> Nota sobre o rename: o servico ja deployado no Render continua com o nome
+> antigo (`screenbunny.onrender.com`) ate voce renomear ele manualmente pelo
+> painel do Render (Settings -> Name). Isso nao quebra nada — o app funciona
+> normal com a URL antiga, e o valor padrao do campo "Endereco do servidor"
+> no app continua apontando pra ela ate voce decidir renomear.
 
 > Observacao: no plano gratis do Render, o servidor "dorme" depois de um
 > tempo sem uso e demora uns 30-50s pra acordar na primeira conexao do dia.
@@ -59,9 +65,9 @@ Dentro de `client/`:
 npm run dist
 ```
 
-Isso gera `dist/ScreenBunny-1.0.0-win.zip`. Manda esse .zip pros seus
+Isso gera `dist/TelinhaFix-1.0.0-win.zip`. Manda esse .zip pros seus
 amigos: eles baixam, extraem a pasta uma unica vez, e dai em diante so
-clicam no `ScreenBunny.exe` de dentro dela (sem instalacao).
+clicam no `TelinhaFix.exe` de dentro dela (sem instalacao).
 
 > Por que .zip e nao um .exe portatil unico? O formato "portable" do
 > Windows (NSIS) parece pratico por ser um arquivo so, mas ele se
@@ -95,7 +101,7 @@ clicam no `ScreenBunny.exe` de dentro dela (sem instalacao).
 ## Audio: controle fino sobre o que vai na transmissao
 
 Pra isso o app usa um helper nativo do Windows (`client/native-audio/`, vira
-`ScreenBunnyAudioHelper.exe`) que captura audio por processo via
+`TelinhaFixAudioHelper.exe`) que captura audio por processo via
 `ActivateAudioInterfaceAsync` (biblioteca [NAudio](https://github.com/naudio/NAudio)).
 No seletor de "Compartilhar tela" da pra escolher entre 3 modos:
 - **Sistema, sem o Discord** (padrao) — ouve a call do Discord normalmente,
@@ -120,7 +126,7 @@ Requisitos e limitacoes dessa parte:
   processo.
 - Para compilar esse helper voce precisa do **[.NET SDK 9](https://dotnet.microsoft.com/download)**
   instalado (gratuito). O binario final (~140MB, self-contained) ja fica
-  pronto em `client/native/ScreenBunnyAudioHelper.exe` apos rodar, dentro de
+  pronto em `client/native/TelinhaFixAudioHelper.exe` apos rodar, dentro de
   `client/`:
   ```
   npm run build:native
