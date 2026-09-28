@@ -53,8 +53,23 @@ function stopAudioCapture() {
   }
 }
 
-// Abre uma janelinha propria com miniaturas de cada monitor/janela pra
-// escolher qual compartilhar. O seletor nativo do Windows (useSystemPicker)
+// Qualidades disponiveis no seletor. maxBitrate em bits/s - usado depois
+// pra configurar o RTCRtpSender de cada conexao (ver renderer.js).
+const QUALITY_PRESETS = {
+  '720p30': { width: 1280, height: 720, frameRate: 30, maxBitrate: 2_500_000 },
+  '720p60': { width: 1280, height: 720, frameRate: 60, maxBitrate: 3_500_000 },
+  '1080p30': { width: 1920, height: 1080, frameRate: 30, maxBitrate: 4_500_000 },
+  '1080p60': { width: 1920, height: 1080, frameRate: 60, maxBitrate: 7_000_000 },
+};
+
+// Qualidade escolhida na ultima vez que o seletor foi usado. O renderer
+// busca isso via IPC (get-last-picked-quality) depois que o getDisplayMedia
+// resolve, pra aplicar via track.applyConstraints + RTCRtpSender.
+let lastPickedQuality = QUALITY_PRESETS['1080p30'];
+
+// Abre uma janelinha propria com miniaturas de cada monitor/janela (ou
+// programa especifico) pra escolher o que compartilhar, junto com a
+// qualidade (resolucao + fps). O seletor nativo do Windows (useSystemPicker)
 // as vezes nao esta disponivel e cai num fallback silencioso sem perguntar
 // nada - isso aqui garante que sempre aparece uma escolha.
 function pickScreenSource(parentWin) {
@@ -62,11 +77,11 @@ function pickScreenSource(parentWin) {
     let sources;
     try {
       sources = await desktopCapturer.getSources({
-        types: ['screen'],
+        types: ['screen', 'window'],
         thumbnailSize: { width: 320, height: 180 },
       });
     } catch (err) {
-      console.error('Falha ao listar telas:', err);
+      console.error('Falha ao listar telas/janelas:', err);
       resolve(null);
       return;
     }
@@ -75,21 +90,17 @@ function pickScreenSource(parentWin) {
       resolve(null);
       return;
     }
-    if (sources.length === 1) {
-      resolve(sources[0]);
-      return;
-    }
 
     const pickerWin = new BrowserWindow({
-      width: 780,
-      height: 420,
+      width: 820,
+      height: 560,
       parent: parentWin || undefined,
       modal: !!parentWin,
       resizable: false,
       minimizable: false,
       maximizable: false,
       autoHideMenuBar: true,
-      title: 'Escolha a tela - ScreenBunny',
+      title: 'Escolha o que compartilhar - ScreenBunny',
       backgroundColor: '#060607',
       webPreferences: {
         preload: path.join(__dirname, 'picker', 'picker-preload.js'),
@@ -105,8 +116,9 @@ function pickScreenSource(parentWin) {
       resolve(source);
     };
 
-    const onChoice = (event, chosenId) => {
-      finish(sources.find((s) => s.id === chosenId) || sources[0]);
+    const onChoice = (event, { sourceId, quality }) => {
+      lastPickedQuality = QUALITY_PRESETS[quality] || QUALITY_PRESETS['1080p30'];
+      finish(sources.find((s) => s.id === sourceId) || sources[0]);
       if (!pickerWin.isDestroyed()) pickerWin.close();
     };
 
@@ -121,6 +133,7 @@ function pickScreenSource(parentWin) {
       const payload = sources.map((s) => ({
         id: s.id,
         name: s.name,
+        type: s.id.startsWith('screen:') ? 'screen' : 'window',
         thumbnail: s.thumbnail.toDataURL(),
       }));
       pickerWin.webContents.send('screen-picker:sources', payload);
@@ -175,6 +188,8 @@ function createWindow() {
   ipcMain.handle('audio-capture-stop', () => {
     stopAudioCapture();
   });
+
+  ipcMain.handle('get-last-picked-quality', () => lastPickedQuality);
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }

@@ -73,10 +73,24 @@ populateMembersColumns();
 
 let selfId = null;
 let localStream = null;
+// Qualidade (resolucao/fps/bitrate) escolhida no seletor de tela.
+let currentQuality = null;
 // peerId -> { pc, polite, makingOffer, ignoreOffer, name }
 const peers = new Map();
 // peerId -> nome, usado para a lista de participantes
 const peerNames = new Map();
+
+async function applyBitrateToSender(sender, quality) {
+  if (!sender || !quality) return;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+    params.encodings[0].maxBitrate = quality.maxBitrate;
+    await sender.setParameters(params);
+  } catch (err) {
+    console.error('Falha ao ajustar bitrate do video:', err);
+  }
+}
 
 function setLoginError(msg) {
   loginError.textContent = msg || '';
@@ -171,6 +185,16 @@ function createPeerConnection(peerId) {
     }
   };
 
+  // Se ja estamos compartilhando quando essa conexao e criada (ex: alguem
+  // entrou na sala depois que voce comecou a compartilhar), manda o video
+  // atual pra essa pessoa tambem.
+  if (localStream) {
+    localStream.getTracks().forEach((track) => {
+      const sender = pc.addTrack(track, localStream);
+      if (track.kind === 'video') applyBitrateToSender(sender, currentQuality);
+    });
+  }
+
   return state;
 }
 
@@ -207,7 +231,10 @@ async function handleSignal({ from, data }) {
 
 function attachLocalStreamToAllPeers(stream) {
   for (const [, state] of peers) {
-    stream.getTracks().forEach((track) => state.pc.addTrack(track, stream));
+    stream.getTracks().forEach((track) => {
+      const sender = state.pc.addTrack(track, stream);
+      if (track.kind === 'video') applyBitrateToSender(sender, currentQuality);
+    });
   }
 }
 
@@ -336,6 +363,22 @@ async function startShare() {
     return;
   }
 
+  currentQuality = await window.screenPicker.getQuality();
+  const videoTrack = localVideoStream.getVideoTracks()[0];
+  if (currentQuality && videoTrack) {
+    try {
+      await videoTrack.applyConstraints({
+        width: { ideal: currentQuality.width, max: currentQuality.width },
+        height: { ideal: currentQuality.height, max: currentQuality.height },
+        frameRate: { ideal: currentQuality.frameRate, max: currentQuality.frameRate },
+      });
+    } catch (err) {
+      console.error('Falha ao aplicar qualidade escolhida:', err);
+    }
+    // Ajuda o codec a priorizar nitidez (texto/UI) em 30fps ou fluidez em 60fps.
+    videoTrack.contentHint = currentQuality.frameRate >= 60 ? 'motion' : 'detail';
+  }
+
   let audioTrack = null;
   try {
     audioTrack = await setupCapturedAudioTrack();
@@ -364,6 +407,7 @@ function stopShare() {
   localStream.getTracks().forEach((t) => t.stop());
   localStream = null;
   localVideoStream = null;
+  currentQuality = null;
 
   teardownCapturedAudioTrack();
 
