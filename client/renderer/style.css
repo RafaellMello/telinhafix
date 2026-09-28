@@ -1,0 +1,123 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #1e1f24;
+  color: #f0f0f0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.screen { height: 100vh; }
+.hidden { display: none !important; }
+
+#login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-box {
+  background: #2b2d33;
+  padding: 32px;
+  border-radius: 12px;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-box h1 { margin: 0 0 4px 0; font-size: 22px; }
+.subtitle { margin: 0 0 16px 0; color: #9a9ca3; font-size: 13px; }
+
+label { font-size: 12px; color: #b7b9c0; margin-top: 8px; }
+
+input {
+  background: #1e1f24;
+  border: 1px solid #40424a;
+  color: #f0f0f0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #5865f2;
+  color: white;
+}
+
+button:hover { background: #4752c4; }
+button.danger { background: #ed4245; }
+button.danger:hover { background: #c8393c; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+#btn-join { margin-top: 18px; }
+
+.error { color: #ff8080; font-size: 12px; min-height: 16px; margin-top: 8px; }
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: #2b2d33;
+  border-bottom: 1px solid #40424a;
+}
+
+.actions { display: flex; gap: 8px; }
+
+.body { display: flex; height: calc(100vh - 52px); }
+
+#participants {
+  width: 220px;
+  background: #26282e;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+#participants h3 { margin-top: 0; font-size: 13px; color: #9a9ca3; text-transform: uppercase; }
+#participants-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+#participants-list li { background: #33353c; padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+
+#video-grid {
+  flex: 1;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  overflow-y: auto;
+  align-content: start;
+}
+
+.video-tile {
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  aspect-ratio: 16 / 9;
+}
+
+.video-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.video-tile .label {
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  background: rgba(0,0,0,0.6);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
