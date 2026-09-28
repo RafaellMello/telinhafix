@@ -33,7 +33,7 @@ function startNamePlaceholderCycle() {
 startNamePlaceholderCycle();
 
 const AVATAR_FILES = [
-  'babini.jpg', 'babini2.jpg', 'coka.jpg', 'dani.jpg', 'dragon.jpg',
+  'babini.jpg', 'babini2.jpg', 'coka.jpg', 'dani.jpg', 'rudeus.jpg',
   'fab.jpg', 'hent.jpg', 'img-20240330-wa0127_original.jpg', 'nathan.jpg',
   'nathanthegoat.jpg', 'pc.jpg', 'screenshot_20251112_185935_discord.jpg',
   'thiaginfn.jpg', 'thiaguinis.jpg', 'tutuzada.jpg', 'yuri.jpg',
