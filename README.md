@@ -70,34 +70,43 @@ o app abre direto (sem instalacao).
    configurou uma), seu nome e um codigo de sala (qualquer palavra, todo
    mundo usa o mesmo codigo pra cair na mesma "sala").
 3. Clique em **Entrar**.
-4. Quem for compartilhar clica em **Compartilhar tela** — vai abrir o
-   seletor de tela do proprio Windows, onde da pra escolher qual monitor (ou
-   janela) transmitir.
-5. Todo mundo que estiver na sala ve o video automaticamente, com o audio do
-   sistema de quem compartilha (o Discord fica de fora, ver secao abaixo).
+4. Quem for compartilhar clica em **Compartilhar tela** — abre um seletor
+   proprio do app onde da pra escolher: tela inteira ou janela de um
+   programa especifico (um jogo, o navegador, etc.), a qualidade
+   (720p/1080p, 30 ou 60fps) e a fonte do audio (sistema sem o Discord,
+   sistema todo, ou so de um programa especifico).
+5. Todo mundo que estiver na sala ve o video automaticamente. Cada pessoa
+   pode ajustar o volume de cada stream individualmente (so afeta o que ela
+   ouve), dar 2 cliques (ou usar o botao) pra ver em tela cheia, destacar
+   numa janela flutuante (Picture-in-Picture) pra acompanhar enquanto usa
+   outro programa, ou focar um stream encolhendo os outros. Cada tile mostra
+   um indicador colorido de qualidade da conexao, e quem compartilha ve
+   quantas pessoas estao na sala.
 
-## Audio: o Discord fica de fora da transmissao
+## Audio: controle fino sobre o que vai na transmissao
 
-Quem compartilha a tela normalmente ainda quer ouvir a call do Discord
-enquanto transmite, mas sem que esse audio vaze pra quem esta assistindo.
-Pra isso o app usa um helper nativo do Windows
-(`client/native-audio/`, vira `ScreenBunnyAudioHelper.exe`) que captura o
-audio do sistema **excluindo especificamente o processo do Discord**
-(API `ActivateAudioInterfaceAsync` com `ProcessLoopbackMode.ExcludeTargetProcessTree`,
-via a biblioteca [NAudio](https://github.com/naudio/NAudio)). O video vem
-pelo seletor normal do Windows; o audio que vai na transmissao vem desse
-helper.
+Pra isso o app usa um helper nativo do Windows (`client/native-audio/`, vira
+`ScreenBunnyAudioHelper.exe`) que captura audio por processo via
+`ActivateAudioInterfaceAsync` (biblioteca [NAudio](https://github.com/naudio/NAudio)).
+No seletor de "Compartilhar tela" da pra escolher entre 3 modos:
+- **Sistema, sem o Discord** (padrao) — ouve a call do Discord normalmente,
+  mas esse audio nao vaza pra transmissao (`ProcessLoopbackMode.ExcludeTargetProcessTree`).
+- **Sistema todo** — sem filtro nenhum.
+- **So um programa** — captura *somente* o audio de um processo especifico
+  (ex: so o audio de um jogo, sem Spotify/notificacoes/etc.), usando o mesmo
+  mecanismo em modo `IncludeTargetProcessTree`. A lista de programas vem de
+  `Get-Process` (processos com janela visivel).
 
 Requisitos e limitacoes dessa parte:
 - Precisa do **Windows 10 versao 2004 (build 19041) ou mais novo** — a API
   de exclusao por processo nao existe em versoes mais antigas. Se a
   ativacao falhar, o app cai para so compartilhar a tela sem audio (nao
   trava).
-- Se o Discord nao estiver aberto no momento do compartilhamento, a
-  exclusao nao tem o que fazer e o helper captura o audio do sistema todo
-  normalmente.
-- A exclusao mira o processo do Discord que ja esta aberto quando voce
-  clica em "Compartilhar tela". Se voce fechar e abrir o Discord de novo
+- Se o programa alvo (Discord, ou o que voce escolheu no modo "so um
+  programa") nao estiver aberto no momento do compartilhamento, o filtro nao
+  tem o que fazer e o helper captura o audio do sistema todo normalmente.
+- O filtro mira o processo que ja esta aberto quando voce clica em
+  "Compartilhar tela". Se voce fechar e abrir esse programa de novo
   **durante** a transmissao, reinicie o compartilhamento pra pegar o novo
   processo.
 - Para compilar esse helper voce precisa do **[.NET SDK 9](https://dotnet.microsoft.com/download)**
