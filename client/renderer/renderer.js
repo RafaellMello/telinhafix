@@ -232,17 +232,21 @@ const AVATAR_FILES = [
   'thiaginfn.jpg', 'thiaguinis.jpg', 'tutuzada.jpg', 'yuri.jpg',
 ];
 
-function hashString(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = (h * 31 + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
+// peerId -> nome do arquivo de avatar sorteado pra essa pessoa NESSA
+// entrada na sala. Sorteia de novo toda vez que alguem entra (ver
+// addParticipantRow) e esquece quando a pessoa sai (removeParticipantRow),
+// entao uma nova entrada pode vir com outra foto.
+const assignedAvatars = new Map();
+
+function assignRandomAvatar(id) {
+  const file = AVATAR_FILES[Math.floor(Math.random() * AVATAR_FILES.length)];
+  assignedAvatars.set(id, file);
+  return file;
 }
 
-function avatarFor(key) {
-  const file = AVATAR_FILES[hashString(key) % AVATAR_FILES.length];
-  return `assets/avatars/${file}`;
+function avatarFor(id) {
+  if (!assignedAvatars.has(id)) assignRandomAvatar(id);
+  return `assets/avatars/${assignedAvatars.get(id)}`;
 }
 
 function populateMembersColumns() {
@@ -296,7 +300,7 @@ function addParticipantRow(id, name, isSelf) {
 
   const avatar = document.createElement('img');
   avatar.className = 'avatar-dot';
-  avatar.src = avatarFor(name || id);
+  avatar.src = avatarFor(id);
   avatar.alt = '';
 
   const label = document.createElement('span');
@@ -310,6 +314,7 @@ function addParticipantRow(id, name, isSelf) {
 function removeParticipantRow(id) {
   const li = document.getElementById(`participant-${id}`);
   if (li) li.remove();
+  assignedAvatars.delete(id);
 }
 
 // --- Tela cheia, destacar (PiP) e modo foco -------------------------------
@@ -1116,6 +1121,7 @@ async function leaveRoom() {
   for (const [, state] of peers) state.pc.close();
   peers.clear();
   peerNames.clear();
+  assignedAvatars.clear();
   videoGrid.innerHTML = '';
   participantsList.innerHTML = '';
   window.rtc.disconnect();
