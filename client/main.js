@@ -1,5 +1,57 @@
-const { app, BrowserWindow, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain } = require('electron');
 const path = require('path');
+const { spawn } = require('child_process');
+
+let audioHelperProcess = null;
+let audioLeftover = Buffer.alloc(0);
+
+function getAudioHelperPath() {
+  const exeName = 'ScreenBunnyAudioHelper.exe';
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'native', exeName);
+  }
+  return path.join(__dirname, 'native', exeName);
+}
+
+function startAudioCapture(win) {
+  if (audioHelperProcess) return;
+
+  audioLeftover = Buffer.alloc(0);
+  audioHelperProcess = spawn(getAudioHelperPath(), [], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+  // Float32 estereo: 2 canais * 4 bytes = 8 bytes por frame. Os pedacos que
+  // chegam do stdout nao respeitam esse alinhamento, entao remontamos aqui.
+  const FRAME_SIZE = 8;
+  audioHelperProcess.stdout.on('data', (chunk) => {
+    const data = Buffer.concat([audioLeftover, chunk]);
+    const usableLength = data.length - (data.length % FRAME_SIZE);
+    audioLeftover = Buffer.from(data.subarray(usableLength));
+    const aligned = data.subarray(0, usableLength);
+    if (aligned.length > 0 && win && !win.isDestroyed()) {
+      win.webContents.send('screenbunny-audio-chunk', aligned);
+    }
+  });
+
+  audioHelperProcess.stderr.on('data', (chunk) => {
+    console.log('[audio-helper]', chunk.toString().trim());
+  });
+
+  audioHelperProcess.on('error', (err) => {
+    console.error('Falha ao iniciar o helper de audio:', err);
+    audioHelperProcess = null;
+  });
+
+  audioHelperProcess.on('exit', () => {
+    audioHelperProcess = null;
+  });
+}
+
+function stopAudioCapture() {
+  if (audioHelperProcess) {
+    audioHelperProcess.kill();
+    audioHelperProcess = null;
+  }
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -11,14 +63,17 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
 
   // Trata os pedidos de navigator.mediaDevices.getDisplayMedia() feitos no
   // renderer. Tenta usar o seletor nativo do Windows (que ja deixa escolher
-  // o monitor/janela e tem a opcao de incluir audio do sistema). Se o
-  // seletor nativo nao estiver disponivel, cai no fallback abaixo, que
-  // pega a tela principal com audio do sistema (loopback) automaticamente.
+  // o monitor/janela). O audio do sistema NAO vem por aqui - o renderer pede
+  // so video (audio: false) porque o audio real vem do helper nativo
+  // (ScreenBunnyAudioHelper), que captura o sistema todo excluindo o
+  // Discord. Se por algum motivo o renderer pedir audio por esse caminho
+  // mesmo assim, ainda respondemos com o loopback padrao como fallback.
   session.defaultSession.setDisplayMediaRequestHandler(
     async (request, callback) => {
       try {
@@ -27,7 +82,9 @@ function createWindow() {
           callback({});
           return;
         }
-        callback({ video: sources[0], audio: 'loopback' });
+        const response = { video: sources[0] };
+        if (request.audioRequested) response.audio = 'loopback';
+        callback(response);
       } catch (err) {
         console.error('Falha ao capturar tela:', err);
         callback({});
@@ -35,6 +92,14 @@ function createWindow() {
     },
     { useSystemPicker: true }
   );
+
+  ipcMain.handle('audio-capture-start', (event) => {
+    startAudioCapture(BrowserWindow.fromWebContents(event.sender));
+  });
+
+  ipcMain.handle('audio-capture-stop', () => {
+    stopAudioCapture();
+  });
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
@@ -48,5 +113,10 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  stopAudioCapture();
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  stopAudioCapture();
 });

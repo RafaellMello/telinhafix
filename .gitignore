@@ -1,3 +1,11 @@
 node_modules/
 dist/
 .env
+
+# Binarios grandes: sao gerados localmente com `npm run build:native`
+# (client/native/) ou pelo build do .NET (client/native-audio/bin, obj).
+# Nao entram no git - o helper de audio compilado passa de 100MB, acima do
+# limite de arquivo do GitHub.
+client/native/*.exe
+client/native-audio/bin/
+client/native-audio/obj/

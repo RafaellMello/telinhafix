@@ -11,6 +11,27 @@ const btnStopShare = document.getElementById('btn-stop-share');
 const btnLeave = document.getElementById('btn-leave');
 const btnJoin = document.getElementById('btn-join');
 
+const NAME_PLACEHOLDERS = [
+  'Ex: bunny',
+  'Ex: zicaneto',
+  'Ex: chama2k19',
+  'Ex: pc',
+  'Ex: babini',
+  'Ex: cokaizi',
+];
+
+function startNamePlaceholderCycle() {
+  const input = document.getElementById('display-name');
+  let i = 0;
+  input.placeholder = NAME_PLACEHOLDERS[i];
+  setInterval(() => {
+    i = (i + 1) % NAME_PLACEHOLDERS.length;
+    input.placeholder = NAME_PLACEHOLDERS[i];
+  }, 2000);
+}
+
+startNamePlaceholderCycle();
+
 let selfId = null;
 let localStream = null;
 // peerId -> { pc, polite, makingOffer, ignoreOffer, name }
@@ -151,26 +172,141 @@ function detachLocalStreamFromAllPeers(stream) {
   }
 }
 
+// Recebe o audio cru (PCM float32, 48kHz, estereo) do helper nativo
+// (que captura o sistema todo excluindo o Discord) e alimenta um
+// AudioWorklet com um ring buffer, gerando uma MediaStreamTrack de audio
+// continua pra juntar com o video da tela compartilhada.
+const AUDIO_WORKLET_CODE = `
+class PcmRingProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.capacity = 96000; // 2s de buffer a 48kHz
+    this.bufferL = new Float32Array(this.capacity);
+    this.bufferR = new Float32Array(this.capacity);
+    this.writeIndex = 0;
+    this.readIndex = 0;
+    this.available = 0;
+    this.port.onmessage = (e) => {
+      const interleaved = e.data;
+      const frames = interleaved.length / 2;
+      for (let i = 0; i < frames; i++) {
+        this.bufferL[this.writeIndex] = interleaved[i * 2];
+        this.bufferR[this.writeIndex] = interleaved[i * 2 + 1];
+        this.writeIndex = (this.writeIndex + 1) % this.capacity;
+        if (this.available < this.capacity) {
+          this.available++;
+        } else {
+          this.readIndex = (this.readIndex + 1) % this.capacity;
+        }
+      }
+    };
+  }
+
+  process(inputs, outputs) {
+    const output = outputs[0];
+    const left = output[0];
+    const right = output[1] || output[0];
+    for (let i = 0; i < left.length; i++) {
+      if (this.available > 0) {
+        left[i] = this.bufferL[this.readIndex];
+        right[i] = this.bufferR[this.readIndex];
+        this.readIndex = (this.readIndex + 1) % this.capacity;
+        this.available--;
+      } else {
+        left[i] = 0;
+        right[i] = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-ring-processor', PcmRingProcessor);
+`;
+
+let audioCtx = null;
+let workletNode = null;
+
+function bytesToFloat32Array(uint8) {
+  const floatCount = Math.floor(uint8.byteLength / 4);
+  const view = new DataView(uint8.buffer, uint8.byteOffset, uint8.byteLength);
+  const out = new Float32Array(floatCount);
+  for (let i = 0; i < floatCount; i++) {
+    out[i] = view.getFloat32(i * 4, true);
+  }
+  return out;
+}
+
+window.audioCapture.onChunk((chunk) => {
+  if (!workletNode) return;
+  const samples = bytesToFloat32Array(chunk);
+  workletNode.port.postMessage(samples, [samples.buffer]);
+});
+
+async function setupCapturedAudioTrack() {
+  audioCtx = new AudioContext({ sampleRate: 48000 });
+  const blob = new Blob([AUDIO_WORKLET_CODE], { type: 'application/javascript' });
+  const url = URL.createObjectURL(blob);
+  await audioCtx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+
+  workletNode = new AudioWorkletNode(audioCtx, 'pcm-ring-processor', {
+    numberOfInputs: 0,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+  });
+  const destination = audioCtx.createMediaStreamDestination();
+  workletNode.connect(destination);
+
+  await window.audioCapture.start();
+
+  return destination.stream.getAudioTracks()[0];
+}
+
+function teardownCapturedAudioTrack() {
+  window.audioCapture.stop();
+  if (workletNode) {
+    workletNode.disconnect();
+    workletNode = null;
+  }
+  if (audioCtx) {
+    audioCtx.close();
+    audioCtx = null;
+  }
+}
+
+let localVideoStream = null;
+
 async function startShare() {
   try {
-    localStream = await navigator.mediaDevices.getDisplayMedia({
+    localVideoStream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
-      audio: true,
+      audio: false,
     });
   } catch (err) {
     console.error('Falha ao iniciar compartilhamento:', err);
     return;
   }
 
+  let audioTrack = null;
+  try {
+    audioTrack = await setupCapturedAudioTrack();
+  } catch (err) {
+    console.error('Falha ao capturar audio do sistema (compartilhando so a tela):', err);
+  }
+
+  const tracks = [...localVideoStream.getVideoTracks()];
+  if (audioTrack) tracks.push(audioTrack);
+  localStream = new MediaStream(tracks);
+
   attachLocalStreamToAllPeers(localStream);
 
-  const video = getOrCreateVideoTile(selfId, 'Voce (compartilhando)');
+  const video = getOrCreateVideoTile(selfId, 'Você (compartilhando)');
   video.srcObject = localStream;
 
   btnShare.classList.add('hidden');
   btnStopShare.classList.remove('hidden');
 
-  localStream.getVideoTracks()[0].addEventListener('ended', stopShare);
+  localVideoStream.getVideoTracks()[0].addEventListener('ended', stopShare);
 }
 
 function stopShare() {
@@ -178,6 +314,9 @@ function stopShare() {
   detachLocalStreamFromAllPeers(localStream);
   localStream.getTracks().forEach((t) => t.stop());
   localStream = null;
+  localVideoStream = null;
+
+  teardownCapturedAudioTrack();
 
   removeVideoTile(selfId);
 
@@ -210,7 +349,7 @@ btnJoin.addEventListener('click', async () => {
   const roomId = document.getElementById('room-id').value.trim();
 
   if (!serverUrl || !roomId) {
-    setLoginError('Preencha o servidor e o codigo da sala.');
+    setLoginError('Preencha o servidor e o código da sala.');
     return;
   }
 
@@ -238,7 +377,7 @@ btnJoin.addEventListener('click', async () => {
     });
 
     window.rtc.onDisconnected(() => {
-      setLoginError('Conexao com o servidor perdida.');
+      setLoginError('Conexão com o servidor perdida.');
     });
 
     roomLabel.textContent = roomId;
