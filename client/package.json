@@ -32,7 +32,8 @@
       }
     ],
     "win": {
-      "target": "portable"
+      "target": "portable",
+      "icon": "renderer/assets/icon.ico"
     },
     "portable": {
       "artifactName": "ScreenBunny.exe"
