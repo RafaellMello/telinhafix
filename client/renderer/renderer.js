@@ -349,14 +349,17 @@ function createPeerConnection(peerId) {
   peers.set(peerId, state);
 
   pc.onicecandidate = ({ candidate }) => {
-    if (candidate) window.rtc.sendSignal(peerId, { candidate });
+    // .toJSON() vira um objeto simples - RTCIceCandidate de verdade nao
+    // sobrevive ao structured clone da contextBridge (preload <-> renderer),
+    // o que corrompia a negociacao silenciosamente.
+    if (candidate) window.rtc.sendSignal(peerId, { candidate: candidate.toJSON() });
   };
 
   pc.onnegotiationneeded = async () => {
     try {
       state.makingOffer = true;
       await pc.setLocalDescription();
-      window.rtc.sendSignal(peerId, { description: pc.localDescription });
+      window.rtc.sendSignal(peerId, { description: pc.localDescription.toJSON() });
     } catch (err) {
       console.error('Erro ao negociar:', err);
     } finally {
@@ -410,7 +413,7 @@ async function handleSignal({ from, data }) {
       await pc.setRemoteDescription(data.description);
       if (data.description.type === 'offer') {
         await pc.setLocalDescription();
-        window.rtc.sendSignal(from, { description: pc.localDescription });
+        window.rtc.sendSignal(from, { description: pc.localDescription.toJSON() });
       }
     } else if (data.candidate) {
       try {
