@@ -602,6 +602,17 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   border: 1px solid var(--border);
   padding: 3px 10px;
   border-radius: 3px;
+  /* Some por padrao - so aparece ao passar o mouse na tile, igual os
+     botoes de tela cheia/PiP/foco, pra nao ficar tampando o rosto de quem
+     esta transmitindo a webcam o tempo todo. */
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.video-tile:hover .volume-control {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .volume-icon { font-size: 12px; }
@@ -611,3 +622,42 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   accent-color: var(--red-bright);
   cursor: pointer;
 }
+
+/* Ocultar transmissao de alguem (botao direito na tile) */
+.tile-hidden-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  z-index: 5;
+}
+
+.video-tile.content-hidden .tile-hidden-overlay { display: flex; }
+.video-tile.content-hidden video { visibility: hidden; }
+
+.tile-context-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+  min-width: 200px;
+}
+
+.tile-context-menu-item {
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.tile-context-menu-item:hover { background: rgba(var(--red-rgb), 0.15); }

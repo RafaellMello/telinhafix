@@ -431,7 +431,51 @@ function updateSelfAudienceLabel() {
 // enquanto VOCE esta compartilhando (senao o que toca nas suas caixas de
 // som entra na sua propria captura de sistema e vira eco pros outros).
 let sharedAudioCtx = null;
-const remoteGainNodes = new Map(); // peerId -> { gainNode, sliderValue }
+const remoteGainNodes = new Map(); // peerId -> { gainNode, sliderValue, video }
+
+// --- Ocultar transmissao de alguem (so pra voce, botao direito na tile) --
+const hiddenPeers = new Set();
+let activeTileContextMenu = null;
+
+function closeTileContextMenu() {
+  if (activeTileContextMenu) {
+    activeTileContextMenu.remove();
+    activeTileContextMenu = null;
+  }
+}
+
+function setTileContentHidden(peerId, tile, hidden) {
+  if (hidden) hiddenPeers.add(peerId);
+  else hiddenPeers.delete(peerId);
+  tile.classList.toggle('content-hidden', hidden);
+}
+
+function showTileContextMenu(x, y, peerId, tile) {
+  closeTileContextMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'tile-context-menu';
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+
+  const isHidden = hiddenPeers.has(peerId);
+  const item = document.createElement('div');
+  item.className = 'tile-context-menu-item';
+  item.textContent = isHidden ? 'Mostrar essa transmissão' : 'Ocultar essa transmissão';
+  item.addEventListener('click', () => {
+    setTileContentHidden(peerId, tile, !isHidden);
+    closeTileContextMenu();
+  });
+
+  menu.appendChild(item);
+  document.body.appendChild(menu);
+  activeTileContextMenu = menu;
+}
+
+document.addEventListener('click', closeTileContextMenu);
+document.addEventListener('contextmenu', (e) => {
+  if (!e.target.closest('.video-tile')) closeTileContextMenu();
+});
 
 function getSharedAudioContext() {
   if (!sharedAudioCtx) sharedAudioCtx = new AudioContext();
@@ -443,8 +487,12 @@ function applyGain(peerId) {
   const entry = remoteGainNodes.get(peerId);
   if (!entry) return;
   // Enquanto voce compartilha, suprime o audio dos outros pra nao vazar
-  // eco na sua propria transmissao.
-  entry.gainNode.gain.value = localStream ? 0 : entry.sliderValue / 100;
+  // eco na sua propria transmissao. Multiplica tambem pelo volume/mudo
+  // NATIVO do <video> - isso faz o controle nativo do Picture-in-Picture
+  // (que o Chromium desenha sozinho, fora do nosso controle) continuar
+  // funcionando mesmo com o audio roteado pelo GainNode.
+  const nativeFactor = entry.video.muted ? 0 : entry.video.volume;
+  entry.gainNode.gain.value = (localStream ? 0 : entry.sliderValue / 100) * nativeFactor;
 }
 
 function refreshAllGainsForSharingState() {
@@ -528,6 +576,20 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
   tile.appendChild(actionsRow);
   tile.addEventListener('dblclick', () => toggleTileFullscreen(tile));
 
+  // Ocultar so afeta o que VOCE ve dessa pessoa - local, ninguem mais na
+  // sala e afetado. Botao direito na tile pra ligar/desligar.
+  if (!isSelf) {
+    const hiddenOverlay = document.createElement('div');
+    hiddenOverlay.className = 'tile-hidden-overlay';
+    hiddenOverlay.textContent = 'Transmissão oculta — clique com o botão direito para mostrar de novo';
+    tile.appendChild(hiddenOverlay);
+
+    tile.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showTileContextMenu(e.clientX, e.clientY, peerId, tile);
+    });
+  }
+
   // Volume so afeta o que VOCE ouve dessa pessoa - e local, ninguem mais
   // na sala e afetado. Por isso nao existe controle na sua propria tile.
   if (!isSelf) {
@@ -535,8 +597,13 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
     const sourceNode = audioCtx.createMediaElementSource(video);
     const gainNode = audioCtx.createGain();
     sourceNode.connect(gainNode).connect(audioCtx.destination);
-    remoteGainNodes.set(peerId, { gainNode, sliderValue: 100 });
+    remoteGainNodes.set(peerId, { gainNode, sliderValue: 100, video });
     applyGain(peerId);
+    // O Picture-in-Picture do Chromium desenha seu proprio controle de
+    // mudo/volume por cima do video, mexendo direto em video.muted/volume -
+    // sem isso, aquele controle nativo nao tinha efeito nenhum no audio
+    // (que passa pelo GainNode, nao pela saida normal do <video>).
+    video.addEventListener('volumechange', () => applyGain(peerId));
 
     const volumeRow = document.createElement('div');
     volumeRow.className = 'volume-control';
@@ -583,6 +650,7 @@ function removeVideoTile(peerId) {
     gainEntry.gainNode.disconnect();
     remoteGainNodes.delete(peerId);
   }
+  hiddenPeers.delete(peerId);
 }
 
 function createPeerConnection(peerId) {
