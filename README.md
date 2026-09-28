@@ -74,7 +74,9 @@ o app abre direto (sem instalacao).
    proprio do app onde da pra escolher: tela inteira ou janela de um
    programa especifico (um jogo, o navegador, etc.), a qualidade
    (720p/1080p, 30 ou 60fps) e a fonte do audio (sistema sem o Discord,
-   sistema todo, ou so de um programa especifico).
+   sistema todo, ou so de um programa especifico). Depois de comecar, o
+   botao **Ativar camera** liga a webcam como uma bolinha no canto da tela
+   compartilhada.
 5. Todo mundo que estiver na sala ve o video automaticamente. Cada pessoa
    pode ajustar o volume de cada stream individualmente (so afeta o que ela
    ouve), dar 2 cliques (ou usar o botao) pra ver em tela cheia, destacar
