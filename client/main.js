@@ -6,7 +6,7 @@ let audioHelperProcess = null;
 let audioLeftover = Buffer.alloc(0);
 
 function getAudioHelperPath() {
-  const exeName = 'ScreenBunnyAudioHelper.exe';
+  const exeName = 'TelinhaFixAudioHelper.exe';
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'native', exeName);
   }
@@ -63,7 +63,7 @@ function startAudioCapture(win, audioConfig) {
     audioLeftover = Buffer.from(data.subarray(usableLength));
     const aligned = data.subarray(0, usableLength);
     if (aligned.length > 0 && win && !win.isDestroyed()) {
-      win.webContents.send('screenbunny-audio-chunk', aligned);
+      win.webContents.send('telinhafix-audio-chunk', aligned);
     }
   });
 
@@ -138,7 +138,7 @@ function pickScreenSource(parentWin) {
       minimizable: false,
       maximizable: false,
       autoHideMenuBar: true,
-      title: 'Escolha o que compartilhar - ScreenBunny',
+      title: 'Escolha o que compartilhar - TelinhaFix',
       backgroundColor: '#060607',
       webPreferences: {
         preload: path.join(__dirname, 'picker', 'picker-preload.js'),
@@ -189,7 +189,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1100,
     height: 750,
-    title: 'ScreenBunny',
+    title: 'TelinhaFix',
     icon: path.join(__dirname, 'renderer', 'assets', 'logo.png'),
     autoHideMenuBar: true,
     webPreferences: {
@@ -210,7 +210,7 @@ function createWindow() {
   // renderer, abrindo o seletor proprio (pickScreenSource) pra escolher o
   // monitor. O audio do sistema NAO vem por aqui - o renderer pede so video
   // (audio: false) porque o audio real vem do helper nativo
-  // (ScreenBunnyAudioHelper), que captura o sistema todo excluindo o
+  // (TelinhaFixAudioHelper), que captura o sistema todo excluindo o
   // Discord. Se por algum motivo o renderer pedir audio por esse caminho
   // mesmo assim, ainda respondemos com o loopback padrao como fallback.
   session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {

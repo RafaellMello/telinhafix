@@ -76,7 +76,7 @@ contextBridge.exposeInMainWorld('rtc', {
   },
 });
 
-// Ponte com o helper nativo (ScreenBunnyAudioHelper.exe), que captura o
+// Ponte com o helper nativo (TelinhaFixAudioHelper.exe), que captura o
 // audio do sistema excluindo o Discord. O main process cuida de ligar/
 // desligar o processo; aqui so repassamos os pedacos de audio crus (PCM
 // float32) pro renderer.
@@ -88,7 +88,7 @@ contextBridge.exposeInMainWorld('audioCapture', {
     return ipcRenderer.invoke('audio-capture-stop');
   },
   onChunk(cb) {
-    ipcRenderer.on('screenbunny-audio-chunk', (event, chunk) => cb(chunk));
+    ipcRenderer.on('telinhafix-audio-chunk', (event, chunk) => cb(chunk));
   },
 });
 

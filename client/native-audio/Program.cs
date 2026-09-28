@@ -2,7 +2,7 @@ using System.Diagnostics;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
-// ScreenBunnyAudioHelper: captura o audio do sistema (48kHz, estereo, float32)
+// TelinhaFixAudioHelper: captura o audio do sistema (48kHz, estereo, float32)
 // e escreve os bytes crus continuamente no stdout.
 //
 // Argumentos: <modo> [nome-do-processo]
