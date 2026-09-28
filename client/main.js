@@ -140,12 +140,15 @@ function pickScreenSource(parentWin) {
       autoHideMenuBar: true,
       title: 'Escolha o que compartilhar - TelinhaFix',
       backgroundColor: '#060607',
+      show: false,
       webPreferences: {
         preload: path.join(__dirname, 'picker', 'picker-preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
       },
     });
+
+    pickerWin.once('ready-to-show', () => pickerWin.show());
 
     let settled = false;
     const finish = (source) => {
@@ -192,12 +195,21 @@ function createWindow() {
     title: 'TelinhaFix',
     icon: path.join(__dirname, 'renderer', 'assets', 'logo.png'),
     autoHideMenuBar: true,
+    backgroundColor: '#060607',
+    // A janela so aparece quando o conteudo ja terminou de carregar/pintar -
+    // sem isso, o Electro mostra a janela (branca, por padrao) antes do
+    // HTML/CSS estarem prontos, dando a impressao de "tela branca travada".
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
+  });
+
+  win.once('ready-to-show', () => {
+    win.show();
   });
 
   // Libera o pedido de camera (getUserMedia) usado pela feature de webcam

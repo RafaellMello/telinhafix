@@ -369,6 +369,18 @@ button:disabled { opacity: 0.5; cursor: default; }
 .video-tile:fullscreen {
   border: none;
   border-radius: 0;
+  /* .video-tile define aspect-ratio: 16/9 pro grid normal, mas isso nao e
+     resetado automaticamente ao entrar em tela cheia - sem isso, a tile
+     ficava do tamanho 16:9 dentro da tela em vez de preencher tudo. */
+  aspect-ratio: unset;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+}
+
+.video-tile:fullscreen video {
+  width: 100%;
+  height: 100%;
 }
 
 .volume-control {
