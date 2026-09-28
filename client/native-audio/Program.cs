@@ -3,8 +3,14 @@ using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
 // ScreenBunnyAudioHelper: captura o audio do sistema (48kHz, estereo, float32)
-// EXCLUINDO o Discord, e escreve os bytes crus continuamente no stdout.
-// Se o Discord nao estiver aberto, cai para captura normal do sistema todo.
+// e escreve os bytes crus continuamente no stdout.
+//
+// Argumentos: <modo> [nome-do-processo]
+//   system                 -> audio do sistema todo, sem filtro
+//   exclude <processo>     -> tudo, exceto o audio desse processo (ex: Discord)
+//   include <processo>     -> somente o audio desse processo (ex: um jogo)
+// Sem argumentos, o padrao e "exclude Discord" (comportamento original).
+// Se o processo alvo nao for encontrado, cai para audio do sistema todo.
 //
 // Uso: chamado pelo processo principal do Electron via child_process.spawn,
 // que le o stdout como um fluxo continuo de PCM.
@@ -12,32 +18,54 @@ using NAudio.Wave;
 var format = WaveFormat.CreateIeeeFloatWaveFormat(48000, 2);
 var stdout = Console.OpenStandardOutput();
 
-Process? FindDiscordRoot()
+var mode = args.Length > 0 ? args[0] : "exclude";
+var targetName = args.Length > 1 ? args[1] : "Discord";
+
+Process? FindProcessRoot(string processName)
 {
-    var procs = Process.GetProcessesByName("Discord");
+    var procs = Process.GetProcessesByName(processName);
     if (procs.Length == 0) return null;
     return procs.FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero)
            ?? procs.OrderBy(p => p.Id).First();
 }
 
-var target = FindDiscordRoot();
-
 WasapiRecorder recorder;
-if (target != null)
+
+if (mode == "system")
 {
-    Console.Error.WriteLine($"Excluindo Discord (PID {target.Id}) da captura de audio.");
-    recorder = await new WasapiRecorderBuilder()
-        .WithProcessLoopback((uint)target.Id, ProcessLoopbackMode.ExcludeTargetProcessTree)
-        .WithFormat(format)
-        .BuildAsync();
-}
-else
-{
-    Console.Error.WriteLine("Discord nao encontrado - capturando audio do sistema todo.");
+    Console.Error.WriteLine("Capturando audio do sistema todo (sem filtro).");
     recorder = new WasapiRecorderBuilder()
         .WithLoopbackCapture()
         .WithFormat(format)
         .Build();
+}
+else
+{
+    var target = FindProcessRoot(targetName);
+    if (target == null)
+    {
+        Console.Error.WriteLine($"Processo '{targetName}' nao encontrado - capturando audio do sistema todo.");
+        recorder = new WasapiRecorderBuilder()
+            .WithLoopbackCapture()
+            .WithFormat(format)
+            .Build();
+    }
+    else if (mode == "include")
+    {
+        Console.Error.WriteLine($"Capturando SOMENTE o audio de '{targetName}' (PID {target.Id}).");
+        recorder = await new WasapiRecorderBuilder()
+            .WithProcessLoopback((uint)target.Id, ProcessLoopbackMode.IncludeTargetProcessTree)
+            .WithFormat(format)
+            .BuildAsync();
+    }
+    else
+    {
+        Console.Error.WriteLine($"Excluindo '{targetName}' (PID {target.Id}) da captura de audio.");
+        recorder = await new WasapiRecorderBuilder()
+            .WithProcessLoopback((uint)target.Id, ProcessLoopbackMode.ExcludeTargetProcessTree)
+            .WithFormat(format)
+            .BuildAsync();
+    }
 }
 
 recorder.DataAvailable += (buffer, flags, _, _) =>
