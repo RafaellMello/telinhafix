@@ -619,7 +619,27 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .volume-slider {
   width: 80px;
-  accent-color: var(--red-bright);
+  height: 4px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 2px;
+  outline: none;
+  /* O background e um gradiente atualizado via JS a cada mudanca de valor
+     (updateSliderFill), pra pintar o trecho "preenchido" ate a bolinha -
+     sem isso o track nativo fica cinza chapado do inicio ao fim e nao da
+     nenhuma pista visual de quanto volume esta aplicado. */
+  background: linear-gradient(to right, var(--red-bright) 0%, var(--red-bright) 50%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.25) 100%);
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--red-bright);
   cursor: pointer;
 }
 

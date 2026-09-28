@@ -520,6 +520,13 @@ function refreshAllGainsForSharingState() {
   for (const peerId of remoteGainNodes.keys()) applyGain(peerId);
 }
 
+function updateSliderFill(slider) {
+  const min = Number(slider.min) || 0;
+  const max = Number(slider.max) || 100;
+  const pct = ((Number(slider.value) - min) / (max - min)) * 100;
+  slider.style.background = `linear-gradient(to right, var(--red-bright) 0%, var(--red-bright) ${pct}%, rgba(255, 255, 255, 0.25) ${pct}%, rgba(255, 255, 255, 0.25) 100%)`;
+}
+
 function getOrCreateVideoTile(peerId, label, isSelf = false) {
   let tile = document.getElementById(`tile-${peerId}`);
   if (tile) return tile.querySelector('video');
@@ -633,6 +640,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
     slider.value = '100';
     slider.title = 'Ate 200% - passar de 100% amplifica alem do volume original';
     slider.className = 'volume-slider';
+    updateSliderFill(slider);
     slider.addEventListener('input', () => {
       const pct = Number(slider.value);
       const entry = remoteGainNodes.get(peerId);
@@ -641,6 +649,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
         applyGain(peerId);
       }
       icon.textContent = pct === 0 ? '\u{1F507}' : '\u{1F50A}';
+      updateSliderFill(slider);
     });
     slider.addEventListener('click', (e) => e.stopPropagation());
 
