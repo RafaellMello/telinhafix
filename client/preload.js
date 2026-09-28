@@ -12,6 +12,11 @@ function connect(serverUrl, password) {
     auth: { password: password || '' },
     transports: ['websocket'],
     reconnection: true,
+    // O padrao do socket.io-client (20s) e curto demais: o plano gratis do
+    // Render "dorme" o servidor apos um tempo sem uso e leva ate uns 50s
+    // pra acordar na primeira conexao do dia - dava timeout antes de
+    // conseguir conectar.
+    timeout: 60000,
   });
   return socket;
 }
