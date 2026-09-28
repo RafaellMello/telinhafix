@@ -171,6 +171,7 @@ const roomLabel = document.getElementById('room-label');
 const participantsList = document.getElementById('participants-list');
 const videoGrid = document.getElementById('video-grid');
 const btnShare = document.getElementById('btn-share');
+const btnShareCamera = document.getElementById('btn-share-camera');
 const btnToggleCamera = document.getElementById('btn-toggle-camera');
 const btnStopShare = document.getElementById('btn-stop-share');
 const btnLeave = document.getElementById('btn-leave');
@@ -413,7 +414,8 @@ function updateSelfAudienceLabel() {
   if (!tile) return;
   const labelText = tile.querySelector('.label-text');
   if (!labelText) return;
-  labelText.textContent = `Você (compartilhando) — ${peers.size} na sala`;
+  const base = shareMode === 'camera' ? 'Você (câmera)' : 'Você (compartilhando)';
+  labelText.textContent = `${base} — ${peers.size} na sala`;
 }
 
 // --- Mixer de volume de verdade (Web Audio) -------------------------------
@@ -790,6 +792,8 @@ function teardownCapturedAudioTrack() {
 }
 
 let localVideoStream = null;
+// 'screen' | 'camera' | null - o que esta sendo transmitido agora.
+let shareMode = null;
 
 // --- Camera (bolinha no canto, composta por cima da tela em um canvas) ---
 
@@ -937,9 +941,32 @@ async function startShare() {
     return;
   }
 
+  shareMode = 'screen';
   currentQuality = await window.screenPicker.getQuality();
+  await finishStartingShare('Você (compartilhando)');
+
+  btnToggleCamera.classList.remove('hidden');
+}
+
+async function startCameraShare() {
+  try {
+    localVideoStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      audio: false,
+    });
+  } catch (err) {
+    console.error('Falha ao acessar a webcam:', err);
+    return;
+  }
+
+  shareMode = 'camera';
+  currentQuality = await window.screenPicker.getCameraQuality();
+  await finishStartingShare('Você (câmera)');
+}
+
+async function finishStartingShare(selfLabel) {
   const videoTrack = localVideoStream.getVideoTracks()[0];
-  if (currentQuality && videoTrack) {
+  if (currentQuality && videoTrack && shareMode === 'screen') {
     try {
       await videoTrack.applyConstraints({
         width: { ideal: currentQuality.width, max: currentQuality.width },
@@ -957,7 +984,7 @@ async function startShare() {
   try {
     audioTrack = await setupCapturedAudioTrack();
   } catch (err) {
-    console.error('Falha ao capturar audio do sistema (compartilhando so a tela):', err);
+    console.error('Falha ao capturar audio do sistema:', err);
   }
 
   const tracks = [...localVideoStream.getVideoTracks()];
@@ -970,12 +997,12 @@ async function startShare() {
   // captura de sistema e viraria eco pra quem esta assistindo.
   refreshAllGainsForSharingState();
 
-  const video = getOrCreateVideoTile(selfId, 'Você (compartilhando)', true);
+  const video = getOrCreateVideoTile(selfId, selfLabel, true);
   video.srcObject = localStream;
   updateSelfAudienceLabel();
 
   btnShare.classList.add('hidden');
-  btnToggleCamera.classList.remove('hidden');
+  btnShareCamera.classList.add('hidden');
   btnStopShare.classList.remove('hidden');
 
   localVideoStream.getVideoTracks()[0].addEventListener('ended', stopShare);
@@ -999,6 +1026,7 @@ async function stopShare() {
   localStream = null;
   localVideoStream = null;
   currentQuality = null;
+  shareMode = null;
   refreshAllGainsForSharingState();
 
   teardownCapturedAudioTrack();
@@ -1006,6 +1034,7 @@ async function stopShare() {
   removeVideoTile(selfId);
 
   btnShare.classList.remove('hidden');
+  btnShareCamera.classList.remove('hidden');
   btnToggleCamera.classList.add('hidden');
   btnStopShare.classList.add('hidden');
 }
@@ -1024,6 +1053,7 @@ async function leaveRoom() {
 }
 
 btnShare.addEventListener('click', startShare);
+btnShareCamera.addEventListener('click', startCameraShare);
 btnToggleCamera.addEventListener('click', () => {
   if (cameraActive) disableCamera();
   else enableCamera();
