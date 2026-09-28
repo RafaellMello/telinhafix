@@ -7,6 +7,7 @@ const roomLabel = document.getElementById('room-label');
 const participantsList = document.getElementById('participants-list');
 const videoGrid = document.getElementById('video-grid');
 const btnShare = document.getElementById('btn-share');
+const btnToggleCamera = document.getElementById('btn-toggle-camera');
 const btnStopShare = document.getElementById('btn-stop-share');
 const btnLeave = document.getElementById('btn-leave');
 const btnJoin = document.getElementById('btn-join');
@@ -546,6 +547,141 @@ function teardownCapturedAudioTrack() {
 
 let localVideoStream = null;
 
+// --- Camera (bolinha no canto, composta por cima da tela em um canvas) ---
+
+let cameraStream = null;
+let cameraSourceVideo = null;
+let screenSourceVideo = null;
+let compositeCanvas = null;
+let compositeCtx = null;
+let compositeRunning = false;
+let cameraActive = false;
+
+// Desenha `video` dentro do retangulo (x,y,w,h) cobrindo tudo (tipo
+// object-fit: cover), cortando o excesso pra nao distorcer a imagem.
+function drawCover(ctx, video, x, y, w, h) {
+  const vw = video.videoWidth || w;
+  const vh = video.videoHeight || h;
+  if (!vw || !vh) return;
+  const scale = Math.max(w / vw, h / vh);
+  const dw = vw * scale;
+  const dh = vh * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  ctx.drawImage(video, dx, dy, dw, dh);
+}
+
+function drawCompositeFrame() {
+  if (!compositeRunning) return;
+
+  if (screenSourceVideo && screenSourceVideo.videoWidth) {
+    compositeCtx.drawImage(screenSourceVideo, 0, 0, compositeCanvas.width, compositeCanvas.height);
+  }
+
+  if (cameraSourceVideo && cameraSourceVideo.videoWidth) {
+    const bubbleSize = Math.round(compositeCanvas.height * 0.22);
+    const margin = Math.round(compositeCanvas.height * 0.03);
+    const bx = compositeCanvas.width - bubbleSize - margin;
+    const by = compositeCanvas.height - bubbleSize - margin;
+    const cx = bx + bubbleSize / 2;
+    const cy = by + bubbleSize / 2;
+
+    compositeCtx.save();
+    compositeCtx.beginPath();
+    compositeCtx.arc(cx, cy, bubbleSize / 2, 0, Math.PI * 2);
+    compositeCtx.closePath();
+    compositeCtx.clip();
+    drawCover(compositeCtx, cameraSourceVideo, bx, by, bubbleSize, bubbleSize);
+    compositeCtx.restore();
+
+    compositeCtx.lineWidth = Math.max(2, Math.round(bubbleSize * 0.02));
+    compositeCtx.strokeStyle = '#e2231a';
+    compositeCtx.beginPath();
+    compositeCtx.arc(cx, cy, bubbleSize / 2, 0, Math.PI * 2);
+    compositeCtx.stroke();
+  }
+
+  requestAnimationFrame(drawCompositeFrame);
+}
+
+async function replaceOutgoingVideoTrack(newTrack) {
+  for (const [, state] of peers) {
+    const sender = state.pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+    if (sender) {
+      try {
+        await sender.replaceTrack(newTrack);
+      } catch (err) {
+        console.error('Falha ao trocar a track de video:', err);
+      }
+    }
+  }
+  const selfVideo = document.querySelector(`#tile-${selfId} video`);
+  if (selfVideo) selfVideo.srcObject = new MediaStream([newTrack, ...localStream.getAudioTracks()]);
+  localStream = new MediaStream([newTrack, ...localStream.getAudioTracks()]);
+}
+
+async function enableCamera() {
+  if (!localVideoStream || cameraActive) return;
+
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  } catch (err) {
+    console.error('Falha ao acessar a webcam:', err);
+    return;
+  }
+
+  const screenTrack = localVideoStream.getVideoTracks()[0];
+  const settings = screenTrack.getSettings();
+  const width = settings.width || (currentQuality && currentQuality.width) || 1280;
+  const height = settings.height || (currentQuality && currentQuality.height) || 720;
+
+  compositeCanvas = document.createElement('canvas');
+  compositeCanvas.width = width;
+  compositeCanvas.height = height;
+  compositeCtx = compositeCanvas.getContext('2d');
+
+  screenSourceVideo = document.createElement('video');
+  screenSourceVideo.muted = true;
+  screenSourceVideo.playsInline = true;
+  screenSourceVideo.srcObject = new MediaStream([screenTrack]);
+  await screenSourceVideo.play();
+
+  cameraSourceVideo = document.createElement('video');
+  cameraSourceVideo.muted = true;
+  cameraSourceVideo.playsInline = true;
+  cameraSourceVideo.srcObject = cameraStream;
+  await cameraSourceVideo.play();
+
+  compositeRunning = true;
+  drawCompositeFrame();
+
+  const fps = (currentQuality && currentQuality.frameRate) || 30;
+  const compositedTrack = compositeCanvas.captureStream(fps).getVideoTracks()[0];
+  await replaceOutgoingVideoTrack(compositedTrack);
+
+  cameraActive = true;
+  btnToggleCamera.textContent = 'Desativar câmera';
+}
+
+async function disableCamera() {
+  if (!cameraActive) return;
+
+  compositeRunning = false;
+  if (cameraStream) cameraStream.getTracks().forEach((t) => t.stop());
+  cameraStream = null;
+  cameraSourceVideo = null;
+  screenSourceVideo = null;
+  compositeCanvas = null;
+  compositeCtx = null;
+
+  if (localVideoStream) {
+    await replaceOutgoingVideoTrack(localVideoStream.getVideoTracks()[0]);
+  }
+
+  cameraActive = false;
+  btnToggleCamera.textContent = 'Ativar câmera';
+}
+
 async function startShare() {
   try {
     localVideoStream = await navigator.mediaDevices.getDisplayMedia({
@@ -591,15 +727,20 @@ async function startShare() {
   updateSelfAudienceLabel();
 
   btnShare.classList.add('hidden');
+  btnToggleCamera.classList.remove('hidden');
   btnStopShare.classList.remove('hidden');
 
   localVideoStream.getVideoTracks()[0].addEventListener('ended', stopShare);
 }
 
-function stopShare() {
+async function stopShare() {
   if (!localStream) return;
+
+  if (cameraActive) await disableCamera();
+
   detachLocalStreamFromAllPeers(localStream);
   localStream.getTracks().forEach((t) => t.stop());
+  if (localVideoStream) localVideoStream.getTracks().forEach((t) => t.stop());
   localStream = null;
   localVideoStream = null;
   currentQuality = null;
@@ -609,11 +750,12 @@ function stopShare() {
   removeVideoTile(selfId);
 
   btnShare.classList.remove('hidden');
+  btnToggleCamera.classList.add('hidden');
   btnStopShare.classList.add('hidden');
 }
 
-function leaveRoom() {
-  if (localStream) stopShare();
+async function leaveRoom() {
+  if (localStream) await stopShare();
   for (const [, state] of peers) state.pc.close();
   peers.clear();
   peerNames.clear();
@@ -626,6 +768,10 @@ function leaveRoom() {
 }
 
 btnShare.addEventListener('click', startShare);
+btnToggleCamera.addEventListener('click', () => {
+  if (cameraActive) disableCamera();
+  else enableCamera();
+});
 btnStopShare.addEventListener('click', stopShare);
 btnLeave.addEventListener('click', leaveRoom);
 

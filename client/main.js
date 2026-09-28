@@ -200,6 +200,12 @@ function createWindow() {
     },
   });
 
+  // Libera o pedido de camera (getUserMedia) usado pela feature de webcam
+  // (bolinha composta por cima da tela).
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(permission === 'media');
+  });
+
   // Trata os pedidos de navigator.mediaDevices.getDisplayMedia() feitos no
   // renderer, abrindo o seletor proprio (pickScreenSource) pra escolher o
   // monitor. O audio do sistema NAO vem por aqui - o renderer pede so video
