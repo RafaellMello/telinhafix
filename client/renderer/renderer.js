@@ -416,6 +416,33 @@ function updateSelfAudienceLabel() {
   labelText.textContent = `Você (compartilhando) — ${peers.size} na sala`;
 }
 
+// --- Mixer de volume de verdade (Web Audio) -------------------------------
+// video.volume trava em 1.0 (100%) - nao da pra "aumentar" alem disso.
+// Passamos o audio de cada remoto por um GainNode pra poder ir ate 200%, e
+// de quebra usamos o mesmo mecanismo pra suprimir o audio dos outros
+// enquanto VOCE esta compartilhando (senao o que toca nas suas caixas de
+// som entra na sua propria captura de sistema e vira eco pros outros).
+let sharedAudioCtx = null;
+const remoteGainNodes = new Map(); // peerId -> { gainNode, sliderValue }
+
+function getSharedAudioContext() {
+  if (!sharedAudioCtx) sharedAudioCtx = new AudioContext();
+  if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume().catch(() => {});
+  return sharedAudioCtx;
+}
+
+function applyGain(peerId) {
+  const entry = remoteGainNodes.get(peerId);
+  if (!entry) return;
+  // Enquanto voce compartilha, suprime o audio dos outros pra nao vazar
+  // eco na sua propria transmissao.
+  entry.gainNode.gain.value = localStream ? 0 : entry.sliderValue / 100;
+}
+
+function refreshAllGainsForSharingState() {
+  for (const peerId of remoteGainNodes.keys()) applyGain(peerId);
+}
+
 function getOrCreateVideoTile(peerId, label, isSelf = false) {
   let tile = document.getElementById(`tile-${peerId}`);
   if (tile) return tile.querySelector('video');
@@ -496,6 +523,13 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
   // Volume so afeta o que VOCE ouve dessa pessoa - e local, ninguem mais
   // na sala e afetado. Por isso nao existe controle na sua propria tile.
   if (!isSelf) {
+    const audioCtx = getSharedAudioContext();
+    const sourceNode = audioCtx.createMediaElementSource(video);
+    const gainNode = audioCtx.createGain();
+    sourceNode.connect(gainNode).connect(audioCtx.destination);
+    remoteGainNodes.set(peerId, { gainNode, sliderValue: 100 });
+    applyGain(peerId);
+
     const volumeRow = document.createElement('div');
     volumeRow.className = 'volume-control';
 
@@ -506,12 +540,18 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
     const slider = document.createElement('input');
     slider.type = 'range';
     slider.min = '0';
-    slider.max = '100';
+    slider.max = '200';
     slider.value = '100';
+    slider.title = 'Ate 200% - passar de 100% amplifica alem do volume original';
     slider.className = 'volume-slider';
     slider.addEventListener('input', () => {
-      video.volume = Number(slider.value) / 100;
-      icon.textContent = Number(slider.value) === 0 ? '\u{1F507}' : '\u{1F50A}';
+      const pct = Number(slider.value);
+      const entry = remoteGainNodes.get(peerId);
+      if (entry) {
+        entry.sliderValue = pct;
+        applyGain(peerId);
+      }
+      icon.textContent = pct === 0 ? '\u{1F507}' : '\u{1F50A}';
     });
     slider.addEventListener('click', (e) => e.stopPropagation());
 
@@ -530,6 +570,11 @@ function removeVideoTile(peerId) {
   const tile = document.getElementById(`tile-${peerId}`);
   if (tile) tile.remove();
   if (focusedPeerId === peerId) setFocus(peerId);
+  const gainEntry = remoteGainNodes.get(peerId);
+  if (gainEntry) {
+    gainEntry.gainNode.disconnect();
+    remoteGainNodes.delete(peerId);
+  }
 }
 
 function createPeerConnection(peerId) {
@@ -612,6 +657,11 @@ async function handleSignal({ from, data }) {
       } catch (err) {
         if (!state.ignoreOffer) throw err;
       }
+    } else if (data.shareEnded) {
+      // Sinal explicito de "parei de compartilhar" - mais confiavel que
+      // esperar o evento 'ended' da track remota, que nem sempre dispara
+      // quando o outro lado so remove a track (fica um frame congelado).
+      removeVideoTile(from);
     }
   } catch (err) {
     console.error('Erro ao tratar sinal de', from, err);
@@ -915,6 +965,10 @@ async function startShare() {
   localStream = new MediaStream(tracks);
 
   attachLocalStreamToAllPeers(localStream);
+  // Suprime o audio dos outros participantes enquanto voce compartilha -
+  // senao o que toca nas suas caixas de som entraria na sua propria
+  // captura de sistema e viraria eco pra quem esta assistindo.
+  refreshAllGainsForSharingState();
 
   const video = getOrCreateVideoTile(selfId, 'Você (compartilhando)', true);
   video.srcObject = localStream;
@@ -932,12 +986,20 @@ async function stopShare() {
 
   if (cameraActive) await disableCamera();
 
+  // Avisa todo mundo explicitamente que a transmissao acabou - nao da pra
+  // confiar so no evento 'ended' da track remota (as vezes fica um frame
+  // congelado do outro lado em vez de fechar a tile).
+  for (const peerId of peers.keys()) {
+    window.rtc.sendSignal(peerId, { shareEnded: true });
+  }
+
   detachLocalStreamFromAllPeers(localStream);
   localStream.getTracks().forEach((t) => t.stop());
   if (localVideoStream) localVideoStream.getTracks().forEach((t) => t.stop());
   localStream = null;
   localVideoStream = null;
   currentQuality = null;
+  refreshAllGainsForSharingState();
 
   teardownCapturedAudioTrack();
 
