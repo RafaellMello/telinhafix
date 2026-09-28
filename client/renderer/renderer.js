@@ -805,6 +805,11 @@ btnToggleCamera.addEventListener('click', () => {
 btnStopShare.addEventListener('click', stopShare);
 btnLeave.addEventListener('click', leaveRoom);
 
+document.getElementById('credit-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  window.appLinks.openCredit();
+});
+
 btnJoin.addEventListener('click', async () => {
   setLoginError('');
   const serverUrl = document.getElementById('server-url').value.trim();

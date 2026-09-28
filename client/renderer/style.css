@@ -142,6 +142,22 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .error { color: var(--red-bright); font-size: 12px; min-height: 16px; margin-top: 10px; text-align: center; }
 
+.credit {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.credit a {
+  color: var(--red-bright);
+  text-decoration: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.credit a:hover { text-decoration: underline; }
+
 /* Colunas de avatares dos membros, estilo "polaroid" torto, dos dois
    lados do card de login. */
 .members-col {
