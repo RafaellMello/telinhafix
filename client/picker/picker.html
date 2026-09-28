@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Escolha a tela</title>
+  <style>
+    :root {
+      --bg: #060607;
+      --red: #e2231a;
+      --red-bright: #ff3b2f;
+      --border: rgba(226, 35, 26, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: #f2f0ec;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      padding: 20px;
+    }
+    h1 {
+      margin: 0 0 16px 0;
+      font-size: 16px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--red-bright);
+      text-align: center;
+    }
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+    }
+    .option {
+      background: #131315;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      overflow: hidden;
+      padding: 0;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .option:hover { border-color: var(--red); transform: scale(1.02); }
+    .option img {
+      width: 100%;
+      display: block;
+      background: #000;
+    }
+    .option .name {
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #cfcfcf;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Qual tela voce quer compartilhar?</h1>
+  <div id="grid"></div>
+
+  <script>
+    const grid = document.getElementById('grid');
+
+    window.picker.onSources((sources) => {
+      grid.innerHTML = '';
+      sources.forEach((s) => {
+        const btn = document.createElement('button');
+        btn.className = 'option';
+
+        const img = document.createElement('img');
+        img.src = s.thumbnail;
+
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = s.name || 'Tela';
+
+        btn.appendChild(img);
+        btn.appendChild(name);
+        btn.addEventListener('click', () => window.picker.choose(s.id));
+        grid.appendChild(btn);
+      });
+    });
+  </script>
+</body>
+</html>
