@@ -33,6 +33,33 @@ function startNamePlaceholderCycle() {
 
 startNamePlaceholderCycle();
 
+// Lembra a ultima senha do servidor digitada, pra nao ter que redigitar
+// toda vez que abrir o app.
+const SERVER_PASSWORD_STORAGE_KEY = 'screenbunny-server-password';
+
+function restoreSavedServerPassword() {
+  try {
+    const saved = localStorage.getItem(SERVER_PASSWORD_STORAGE_KEY);
+    if (saved) document.getElementById('server-password').value = saved;
+  } catch (err) {
+    // localStorage indisponivel - segue sem lembrar a senha.
+  }
+}
+
+function watchServerPasswordInput() {
+  const input = document.getElementById('server-password');
+  input.addEventListener('input', () => {
+    try {
+      localStorage.setItem(SERVER_PASSWORD_STORAGE_KEY, input.value);
+    } catch (err) {
+      // localStorage indisponivel - segue sem lembrar a senha.
+    }
+  });
+}
+
+restoreSavedServerPassword();
+watchServerPasswordInput();
+
 const AVATAR_FILES = [
   'babini.jpg', 'babini2.jpg', 'coka.jpg', 'dani.jpg', 'rudeus.jpg',
   'fab.jpg', 'hent.jpg', 'img-20240330-wa0127_original.jpg', 'nathan.jpg',
