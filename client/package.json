@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "build:native": "dotnet publish native-audio -c Release && node -e \"require('fs').cpSync('native-audio/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/ScreenBunnyAudioHelper.exe','native/ScreenBunnyAudioHelper.exe')\"",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-builder --win zip"
   },
   "dependencies": {
     "socket.io-client": "^4.7.5"
@@ -32,11 +32,8 @@
       }
     ],
     "win": {
-      "target": "portable",
+      "target": "zip",
       "icon": "renderer/assets/icon.ico"
-    },
-    "portable": {
-      "artifactName": "ScreenBunny.exe"
     }
   }
 }

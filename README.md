@@ -51,7 +51,7 @@ Abra duas instancias (voce e um "amigo" de teste) apontando para o mesmo
 servidor e mesma sala pra validar o compartilhamento de tela antes de gerar
 o .exe final.
 
-## 3. Gerar o .exe para distribuir aos amigos
+## 3. Gerar o app para distribuir aos amigos
 
 Dentro de `client/`:
 
@@ -59,9 +59,16 @@ Dentro de `client/`:
 npm run dist
 ```
 
-Isso gera um arquivo `ScreenBunny.exe` portatil dentro da pasta `dist/`.
-Basta mandar esse .exe pros seus amigos — eles baixam, clicam duas vezes, e
-o app abre direto (sem instalacao).
+Isso gera `dist/ScreenBunny-1.0.0-win.zip`. Manda esse .zip pros seus
+amigos: eles baixam, extraem a pasta uma unica vez, e dai em diante so
+clicam no `ScreenBunny.exe` de dentro dela (sem instalacao).
+
+> Por que .zip e nao um .exe portatil unico? O formato "portable" do
+> Windows (NSIS) parece pratico por ser um arquivo so, mas ele se
+> autoextrai pra uma pasta temporaria **toda vez que abre** - nesse app,
+> isso significava uns 5-6 segundos de espera, do nada, a cada clique.
+> Com o .zip, a extracao acontece so uma vez (quando a pessoa descompacta)
+> e depois o app abre na hora (~250ms) sempre que for aberto.
 
 ## 4. Como usar
 
@@ -119,8 +126,8 @@ Requisitos e limitacoes dessa parte:
   npm run build:native
   ```
   Esse `.exe` nao vai pro Git (passa do limite de tamanho do GitHub) — ele e
-  gerado localmente e o `npm run dist` empacota ele dentro do
-  `ScreenBunny.exe` final automaticamente.
+  gerado localmente e o `npm run dist` empacota ele dentro do app final
+  automaticamente.
 
 ## Limitacoes a saber
 
