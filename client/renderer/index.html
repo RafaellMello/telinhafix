@@ -7,6 +7,7 @@
 </head>
 <body>
   <div id="login-screen" class="screen">
+    <button id="btn-settings" title="Aparencia">&#9881;</button>
     <div id="members-left" class="members-col"></div>
 
     <div class="login-box">
@@ -46,6 +47,7 @@
         <button id="btn-share">Compartilhar tela</button>
         <button id="btn-toggle-camera" class="hidden">Ativar câmera</button>
         <button id="btn-stop-share" class="hidden">Parar compartilhamento</button>
+        <button id="btn-settings-room" class="ghost" title="Aparencia">&#9881;</button>
         <button id="btn-leave" class="danger">Sair</button>
       </div>
     </div>
@@ -57,6 +59,50 @@
       </aside>
 
       <main id="video-grid"></main>
+    </div>
+  </div>
+
+  <div id="settings-overlay" class="settings-overlay hidden">
+    <div class="settings-panel">
+      <h2>Aparência</h2>
+
+      <div class="settings-group">
+        <label>Fonte</label>
+        <div id="font-options" class="font-options">
+          <div class="font-option" data-font="inter" style="font-family:'Inter'">Inter</div>
+          <div class="font-option" data-font="poppins" style="font-family:'Poppins'">Poppins</div>
+          <div class="font-option" data-font="jetbrains" style="font-family:'JetBrains Mono'">JetBrains Mono</div>
+          <div class="font-option" data-font="anton" style="font-family:'Anton'">Anton</div>
+          <div class="font-option" data-font="nunito" style="font-family:'Nunito'">Nunito</div>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <label>Tamanho do texto</label>
+        <div id="size-options" class="size-options">
+          <div class="size-option" data-scale="0.85">Pequeno</div>
+          <div class="size-option" data-scale="1">Médio</div>
+          <div class="size-option" data-scale="1.15">Grande</div>
+          <div class="size-option" data-scale="1.3">Extra</div>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <label>Cor principal</label>
+        <div id="color-swatches" class="color-swatches">
+          <button type="button" class="color-swatch" data-color="#e2231a" style="background:#e2231a" title="Vermelho"></button>
+          <button type="button" class="color-swatch" data-color="#8a2be2" style="background:#8a2be2" title="Roxo"></button>
+          <button type="button" class="color-swatch" data-color="#2e6fee" style="background:#2e6fee" title="Azul"></button>
+          <button type="button" class="color-swatch" data-color="#1db954" style="background:#1db954" title="Verde"></button>
+          <button type="button" class="color-swatch" data-color="#ff3d8b" style="background:#ff3d8b" title="Rosa"></button>
+          <button type="button" class="color-swatch" data-color="#ff8c1a" style="background:#ff8c1a" title="Laranja"></button>
+          <input type="color" id="color-custom" value="#e2231a" title="Escolher outra cor" />
+        </div>
+      </div>
+
+      <div class="settings-footer">
+        <button id="btn-settings-close">Fechar</button>
+      </div>
     </div>
   </div>
 

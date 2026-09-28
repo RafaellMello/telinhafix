@@ -1,3 +1,167 @@
+// --- Tema (fonte, tamanho de texto, cor principal) --------------------
+// Aplicado antes de mais nada pra evitar um "flash" com o tema padrao.
+
+const FONT_STACKS = {
+  inter: "'Inter', 'Segoe UI', Arial, sans-serif",
+  poppins: "'Poppins', 'Segoe UI', Arial, sans-serif",
+  jetbrains: "'JetBrains Mono', Consolas, monospace",
+  anton: "'Anton', 'Segoe UI', Arial, sans-serif",
+  nunito: "'Nunito', 'Segoe UI', Arial, sans-serif",
+};
+
+const THEME_STORAGE_KEY = 'telinhafix-theme';
+const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a' };
+
+function hexToRgbString(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r}, ${g}, ${b}`;
+}
+
+function hexToHsl(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h * 360, s * 100, l * 100];
+}
+
+function hslToHex(h, s, l) {
+  h /= 360; s /= 100; l /= 100;
+  let r; let g; let b;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p, q, t) => {
+      let tt = t;
+      if (tt < 0) tt += 1;
+      if (tt > 1) tt -= 1;
+      if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+      if (tt < 1 / 2) return q;
+      if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1 / 3);
+  }
+  const toHex = (x) => Math.round(x * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function deriveThemeColors(baseHex) {
+  const [h, s, l] = hexToHsl(baseHex);
+  const bright = hslToHex(h, Math.min(100, s + 10), Math.min(72, l + 15));
+  const dark = hslToHex(h, Math.max(25, s - 20), Math.max(8, l - 30));
+  return { base: baseHex, bright, dark };
+}
+
+function applyTheme(theme) {
+  const root = document.documentElement.style;
+  root.setProperty('--font-ui', FONT_STACKS[theme.font] || FONT_STACKS.inter);
+  root.setProperty('--font-scale', theme.scale || 1);
+  const { base, bright, dark } = deriveThemeColors(theme.color || DEFAULT_THEME.color);
+  root.setProperty('--red', base);
+  root.setProperty('--red-rgb', hexToRgbString(base));
+  root.setProperty('--red-bright', bright);
+  root.setProperty('--red-bright-rgb', hexToRgbString(bright));
+  root.setProperty('--red-dark', dark);
+}
+
+function loadTheme() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(THEME_STORAGE_KEY));
+    return { ...DEFAULT_THEME, ...(saved || {}) };
+  } catch (err) {
+    return { ...DEFAULT_THEME };
+  }
+}
+
+function saveTheme(theme) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(theme));
+  } catch (err) {
+    // sem localStorage, o tema so nao persiste - sem problema.
+  }
+}
+
+let currentTheme = loadTheme();
+applyTheme(currentTheme);
+
+function setupSettingsPanel() {
+  const overlay = document.getElementById('settings-overlay');
+  const btnOpen = document.getElementById('btn-settings');
+  const btnOpenRoom = document.getElementById('btn-settings-room');
+  const btnClose = document.getElementById('btn-settings-close');
+  const fontOptions = document.querySelectorAll('.font-option');
+  const sizeOptions = document.querySelectorAll('.size-option');
+  const colorSwatches = document.querySelectorAll('.color-swatch');
+  const colorCustom = document.getElementById('color-custom');
+  if (!overlay) return;
+
+  function refreshUI() {
+    fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
+    sizeOptions.forEach((el) => el.classList.toggle('selected', Number(el.dataset.scale) === currentTheme.scale));
+    colorSwatches.forEach((el) => {
+      el.classList.toggle('selected', el.dataset.color.toLowerCase() === currentTheme.color.toLowerCase());
+    });
+    colorCustom.value = currentTheme.color;
+  }
+
+  function updateTheme(patch) {
+    currentTheme = { ...currentTheme, ...patch };
+    applyTheme(currentTheme);
+    saveTheme(currentTheme);
+    refreshUI();
+  }
+
+  function openSettings() {
+    refreshUI();
+    overlay.classList.remove('hidden');
+  }
+
+  function closeSettings() {
+    overlay.classList.add('hidden');
+  }
+
+  if (btnOpen) btnOpen.addEventListener('click', openSettings);
+  if (btnOpenRoom) btnOpenRoom.addEventListener('click', openSettings);
+  btnClose.addEventListener('click', closeSettings);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeSettings();
+  });
+
+  fontOptions.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ font: el.dataset.font }));
+  });
+  sizeOptions.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ scale: Number(el.dataset.scale) }));
+  });
+  colorSwatches.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ color: el.dataset.color }));
+  });
+  colorCustom.addEventListener('input', () => updateTheme({ color: colorCustom.value }));
+}
+
+setupSettingsPanel();
+
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 const loginScreen = document.getElementById('login-screen');

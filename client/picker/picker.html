@@ -11,12 +11,48 @@
       font-display: swap;
       src: url('../renderer/assets/fonts/Inter-Variable.woff2') format('woff2');
     }
+    @font-face {
+      font-family: 'Poppins';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url('../renderer/assets/fonts/Poppins-400.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Poppins';
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: url('../renderer/assets/fonts/Poppins-800.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'JetBrains Mono';
+      font-style: normal;
+      font-weight: 100 800;
+      font-display: swap;
+      src: url('../renderer/assets/fonts/JetBrainsMono-Variable.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Anton';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url('../renderer/assets/fonts/Anton-400.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Nunito';
+      font-style: normal;
+      font-weight: 200 1000;
+      font-display: swap;
+      src: url('../renderer/assets/fonts/Nunito-Variable.woff2') format('woff2');
+    }
     :root {
       --bg: #060607;
       --bg-elevated: #131315;
       --red: #e2231a;
       --red-bright: #ff3b2f;
       --border: rgba(226, 35, 26, 0.35);
+      --font-ui: 'Inter', 'Segoe UI', Arial, sans-serif;
     }
     * { box-sizing: border-box; }
     .hidden { display: none !important; }
@@ -24,7 +60,7 @@
       margin: 0;
       background: var(--bg);
       color: #f2f0ec;
-      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+      font-family: var(--font-ui);
       padding: 18px 20px;
     }
     h1 {
@@ -149,6 +185,66 @@
     }
     #btn-confirm:disabled { opacity: 0.4; cursor: default; }
   </style>
+  <script>
+    // Aplica o mesmo tema (fonte/cor) escolhido na janela principal, salvo
+    // no localStorage - as duas janelas compartilham a mesma origem file://.
+    (function applyStoredTheme() {
+      const FONT_STACKS = {
+        inter: "'Inter', 'Segoe UI', Arial, sans-serif",
+        poppins: "'Poppins', 'Segoe UI', Arial, sans-serif",
+        jetbrains: "'JetBrains Mono', Consolas, monospace",
+        anton: "'Anton', 'Segoe UI', Arial, sans-serif",
+        nunito: "'Nunito', 'Segoe UI', Arial, sans-serif",
+      };
+      function brighten(hex) {
+        const r = parseInt(hex.slice(1, 3), 16) / 255;
+        const g = parseInt(hex.slice(3, 5), 16) / 255;
+        const b = parseInt(hex.slice(5, 7), 16) / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        let h = 0; let s = 0; const l = (max + min) / 2;
+        if (max !== min) {
+          const d = max - min;
+          s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+          if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+          else if (max === g) h = (b - r) / d + 2;
+          else h = (r - g) / d + 4;
+          h /= 6;
+        }
+        const s2 = Math.min(1, s + 0.1);
+        const l2 = Math.min(0.72, l + 0.15) / 1;
+        const hue2rgb = (p, q, t) => {
+          let tt = t;
+          if (tt < 0) tt += 1;
+          if (tt > 1) tt -= 1;
+          if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+          if (tt < 1 / 2) return q;
+          if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+          return p;
+        };
+        const q = l2 < 0.5 ? l2 * (1 + s2) : l2 + s2 - l2 * s2;
+        const p = 2 * l2 - q;
+        const rr = hue2rgb(p, q, h + 1 / 3);
+        const gg = hue2rgb(p, q, h);
+        const bb = hue2rgb(p, q, h - 1 / 3);
+        const toHex = (x) => Math.round(x * 255).toString(16).padStart(2, '0');
+        return `#${toHex(rr)}${toHex(gg)}${toHex(bb)}`;
+      }
+      try {
+        const saved = JSON.parse(localStorage.getItem('telinhafix-theme'));
+        if (!saved) return;
+        const root = document.documentElement.style;
+        if (saved.font) root.setProperty('--font-ui', FONT_STACKS[saved.font] || FONT_STACKS.inter);
+        if (saved.color) {
+          root.setProperty('--red', saved.color);
+          root.setProperty('--border', saved.color + '59');
+          root.setProperty('--red-bright', brighten(saved.color));
+        }
+      } catch (err) {
+        // sem tema salvo ou localStorage indisponivel - fica no padrao.
+      }
+    })();
+  </script>
 </head>
 <body>
   <h1>O que voce quer compartilhar?</h1>
