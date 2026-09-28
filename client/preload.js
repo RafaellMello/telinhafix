@@ -1,4 +1,4 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 const { io } = require('socket.io-client');
 
 let socket = null;
@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('rtc', {
 
   joinRoom(roomId, name) {
     return new Promise((resolve, reject) => {
-      if (!socket) return reject(new Error('Nao conectado'));
+      if (!socket) return reject(new Error('Não conectado'));
       socket.emit('join-room', { roomId, name }, (res) => {
         if (res && res.ok) resolve(res);
         else reject(new Error((res && res.error) || 'Falha ao entrar na sala'));
@@ -73,5 +73,21 @@ contextBridge.exposeInMainWorld('rtc', {
       socket.disconnect();
       socket = null;
     }
+  },
+});
+
+// Ponte com o helper nativo (ScreenBunnyAudioHelper.exe), que captura o
+// audio do sistema excluindo o Discord. O main process cuida de ligar/
+// desligar o processo; aqui so repassamos os pedacos de audio crus (PCM
+// float32) pro renderer.
+contextBridge.exposeInMainWorld('audioCapture', {
+  start() {
+    return ipcRenderer.invoke('audio-capture-start');
+  },
+  stop() {
+    return ipcRenderer.invoke('audio-capture-stop');
+  },
+  onChunk(cb) {
+    ipcRenderer.on('screenbunny-audio-chunk', (event, chunk) => cb(chunk));
   },
 });

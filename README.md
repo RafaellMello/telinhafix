@@ -72,8 +72,44 @@ o app abre direto (sem instalacao).
 3. Clique em **Entrar**.
 4. Quem for compartilhar clica em **Compartilhar tela** — vai abrir o
    seletor de tela do proprio Windows, onde da pra escolher qual monitor (ou
-   janela) transmitir e marcar a opcao de incluir o audio do sistema.
-5. Todo mundo que estiver na sala ve o video automaticamente.
+   janela) transmitir.
+5. Todo mundo que estiver na sala ve o video automaticamente, com o audio do
+   sistema de quem compartilha (o Discord fica de fora, ver secao abaixo).
+
+## Audio: o Discord fica de fora da transmissao
+
+Quem compartilha a tela normalmente ainda quer ouvir a call do Discord
+enquanto transmite, mas sem que esse audio vaze pra quem esta assistindo.
+Pra isso o app usa um helper nativo do Windows
+(`client/native-audio/`, vira `ScreenBunnyAudioHelper.exe`) que captura o
+audio do sistema **excluindo especificamente o processo do Discord**
+(API `ActivateAudioInterfaceAsync` com `ProcessLoopbackMode.ExcludeTargetProcessTree`,
+via a biblioteca [NAudio](https://github.com/naudio/NAudio)). O video vem
+pelo seletor normal do Windows; o audio que vai na transmissao vem desse
+helper.
+
+Requisitos e limitacoes dessa parte:
+- Precisa do **Windows 10 versao 2004 (build 19041) ou mais novo** — a API
+  de exclusao por processo nao existe em versoes mais antigas. Se a
+  ativacao falhar, o app cai para so compartilhar a tela sem audio (nao
+  trava).
+- Se o Discord nao estiver aberto no momento do compartilhamento, a
+  exclusao nao tem o que fazer e o helper captura o audio do sistema todo
+  normalmente.
+- A exclusao mira o processo do Discord que ja esta aberto quando voce
+  clica em "Compartilhar tela". Se voce fechar e abrir o Discord de novo
+  **durante** a transmissao, reinicie o compartilhamento pra pegar o novo
+  processo.
+- Para compilar esse helper voce precisa do **[.NET SDK 9](https://dotnet.microsoft.com/download)**
+  instalado (gratuito). O binario final (~140MB, self-contained) ja fica
+  pronto em `client/native/ScreenBunnyAudioHelper.exe` apos rodar, dentro de
+  `client/`:
+  ```
+  npm run build:native
+  ```
+  Esse `.exe` nao vai pro Git (passa do limite de tamanho do GitHub) — ele e
+  gerado localmente e o `npm run dist` empacota ele dentro do
+  `ScreenBunny.exe` final automaticamente.
 
 ## Limitacoes a saber
 
