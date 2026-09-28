@@ -9,7 +9,7 @@ const APP_PASSWORD = process.env.APP_PASSWORD || '';
 
 const httpServer = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('MeuDiscordLocal signaling server ok');
+  res.end('ScreenBunny signaling server ok');
 });
 
 const io = new Server(httpServer, {

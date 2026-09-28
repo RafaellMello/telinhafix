@@ -1,7 +1,7 @@
 {
-  "name": "meudiscordlocal-server",
+  "name": "screenbunny-server",
   "version": "1.0.0",
-  "description": "Servidor de sinalizacao WebRTC para o MeuDiscordLocal",
+  "description": "Servidor de sinalizacao WebRTC para o ScreenBunny",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
