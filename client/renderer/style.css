@@ -349,6 +349,29 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   overflow: hidden;
 }
 
+.camera-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.camera-option {
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.camera-option:hover { border-color: var(--red); }
+.camera-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+
 .settings-footer {
   display: flex;
   justify-content: flex-end;

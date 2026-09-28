@@ -949,10 +949,81 @@ async function startShare() {
   btnToggleCamera.classList.remove('hidden');
 }
 
+// --- Escolha de camera (quando tem mais de uma) ---------------------------
+
+const CAMERA_DEVICE_STORAGE_KEY = 'telinhafix-camera-device';
+
+async function listCameraDevices() {
+  let devices = await navigator.mediaDevices.enumerateDevices();
+  let cams = devices.filter((d) => d.kind === 'videoinput');
+  // Sem permissao ainda, o navegador esconde os nomes das cameras. Pede
+  // acesso uma vez (com a camera padrao) so pra desbloquear os labels, e
+  // fecha essa track na hora - a de verdade e aberta depois com o
+  // deviceId escolhido.
+  if (cams.length > 0 && cams.every((d) => !d.label)) {
+    try {
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      tempStream.getTracks().forEach((t) => t.stop());
+      devices = await navigator.mediaDevices.enumerateDevices();
+      cams = devices.filter((d) => d.kind === 'videoinput');
+    } catch (err) {
+      console.error('Falha ao pedir permissao de camera:', err);
+    }
+  }
+  return cams;
+}
+
+function pickCameraDevice(cams) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('camera-picker-overlay');
+    const optionsEl = document.getElementById('camera-options');
+    const cancelBtn = document.getElementById('btn-camera-picker-cancel');
+    const savedId = (() => {
+      try { return localStorage.getItem(CAMERA_DEVICE_STORAGE_KEY); } catch (err) { return null; }
+    })();
+
+    optionsEl.innerHTML = '';
+    cams.forEach((cam, i) => {
+      const opt = document.createElement('div');
+      opt.className = 'camera-option' + (cam.deviceId === savedId ? ' selected' : '');
+      opt.textContent = cam.label || `Câmera ${i + 1}`;
+      opt.addEventListener('click', () => {
+        try { localStorage.setItem(CAMERA_DEVICE_STORAGE_KEY, cam.deviceId); } catch (err) {}
+        overlay.classList.add('hidden');
+        resolve(cam.deviceId);
+      });
+      optionsEl.appendChild(opt);
+    });
+
+    cancelBtn.onclick = () => {
+      overlay.classList.add('hidden');
+      resolve(null);
+    };
+
+    overlay.classList.remove('hidden');
+  });
+}
+
+// Retorna { ok, deviceId }. ok=false so quando o usuario cancela o seletor
+// (com 2+ cameras disponiveis) - com 0 ou 1 camera, segue direto.
+async function chooseCameraDeviceId() {
+  const cams = await listCameraDevices();
+  if (cams.length <= 1) return { ok: true, deviceId: cams[0]?.deviceId || null };
+  const chosen = await pickCameraDevice(cams);
+  if (chosen === null) return { ok: false, deviceId: null };
+  return { ok: true, deviceId: chosen };
+}
+
 async function startCameraShare() {
+  const choice = await chooseCameraDeviceId();
+  if (!choice.ok) return;
+
+  const videoConstraints = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+  if (choice.deviceId) videoConstraints.deviceId = { exact: choice.deviceId };
+
   try {
     localVideoStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      video: videoConstraints,
       audio: false,
     });
   } catch (err) {
