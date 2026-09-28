@@ -8,8 +8,12 @@
 <body>
   <div id="login-screen" class="screen">
     <div class="login-box">
-      <h1>ScreenBunny</h1>
+      <div class="brand">
+        <img src="assets/logo.png" alt="ScreenBunny" />
+        <h1>Screen<span>Bunny</span></h1>
+      </div>
       <p class="subtitle">fiz essa parada aqui pra gente streamar tela, sucumba lula e janja</p>
+      <hr class="divider" />
 
       <label>Endereço do servidor</label>
       <input id="server-url" type="text" placeholder="https://seu-servidor.onrender.com" value="https://screenbunny.onrender.com" />
@@ -26,6 +30,8 @@
       <button id="btn-join">Entrar</button>
       <p id="login-error" class="error"></p>
     </div>
+
+    <div id="members-strip" class="members-strip"></div>
   </div>
 
   <div id="room-screen" class="screen hidden">

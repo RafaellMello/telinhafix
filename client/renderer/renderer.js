@@ -32,6 +32,43 @@ function startNamePlaceholderCycle() {
 
 startNamePlaceholderCycle();
 
+const AVATAR_FILES = [
+  'babini.jpg', 'babini2.jpg', 'coka.jpg', 'dani.jpg', 'dragon.jpg',
+  'fab.jpg', 'hent.jpg', 'img-20240330-wa0127_original.jpg', 'nathan.jpg',
+  'nathanthegoat.jpg', 'pc.jpg', 'screenshot_20251112_185935_discord.jpg',
+  'thiaginfn.jpg', 'thiaguinis.jpg', 'tutuzada.jpg', 'yuri.jpg',
+];
+
+function hashString(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h * 31 + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function avatarFor(key) {
+  const file = AVATAR_FILES[hashString(key) % AVATAR_FILES.length];
+  return `assets/avatars/${file}`;
+}
+
+function populateMembersStrip() {
+  const strip = document.getElementById('members-strip');
+  if (!strip) return;
+  AVATAR_FILES.forEach((file, i) => {
+    const card = document.createElement('div');
+    card.className = 'member-card';
+    card.style.setProperty('--tilt', `${(i % 2 === 0 ? -1 : 1) * (4 + (i % 3) * 3)}deg`);
+    const img = document.createElement('img');
+    img.src = `assets/avatars/${file}`;
+    img.alt = '';
+    card.appendChild(img);
+    strip.appendChild(card);
+  });
+}
+
+populateMembersStrip();
+
 let selfId = null;
 let localStream = null;
 // peerId -> { pc, polite, makingOffer, ignoreOffer, name }
@@ -46,7 +83,17 @@ function setLoginError(msg) {
 function addParticipantRow(id, name, isSelf) {
   const li = document.createElement('li');
   li.id = `participant-${id}`;
-  li.textContent = isSelf ? `${name} (voce)` : name;
+
+  const avatar = document.createElement('img');
+  avatar.className = 'avatar-dot';
+  avatar.src = avatarFor(name || id);
+  avatar.alt = '';
+
+  const label = document.createElement('span');
+  label.textContent = isSelf ? `${name} (voce)` : name;
+
+  li.appendChild(avatar);
+  li.appendChild(label);
   participantsList.appendChild(li);
 }
 
