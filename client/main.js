@@ -53,6 +53,83 @@ function stopAudioCapture() {
   }
 }
 
+// Abre uma janelinha propria com miniaturas de cada monitor/janela pra
+// escolher qual compartilhar. O seletor nativo do Windows (useSystemPicker)
+// as vezes nao esta disponivel e cai num fallback silencioso sem perguntar
+// nada - isso aqui garante que sempre aparece uma escolha.
+function pickScreenSource(parentWin) {
+  return new Promise(async (resolve) => {
+    let sources;
+    try {
+      sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 320, height: 180 },
+      });
+    } catch (err) {
+      console.error('Falha ao listar telas:', err);
+      resolve(null);
+      return;
+    }
+
+    if (sources.length === 0) {
+      resolve(null);
+      return;
+    }
+    if (sources.length === 1) {
+      resolve(sources[0]);
+      return;
+    }
+
+    const pickerWin = new BrowserWindow({
+      width: 780,
+      height: 420,
+      parent: parentWin || undefined,
+      modal: !!parentWin,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      autoHideMenuBar: true,
+      title: 'Escolha a tela - ScreenBunny',
+      backgroundColor: '#060607',
+      webPreferences: {
+        preload: path.join(__dirname, 'picker', 'picker-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    let settled = false;
+    const finish = (source) => {
+      if (settled) return;
+      settled = true;
+      resolve(source);
+    };
+
+    const onChoice = (event, chosenId) => {
+      finish(sources.find((s) => s.id === chosenId) || sources[0]);
+      if (!pickerWin.isDestroyed()) pickerWin.close();
+    };
+
+    ipcMain.once('screen-picker:choice', onChoice);
+
+    pickerWin.on('closed', () => {
+      ipcMain.removeListener('screen-picker:choice', onChoice);
+      finish(null);
+    });
+
+    pickerWin.webContents.once('did-finish-load', () => {
+      const payload = sources.map((s) => ({
+        id: s.id,
+        name: s.name,
+        thumbnail: s.thumbnail.toDataURL(),
+      }));
+      pickerWin.webContents.send('screen-picker:sources', payload);
+    });
+
+    pickerWin.loadFile(path.join(__dirname, 'picker', 'picker.html'));
+  });
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1100,
@@ -69,30 +146,27 @@ function createWindow() {
   });
 
   // Trata os pedidos de navigator.mediaDevices.getDisplayMedia() feitos no
-  // renderer. Tenta usar o seletor nativo do Windows (que ja deixa escolher
-  // o monitor/janela). O audio do sistema NAO vem por aqui - o renderer pede
-  // so video (audio: false) porque o audio real vem do helper nativo
+  // renderer, abrindo o seletor proprio (pickScreenSource) pra escolher o
+  // monitor. O audio do sistema NAO vem por aqui - o renderer pede so video
+  // (audio: false) porque o audio real vem do helper nativo
   // (ScreenBunnyAudioHelper), que captura o sistema todo excluindo o
   // Discord. Se por algum motivo o renderer pedir audio por esse caminho
   // mesmo assim, ainda respondemos com o loopback padrao como fallback.
-  session.defaultSession.setDisplayMediaRequestHandler(
-    async (request, callback) => {
-      try {
-        const sources = await desktopCapturer.getSources({ types: ['screen'] });
-        if (!sources.length) {
-          callback({});
-          return;
-        }
-        const response = { video: sources[0] };
-        if (request.audioRequested) response.audio = 'loopback';
-        callback(response);
-      } catch (err) {
-        console.error('Falha ao capturar tela:', err);
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const source = await pickScreenSource(win);
+      if (!source) {
         callback({});
+        return;
       }
-    },
-    { useSystemPicker: true }
-  );
+      const response = { video: source };
+      if (request.audioRequested) response.audio = 'loopback';
+      callback(response);
+    } catch (err) {
+      console.error('Falha ao capturar tela:', err);
+      callback({});
+    }
+  });
 
   ipcMain.handle('audio-capture-start', (event) => {
     startAudioCapture(BrowserWindow.fromWebContents(event.sender));
