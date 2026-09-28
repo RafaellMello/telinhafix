@@ -91,3 +91,11 @@ contextBridge.exposeInMainWorld('audioCapture', {
     ipcRenderer.on('screenbunny-audio-chunk', (event, chunk) => cb(chunk));
   },
 });
+
+// Qualidade (resolucao + fps) escolhida na ultima vez que o seletor de
+// tela/janela foi usado.
+contextBridge.exposeInMainWorld('screenPicker', {
+  getQuality() {
+    return ipcRenderer.invoke('get-last-picked-quality');
+  },
+});

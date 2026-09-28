@@ -2,10 +2,11 @@
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8" />
-  <title>Escolha a tela</title>
+  <title>Escolha o que compartilhar</title>
   <style>
     :root {
       --bg: #060607;
+      --bg-elevated: #131315;
       --red: #e2231a;
       --red-bright: #ff3b2f;
       --border: rgba(226, 35, 26, 0.35);
@@ -16,70 +17,193 @@
       background: var(--bg);
       color: #f2f0ec;
       font-family: 'Segoe UI', Arial, sans-serif;
-      padding: 20px;
+      padding: 18px 20px;
     }
     h1 {
-      margin: 0 0 16px 0;
-      font-size: 16px;
+      margin: 0 0 4px 0;
+      font-size: 15px;
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 1px;
       color: var(--red-bright);
       text-align: center;
     }
+    h2 {
+      margin: 14px 0 8px 0;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #9a9499;
+    }
+
+    /* Abas Telas / Janelas */
+    .tabs { display: flex; gap: 8px; justify-content: center; margin: 12px 0; }
+    .tab {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: #cfcfcf;
+      padding: 6px 16px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+    }
+    .tab.active { background: var(--red); border-color: var(--red); color: #fff; }
+
     #grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      max-height: 240px;
+      overflow-y: auto;
+      padding: 4px;
     }
     .option {
-      background: #131315;
+      background: var(--bg-elevated);
       border: 2px solid var(--border);
       border-radius: 4px;
       cursor: pointer;
       overflow: hidden;
       padding: 0;
       transition: border-color 0.15s, transform 0.1s;
+      text-align: left;
     }
     .option:hover { border-color: var(--red); transform: scale(1.02); }
+    .option.selected { border-color: var(--red-bright); box-shadow: 0 0 0 2px rgba(255,59,47,0.35); }
     .option img {
       width: 100%;
+      height: 96px;
+      object-fit: cover;
       display: block;
       background: #000;
     }
     .option .name {
-      padding: 8px 10px;
-      font-size: 12px;
+      padding: 6px 8px;
+      font-size: 11.5px;
       color: #cfcfcf;
-      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+
+    .quality-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .quality-btn {
+      background: var(--bg-elevated);
+      border: 2px solid var(--border);
+      color: #cfcfcf;
+      padding: 8px 14px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .quality-btn.selected { border-color: var(--red-bright); background: var(--red); color: #fff; }
+
+    .footer { display: flex; justify-content: center; margin-top: 18px; }
+    #btn-confirm {
+      background: linear-gradient(180deg, var(--red-bright), var(--red));
+      border: none;
+      color: #fff;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      font-size: 13px;
+      padding: 10px 28px;
+      border-radius: 3px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(226, 35, 26, 0.35);
+    }
+    #btn-confirm:disabled { opacity: 0.4; cursor: default; }
   </style>
 </head>
 <body>
-  <h1>Qual tela voce quer compartilhar?</h1>
+  <h1>O que voce quer compartilhar?</h1>
+
+  <div class="tabs">
+    <div class="tab active" data-type="screen">Tela inteira</div>
+    <div class="tab" data-type="window">Janela de um programa</div>
+  </div>
+
   <div id="grid"></div>
+
+  <h2>Qualidade da transmissao</h2>
+  <div class="quality-row">
+    <div class="quality-btn" data-quality="720p30">720p 30fps</div>
+    <div class="quality-btn" data-quality="720p60">720p 60fps</div>
+    <div class="quality-btn selected" data-quality="1080p30">1080p 30fps</div>
+    <div class="quality-btn" data-quality="1080p60">1080p 60fps</div>
+  </div>
+
+  <div class="footer">
+    <button id="btn-confirm" disabled>Compartilhar</button>
+  </div>
 
   <script>
     const grid = document.getElementById('grid');
+    const tabs = document.querySelectorAll('.tab');
+    const qualityBtns = document.querySelectorAll('.quality-btn');
+    const confirmBtn = document.getElementById('btn-confirm');
 
-    window.picker.onSources((sources) => {
+    let allSources = [];
+    let currentType = 'screen';
+    let selectedSourceId = null;
+    let selectedQuality = '1080p30';
+
+    function render() {
       grid.innerHTML = '';
-      sources.forEach((s) => {
+      const filtered = allSources.filter((s) => s.type === currentType);
+      filtered.forEach((s) => {
         const btn = document.createElement('button');
-        btn.className = 'option';
+        btn.className = 'option' + (s.id === selectedSourceId ? ' selected' : '');
 
         const img = document.createElement('img');
         img.src = s.thumbnail;
 
         const name = document.createElement('div');
         name.className = 'name';
-        name.textContent = s.name || 'Tela';
+        name.textContent = s.name || (currentType === 'screen' ? 'Tela' : 'Janela');
 
         btn.appendChild(img);
         btn.appendChild(name);
-        btn.addEventListener('click', () => window.picker.choose(s.id));
+        btn.addEventListener('click', () => {
+          selectedSourceId = s.id;
+          confirmBtn.disabled = false;
+          render();
+        });
         grid.appendChild(btn);
       });
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((t) => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentType = tab.dataset.type;
+        selectedSourceId = null;
+        confirmBtn.disabled = true;
+        render();
+      });
+    });
+
+    qualityBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        qualityBtns.forEach((b) => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedQuality = btn.dataset.quality;
+      });
+    });
+
+    confirmBtn.addEventListener('click', () => {
+      if (!selectedSourceId) return;
+      window.picker.choose(selectedSourceId, selectedQuality);
+    });
+
+    window.picker.onSources((sources) => {
+      allSources = sources;
+      render();
     });
   </script>
 </body>
