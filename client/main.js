@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, desktopCapturer, ipcMain } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell } = require('electron');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 
@@ -240,6 +240,12 @@ function createWindow() {
   ipcMain.handle('get-last-picked-quality', () => lastPickedQuality);
   ipcMain.handle('get-last-picked-audio-config', () => lastPickedAudioConfig);
   ipcMain.handle('list-running-apps', () => listRunningApps());
+
+  // Link fixo de credito - so abre essa URL especifica no navegador padrao
+  // do sistema (nunca dentro da propria janela do app).
+  ipcMain.handle('open-credit-link', () => {
+    shell.openExternal('https://rafaelmello.site');
+  });
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }

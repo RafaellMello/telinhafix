@@ -99,3 +99,9 @@ contextBridge.exposeInMainWorld('screenPicker', {
     return ipcRenderer.invoke('get-last-picked-quality');
   },
 });
+
+contextBridge.exposeInMainWorld('appLinks', {
+  openCredit() {
+    return ipcRenderer.invoke('open-credit-link');
+  },
+});
