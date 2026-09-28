@@ -285,8 +285,9 @@ async function applyBitrateToSender(sender, quality) {
   }
 }
 
-function setLoginError(msg) {
+function setLoginError(msg, isInfo = false) {
   loginError.textContent = msg || '';
+  loginError.style.color = isInfo ? 'var(--text-muted)' : '';
 }
 
 function addParticipantRow(id, name, isSelf) {
@@ -1079,8 +1080,10 @@ btnJoin.addEventListener('click', async () => {
   }
 
   btnJoin.disabled = true;
+  setLoginError('Conectando... pode levar até 1 minuto se o servidor estava "dormindo".', true);
   try {
     await window.rtc.connect(serverUrl, password);
+    setLoginError('');
     const { selfId: id, peers: existingPeers } = await window.rtc.joinRoom(roomId, name);
     selfId = id;
 
