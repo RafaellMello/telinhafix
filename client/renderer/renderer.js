@@ -118,7 +118,7 @@ function removeParticipantRow(id) {
   if (li) li.remove();
 }
 
-function getOrCreateVideoTile(peerId, label) {
+function getOrCreateVideoTile(peerId, label, isSelf = false) {
   let tile = document.getElementById(`tile-${peerId}`);
   if (tile) return tile.querySelector('video');
 
@@ -129,6 +129,9 @@ function getOrCreateVideoTile(peerId, label) {
   const video = document.createElement('video');
   video.autoplay = true;
   video.playsInline = true;
+  // Sem isso, quem compartilha ouviria o proprio audio capturado tocando
+  // de volta pelas caixas de som dele mesmo (eco).
+  if (isSelf) video.muted = true;
 
   const labelEl = document.createElement('div');
   labelEl.className = 'label';
@@ -136,6 +139,34 @@ function getOrCreateVideoTile(peerId, label) {
 
   tile.appendChild(video);
   tile.appendChild(labelEl);
+
+  // Volume so afeta o que VOCE ouve dessa pessoa - e local, ninguem mais
+  // na sala e afetado. Por isso nao existe controle na sua propria tile.
+  if (!isSelf) {
+    const volumeRow = document.createElement('div');
+    volumeRow.className = 'volume-control';
+
+    const icon = document.createElement('span');
+    icon.className = 'volume-icon';
+    icon.textContent = '\u{1F50A}';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '100';
+    slider.value = '100';
+    slider.className = 'volume-slider';
+    slider.addEventListener('input', () => {
+      video.volume = Number(slider.value) / 100;
+      icon.textContent = Number(slider.value) === 0 ? '\u{1F507}' : '\u{1F50A}';
+    });
+    slider.addEventListener('click', (e) => e.stopPropagation());
+
+    volumeRow.appendChild(icon);
+    volumeRow.appendChild(slider);
+    tile.appendChild(volumeRow);
+  }
+
   videoGrid.appendChild(tile);
 
   return video;
@@ -392,7 +423,7 @@ async function startShare() {
 
   attachLocalStreamToAllPeers(localStream);
 
-  const video = getOrCreateVideoTile(selfId, 'Você (compartilhando)');
+  const video = getOrCreateVideoTile(selfId, 'Você (compartilhando)', true);
   video.srcObject = localStream;
 
   btnShare.classList.add('hidden');
