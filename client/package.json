@@ -1,5 +1,5 @@
 {
-  "name": "meudiscordlocal",
+  "name": "screenbunny",
   "version": "1.0.0",
   "description": "App local para compartilhamento de tela entre amigos, estilo Discord",
   "main": "main.js",
@@ -15,8 +15,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.meudiscordlocal.app",
-    "productName": "MeuDiscordLocal",
+    "appId": "com.screenbunny.app",
+    "productName": "ScreenBunny",
     "files": [
       "main.js",
       "preload.js",
@@ -27,7 +27,7 @@
       "target": "portable"
     },
     "portable": {
-      "artifactName": "MeuDiscordLocal.exe"
+      "artifactName": "ScreenBunny.exe"
     }
   }
 }

@@ -1,4 +1,4 @@
-# MeuDiscordLocal
+# ScreenBunny
 
 App proprio, sem custo, para voce e seus amigos compartilharem tela (com audio
 do sistema) pela internet — sem depender do Discord.
@@ -31,7 +31,7 @@ Estrutura:
    uma senha qualquer, so pra impedir que estranhos usem seu servidor caso
    descubram o endereco. Combine essa senha com seus amigos.
 6. Depois do deploy, o Render te da uma URL tipo
-   `https://meudiscordlocal.onrender.com`. E esse endereco que vai no campo
+   `https://screenbunny.onrender.com`. E esse endereco que vai no campo
    "Endereco do servidor" do app.
 
 > Observacao: no plano gratis do Render, o servidor "dorme" depois de um
@@ -59,7 +59,7 @@ Dentro de `client/`:
 npm run dist
 ```
 
-Isso gera um arquivo `MeuDiscordLocal.exe` portatil dentro da pasta `dist/`.
+Isso gera um arquivo `ScreenBunny.exe` portatil dentro da pasta `dist/`.
 Basta mandar esse .exe pros seus amigos — eles baixam, clicam duas vezes, e
 o app abre direto (sem instalacao).
 
