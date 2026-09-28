@@ -448,6 +448,7 @@ function setTileContentHidden(peerId, tile, hidden) {
   if (hidden) hiddenPeers.add(peerId);
   else hiddenPeers.delete(peerId);
   tile.classList.toggle('content-hidden', hidden);
+  applyGain(peerId);
 }
 
 function showTileContextMenu(x, y, peerId, tile) {
@@ -483,16 +484,36 @@ function getSharedAudioContext() {
   return sharedAudioCtx;
 }
 
+// createMediaElementSource(video) se mostrou nao confiavel com um <video>
+// cujo srcObject e um MediaStream ao vivo (WebRTC) - o audio saia sempre
+// mudo (testei e confirmei: bytes chegando de verdade pela rede, mas o
+// grafo do Web Audio lia silencio puro). createMediaStreamSource direto na
+// track de audio, ignorando o elemento de video, e o jeito recomendado
+// pra esse caso e funciona de forma confiavel.
+//
+// Como a track passa a ser consumida por DOIS lugares ao mesmo tempo (o
+// <video>, que mostra a imagem, e esse source node, que cuida do audio),
+// o <video> fica mudo (video.muted = true) pra nao tocar o audio dele
+// tambem por fora do nosso GainNode - senao ficaria dobrado.
+function wireRemoteAudioGain(peerId, video, audioTrack) {
+  if (remoteGainNodes.has(peerId)) return;
+  video.muted = true;
+  const audioCtx = getSharedAudioContext();
+  const sourceNode = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
+  const gainNode = audioCtx.createGain();
+  sourceNode.connect(gainNode).connect(audioCtx.destination);
+  remoteGainNodes.set(peerId, { gainNode, sliderValue: 100 });
+  applyGain(peerId);
+}
+
 function applyGain(peerId) {
   const entry = remoteGainNodes.get(peerId);
   if (!entry) return;
   // Enquanto voce compartilha, suprime o audio dos outros pra nao vazar
-  // eco na sua propria transmissao. Multiplica tambem pelo volume/mudo
-  // NATIVO do <video> - isso faz o controle nativo do Picture-in-Picture
-  // (que o Chromium desenha sozinho, fora do nosso controle) continuar
-  // funcionando mesmo com o audio roteado pelo GainNode.
-  const nativeFactor = entry.video.muted ? 0 : entry.video.volume;
-  entry.gainNode.gain.value = (localStream ? 0 : entry.sliderValue / 100) * nativeFactor;
+  // eco na sua propria transmissao. E corta de vez quando a transmissao
+  // esta oculta (botao direito na tile).
+  const hiddenFactor = hiddenPeers.has(peerId) ? 0 : 1;
+  entry.gainNode.gain.value = (localStream ? 0 : entry.sliderValue / 100) * hiddenFactor;
 }
 
 function refreshAllGainsForSharingState() {
@@ -592,19 +613,12 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
 
   // Volume so afeta o que VOCE ouve dessa pessoa - e local, ninguem mais
   // na sala e afetado. Por isso nao existe controle na sua propria tile.
+  // A conexao com o Web Audio (createMediaElementSource) NAO e feita aqui -
+  // precisa ser depois que video.srcObject for atribuido (ver
+  // wireRemoteAudioGain, chamada em pc.ontrack). Criar o node antes disso
+  // fazia o audio sair sempre mudo (RMS 0), porque o Chromium prende o
+  // source node no estado "sem stream" que existia no momento da criacao.
   if (!isSelf) {
-    const audioCtx = getSharedAudioContext();
-    const sourceNode = audioCtx.createMediaElementSource(video);
-    const gainNode = audioCtx.createGain();
-    sourceNode.connect(gainNode).connect(audioCtx.destination);
-    remoteGainNodes.set(peerId, { gainNode, sliderValue: 100, video });
-    applyGain(peerId);
-    // O Picture-in-Picture do Chromium desenha seu proprio controle de
-    // mudo/volume por cima do video, mexendo direto em video.muted/volume -
-    // sem isso, aquele controle nativo nao tinha efeito nenhum no audio
-    // (que passa pelo GainNode, nao pela saida normal do <video>).
-    video.addEventListener('volumechange', () => applyGain(peerId));
-
     const volumeRow = document.createElement('div');
     volumeRow.className = 'volume-control';
 
@@ -683,6 +697,12 @@ function createPeerConnection(peerId) {
     const name = peerNames.get(peerId) || 'Participante';
     const video = getOrCreateVideoTile(peerId, name);
     video.srcObject = event.streams[0];
+    // So conecta ao Web Audio quando a track de AUDIO especificamente
+    // chega - assim garante que o stream ja tem audio de verdade no
+    // momento da conexao (ver comentario em wireRemoteAudioGain).
+    if (event.track.kind === 'audio') {
+      wireRemoteAudioGain(peerId, video, event.track);
+    }
 
     event.track.onended = () => {
       removeVideoTile(peerId);
