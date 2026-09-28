@@ -29,10 +29,10 @@ body {
 
 #login-screen {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 28px;
+  gap: 36px;
   padding: 24px;
   overflow-y: auto;
 }
@@ -142,18 +142,23 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .error { color: var(--red-bright); font-size: 12px; min-height: 16px; margin-top: 10px; text-align: center; }
 
-/* Faixa de avatares dos membros, estilo "polaroid" torto */
-.members-strip {
+/* Colunas de avatares dos membros, estilo "polaroid" torto, dos dois
+   lados do card de login. */
+.members-col {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 14px;
-  max-width: 520px;
+  flex-direction: column;
+  gap: 16px;
+  width: 68px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+  .members-col { display: none; }
 }
 
 .member-card {
-  width: 64px;
-  height: 64px;
+  width: 60px;
+  height: 60px;
   border-radius: 4px;
   overflow: hidden;
   border: 2px solid #232326;

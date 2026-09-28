@@ -52,9 +52,11 @@ function avatarFor(key) {
   return `assets/avatars/${file}`;
 }
 
-function populateMembersStrip() {
-  const strip = document.getElementById('members-strip');
-  if (!strip) return;
+function populateMembersColumns() {
+  const left = document.getElementById('members-left');
+  const right = document.getElementById('members-right');
+  if (!left || !right) return;
+
   AVATAR_FILES.forEach((file, i) => {
     const card = document.createElement('div');
     card.className = 'member-card';
@@ -63,11 +65,11 @@ function populateMembersStrip() {
     img.src = `assets/avatars/${file}`;
     img.alt = '';
     card.appendChild(img);
-    strip.appendChild(card);
+    (i % 2 === 0 ? left : right).appendChild(card);
   });
 }
 
-populateMembersStrip();
+populateMembersColumns();
 
 let selfId = null;
 let localStream = null;
