@@ -9,3 +9,7 @@ dist/
 client/native/*.exe
 client/native-audio/bin/
 client/native-audio/obj/
+
+# Fotos originais (grandes, algumas dezenas de MB) usadas so como fonte
+# para gerar os avatares pequenos em client/renderer/assets/avatars/.
+/fotos/
