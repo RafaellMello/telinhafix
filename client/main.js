@@ -2,6 +2,18 @@ const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell } = require
 const path = require('path');
 const { spawn, exec } = require('child_process');
 
+// O Chromium no Windows captura tela usando a Windows Graphics Capture API
+// (WGC) por padrao. O WGC as vezes desenha o cursor "fantasma" na captura
+// mesmo quando o jogo escondeu o cursor de verdade na tela (acontece com
+// alguns jogos que usam raw input pra travar o mouse durante a mira) -
+// o cursor que aparece na transmissao nao e o que a pessoa que compartilha
+// esta vendo na propria tela. Desativando o WGC so pra captura de MONITOR
+// (nao janela, pra nao arriscar tela preta em jogos DirectX capturados por
+// janela), o Chromium cai pro Desktop Duplication API (DXGI), que consulta
+// o estado real de visibilidade do cursor do sistema em vez de compor um
+// estado desatualizado.
+app.commandLine.appendSwitch('disable-features', 'WebRtcWgcScreenCapturer');
+
 let audioHelperProcess = null;
 let audioLeftover = Buffer.alloc(0);
 
