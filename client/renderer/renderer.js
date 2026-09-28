@@ -118,6 +118,112 @@ function removeParticipantRow(id) {
   if (li) li.remove();
 }
 
+// --- Tela cheia, destacar (PiP) e modo foco -------------------------------
+
+function toggleTileFullscreen(tile) {
+  if (document.fullscreenElement === tile) {
+    document.exitFullscreen();
+  } else {
+    tile.requestFullscreen().catch((err) => console.error('Falha ao entrar em tela cheia:', err));
+  }
+}
+
+let focusedPeerId = null;
+
+function applyFocusClassesTo(tile, peerId) {
+  if (!focusedPeerId) {
+    tile.classList.remove('tile-focused', 'tile-minor');
+    return;
+  }
+  tile.classList.toggle('tile-focused', peerId === focusedPeerId);
+  tile.classList.toggle('tile-minor', peerId !== focusedPeerId);
+}
+
+function setFocus(peerId) {
+  focusedPeerId = focusedPeerId === peerId ? null : peerId;
+  videoGrid.classList.toggle('layout-focus', !!focusedPeerId);
+  document.querySelectorAll('.video-tile').forEach((t) => {
+    applyFocusClassesTo(t, t.id.replace('tile-', ''));
+  });
+}
+
+// --- Indicador de qualidade da conexao ------------------------------------
+
+const QUALITY_COLORS = { green: '#3ddc73', yellow: '#f2c94c', red: '#ff4d4d' };
+const QUALITY_LABELS = { green: 'Conexao boa', yellow: 'Conexao instavel', red: 'Conexao ruim' };
+
+function setQualityDot(peerId, level) {
+  const dot = document.getElementById(`quality-${peerId}`);
+  if (!dot) return;
+  dot.style.background = QUALITY_COLORS[level] || QUALITY_COLORS.green;
+  dot.title = QUALITY_LABELS[level] || '';
+}
+
+async function pollRemoteQuality(peerId, pc) {
+  try {
+    const stats = await pc.getStats();
+    let inboundVideo = null;
+    let rttMs = null;
+    stats.forEach((report) => {
+      if (report.type === 'inbound-rtp' && report.kind === 'video') inboundVideo = report;
+      if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.currentRoundTripTime != null) {
+        rttMs = report.currentRoundTripTime * 1000;
+      }
+    });
+    if (!inboundVideo) return;
+    const lost = inboundVideo.packetsLost || 0;
+    const received = inboundVideo.packetsReceived || 0;
+    const total = lost + received;
+    const lossPct = total > 0 ? (lost / total) * 100 : 0;
+    let level = 'green';
+    if (lossPct > 8 || (rttMs && rttMs > 500)) level = 'red';
+    else if (lossPct > 2 || (rttMs && rttMs > 250)) level = 'yellow';
+    setQualityDot(peerId, level);
+  } catch (err) {
+    // tenta de novo no proximo ciclo
+  }
+}
+
+async function pollSelfQuality() {
+  if (!localStream || !selfId) return;
+  const videoTrack = localStream.getVideoTracks()[0];
+  if (!videoTrack) return;
+  let level = 'green';
+  for (const [, state] of peers) {
+    const sender = state.pc.getSenders().find((s) => s.track === videoTrack);
+    if (!sender) continue;
+    try {
+      const stats = await sender.getStats();
+      stats.forEach((report) => {
+        if (report.type !== 'outbound-rtp' || report.kind !== 'video') return;
+        if (report.qualityLimitationReason === 'bandwidth') level = 'red';
+        else if (report.qualityLimitationReason === 'cpu' && level !== 'red') level = 'yellow';
+      });
+    } catch (err) {
+      // tenta de novo no proximo ciclo
+    }
+  }
+  setQualityDot(selfId, level);
+}
+
+setInterval(() => {
+  for (const [peerId, state] of peers) {
+    if (state.pc.connectionState === 'connected') pollRemoteQuality(peerId, state.pc);
+  }
+  pollSelfQuality();
+}, 3000);
+
+// --- Contador de audiencia (so pra quem esta compartilhando) -------------
+
+function updateSelfAudienceLabel() {
+  if (!selfId) return;
+  const tile = document.getElementById(`tile-${selfId}`);
+  if (!tile) return;
+  const labelText = tile.querySelector('.label-text');
+  if (!labelText) return;
+  labelText.textContent = `Você (compartilhando) — ${peers.size} na sala`;
+}
+
 function getOrCreateVideoTile(peerId, label, isSelf = false) {
   let tile = document.getElementById(`tile-${peerId}`);
   if (tile) return tile.querySelector('video');
@@ -135,10 +241,65 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
 
   const labelEl = document.createElement('div');
   labelEl.className = 'label';
-  labelEl.textContent = label;
+
+  const qualityDot = document.createElement('span');
+  qualityDot.className = 'quality-dot';
+  qualityDot.id = `quality-${peerId}`;
+  qualityDot.title = 'Conexao';
+
+  const labelText = document.createElement('span');
+  labelText.className = 'label-text';
+  labelText.textContent = label;
+
+  labelEl.appendChild(qualityDot);
+  labelEl.appendChild(labelText);
+
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'tile-actions';
+
+  const btnFullscreen = document.createElement('button');
+  btnFullscreen.className = 'tile-action-btn';
+  btnFullscreen.textContent = '⛶';
+  btnFullscreen.title = 'Tela cheia (ou 2 cliques no video)';
+  btnFullscreen.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleTileFullscreen(tile);
+  });
+
+  const btnPip = document.createElement('button');
+  btnPip.className = 'tile-action-btn';
+  btnPip.textContent = '\u{1F5D7}';
+  btnPip.title = 'Destacar em janela flutuante';
+  btnPip.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      if (document.pictureInPictureElement === video) {
+        await document.exitPictureInPicture();
+      } else {
+        await video.requestPictureInPicture();
+      }
+    } catch (err) {
+      console.error('Falha ao destacar video:', err);
+    }
+  });
+
+  const btnFocus = document.createElement('button');
+  btnFocus.className = 'tile-action-btn';
+  btnFocus.textContent = '\u{1F50D}';
+  btnFocus.title = 'Focar (encolher os outros)';
+  btnFocus.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setFocus(peerId);
+  });
+
+  actionsRow.appendChild(btnFullscreen);
+  actionsRow.appendChild(btnPip);
+  actionsRow.appendChild(btnFocus);
 
   tile.appendChild(video);
   tile.appendChild(labelEl);
+  tile.appendChild(actionsRow);
+  tile.addEventListener('dblclick', () => toggleTileFullscreen(tile));
 
   // Volume so afeta o que VOCE ouve dessa pessoa - e local, ninguem mais
   // na sala e afetado. Por isso nao existe controle na sua propria tile.
@@ -168,6 +329,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
   }
 
   videoGrid.appendChild(tile);
+  applyFocusClassesTo(tile, peerId);
 
   return video;
 }
@@ -175,6 +337,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
 function removeVideoTile(peerId) {
   const tile = document.getElementById(`tile-${peerId}`);
   if (tile) tile.remove();
+  if (focusedPeerId === peerId) setFocus(peerId);
 }
 
 function createPeerConnection(peerId) {
@@ -425,6 +588,7 @@ async function startShare() {
 
   const video = getOrCreateVideoTile(selfId, 'Você (compartilhando)', true);
   video.srcObject = localStream;
+  updateSelfAudienceLabel();
 
   btnShare.classList.add('hidden');
   btnStopShare.classList.remove('hidden');
@@ -489,6 +653,7 @@ btnJoin.addEventListener('click', async () => {
       peerNames.set(peerId, peerName);
       addParticipantRow(peerId, peerName, false);
       createPeerConnection(peerId);
+      updateSelfAudienceLabel();
     });
 
     window.rtc.onPeerLeft(({ id: peerId }) => {
@@ -496,6 +661,7 @@ btnJoin.addEventListener('click', async () => {
       if (state) state.pc.close();
       peers.delete(peerId);
       peerNames.delete(peerId);
+      updateSelfAudienceLabel();
       removeParticipantRow(peerId);
       removeVideoTile(peerId);
     });

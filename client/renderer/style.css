@@ -264,10 +264,83 @@ button:disabled { opacity: 0.5; cursor: default; }
   left: 8px;
   background: rgba(20, 5, 5, 0.75);
   border: 1px solid var(--border);
-  padding: 2px 9px;
+  padding: 3px 9px;
   border-radius: 3px;
   font-size: 12px;
   letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 100px);
+}
+
+.label-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red-bright);
+  flex-shrink: 0;
+}
+
+.tile-actions {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.video-tile:hover .tile-actions { opacity: 1; }
+
+.tile-action-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 3px;
+  background: rgba(20, 5, 5, 0.8);
+  border: 1px solid var(--border);
+  color: #f2f0ec;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.tile-action-btn:hover { filter: none; background: var(--red); }
+
+/* Modo foco: a tile focada ocupa o espaco principal, as outras encolhem
+   numa faixa. flex-direction column faz o flex-basis virar altura. */
+#video-grid.layout-focus {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#video-grid.layout-focus .video-tile {
+  flex: 0 0 90px;
+  aspect-ratio: 16 / 9;
+  order: 2;
+  width: auto;
+}
+
+#video-grid.layout-focus .video-tile.tile-focused {
+  flex: 1 1 auto;
+  aspect-ratio: unset;
+  order: 1;
+}
+
+.video-tile:fullscreen {
+  border: none;
+  border-radius: 0;
 }
 
 .volume-control {

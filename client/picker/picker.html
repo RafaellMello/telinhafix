@@ -12,6 +12,7 @@
       --border: rgba(226, 35, 26, 0.35);
     }
     * { box-sizing: border-box; }
+    .hidden { display: none !important; }
     body {
       margin: 0;
       background: var(--bg);
@@ -102,6 +103,29 @@
     }
     .quality-btn.selected { border-color: var(--red-bright); background: var(--red); color: #fff; }
 
+    .audio-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; align-items: center; }
+    .audio-btn {
+      background: var(--bg-elevated);
+      border: 2px solid var(--border);
+      color: #cfcfcf;
+      padding: 8px 14px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .audio-btn.selected { border-color: var(--red-bright); background: var(--red); color: #fff; }
+
+    #app-select {
+      background: var(--bg-elevated);
+      border: 2px solid var(--border);
+      color: #f2f0ec;
+      padding: 7px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      max-width: 260px;
+    }
+
     .footer { display: flex; justify-content: center; margin-top: 18px; }
     #btn-confirm {
       background: linear-gradient(180deg, var(--red-bright), var(--red));
@@ -135,6 +159,14 @@
     <div class="quality-btn" data-quality="720p60">720p 60fps</div>
     <div class="quality-btn selected" data-quality="1080p30">1080p 30fps</div>
     <div class="quality-btn" data-quality="1080p60">1080p 60fps</div>
+  </div>
+
+  <h2>Audio da transmissao</h2>
+  <div class="audio-row">
+    <div class="audio-btn selected" data-audio="exclude">Sistema, sem o Discord</div>
+    <div class="audio-btn" data-audio="system">Sistema todo</div>
+    <div class="audio-btn" data-audio="include">So um programa</div>
+    <select id="app-select" class="hidden"></select>
   </div>
 
   <div class="footer">
@@ -196,9 +228,48 @@
       });
     });
 
+    const audioBtns = document.querySelectorAll('.audio-btn');
+    const appSelect = document.getElementById('app-select');
+    let selectedAudioMode = 'exclude';
+    let appsLoaded = false;
+
+    async function loadAppsIfNeeded() {
+      if (appsLoaded) return;
+      appsLoaded = true;
+      const apps = await window.picker.listApps();
+      appSelect.innerHTML = '';
+      apps.forEach((a) => {
+        const opt = document.createElement('option');
+        opt.value = a.name;
+        opt.textContent = a.title;
+        appSelect.appendChild(opt);
+      });
+      if (apps.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Nenhum programa com janela aberta';
+        appSelect.appendChild(opt);
+      }
+    }
+
+    audioBtns.forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        audioBtns.forEach((b) => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedAudioMode = btn.dataset.audio;
+        if (selectedAudioMode === 'include') {
+          appSelect.classList.remove('hidden');
+          await loadAppsIfNeeded();
+        } else {
+          appSelect.classList.add('hidden');
+        }
+      });
+    });
+
     confirmBtn.addEventListener('click', () => {
       if (!selectedSourceId) return;
-      window.picker.choose(selectedSourceId, selectedQuality);
+      const audioTarget = selectedAudioMode === 'include' ? appSelect.value : 'Discord';
+      window.picker.choose(selectedSourceId, selectedQuality, selectedAudioMode, audioTarget);
     });
 
     window.picker.onSources((sources) => {

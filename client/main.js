@@ -1,6 +1,6 @@
 const { app, BrowserWindow, session, desktopCapturer, ipcMain } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 
 let audioHelperProcess = null;
 let audioLeftover = Buffer.alloc(0);
@@ -13,11 +13,46 @@ function getAudioHelperPath() {
   return path.join(__dirname, 'native', exeName);
 }
 
-function startAudioCapture(win) {
+// Lista processos com janela visivel (proxy razoavel pra "programas abertos
+// que a pessoa reconheceria"), pro seletor de "audio so de um programa".
+function listRunningApps() {
+  return new Promise((resolve) => {
+    const cmd =
+      'powershell -NoProfile -Command "Get-Process | Where-Object { $_.MainWindowTitle -ne \'\' } | ' +
+      'Select-Object -Property ProcessName,MainWindowTitle -Unique | ConvertTo-Json -Compress"';
+    exec(cmd, { windowsHide: true }, (err, stdout) => {
+      if (err || !stdout || !stdout.trim()) {
+        resolve([]);
+        return;
+      }
+      try {
+        let parsed = JSON.parse(stdout);
+        if (!Array.isArray(parsed)) parsed = [parsed];
+        const seen = new Set();
+        const apps = [];
+        for (const p of parsed) {
+          if (!p.ProcessName || seen.has(p.ProcessName)) continue;
+          seen.add(p.ProcessName);
+          apps.push({ name: p.ProcessName, title: p.MainWindowTitle || p.ProcessName });
+        }
+        apps.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'));
+        resolve(apps);
+      } catch (e) {
+        console.error('Falha ao interpretar lista de processos:', e);
+        resolve([]);
+      }
+    });
+  });
+}
+
+function startAudioCapture(win, audioConfig) {
   if (audioHelperProcess) return;
 
+  const config = audioConfig || { mode: 'exclude', target: 'Discord' };
+  const helperArgs = config.mode === 'system' ? ['system'] : [config.mode, config.target];
+
   audioLeftover = Buffer.alloc(0);
-  audioHelperProcess = spawn(getAudioHelperPath(), [], { stdio: ['ignore', 'pipe', 'pipe'] });
+  audioHelperProcess = spawn(getAudioHelperPath(), helperArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
   // Float32 estereo: 2 canais * 4 bytes = 8 bytes por frame. Os pedacos que
   // chegam do stdout nao respeitam esse alinhamento, entao remontamos aqui.
@@ -67,6 +102,9 @@ const QUALITY_PRESETS = {
 // resolve, pra aplicar via track.applyConstraints + RTCRtpSender.
 let lastPickedQuality = QUALITY_PRESETS['1080p30'];
 
+// Configuracao de audio escolhida no seletor: { mode: 'exclude'|'include'|'system', target }
+let lastPickedAudioConfig = { mode: 'exclude', target: 'Discord' };
+
 // Abre uma janelinha propria com miniaturas de cada monitor/janela (ou
 // programa especifico) pra escolher o que compartilhar, junto com a
 // qualidade (resolucao + fps). O seletor nativo do Windows (useSystemPicker)
@@ -93,7 +131,7 @@ function pickScreenSource(parentWin) {
 
     const pickerWin = new BrowserWindow({
       width: 820,
-      height: 560,
+      height: 640,
       parent: parentWin || undefined,
       modal: !!parentWin,
       resizable: false,
@@ -116,8 +154,12 @@ function pickScreenSource(parentWin) {
       resolve(source);
     };
 
-    const onChoice = (event, { sourceId, quality }) => {
+    const onChoice = (event, { sourceId, quality, audioMode, audioTarget }) => {
       lastPickedQuality = QUALITY_PRESETS[quality] || QUALITY_PRESETS['1080p30'];
+      lastPickedAudioConfig =
+        audioMode === 'include' || audioMode === 'system'
+          ? { mode: audioMode, target: audioTarget }
+          : { mode: 'exclude', target: 'Discord' };
       finish(sources.find((s) => s.id === sourceId) || sources[0]);
       if (!pickerWin.isDestroyed()) pickerWin.close();
     };
@@ -182,7 +224,7 @@ function createWindow() {
   });
 
   ipcMain.handle('audio-capture-start', (event) => {
-    startAudioCapture(BrowserWindow.fromWebContents(event.sender));
+    startAudioCapture(BrowserWindow.fromWebContents(event.sender), lastPickedAudioConfig);
   });
 
   ipcMain.handle('audio-capture-stop', () => {
@@ -190,6 +232,8 @@ function createWindow() {
   });
 
   ipcMain.handle('get-last-picked-quality', () => lastPickedQuality);
+  ipcMain.handle('get-last-picked-audio-config', () => lastPickedAudioConfig);
+  ipcMain.handle('list-running-apps', () => listRunningApps());
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
