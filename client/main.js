@@ -390,6 +390,17 @@ function createWindow() {
     stopNativeScreenCapture();
   });
 
+  // Deixa o seletor do modo "sem cursor" escolher o audio tambem, em vez de
+  // sempre reaproveitar silenciosamente a ultima escolha feita no seletor
+  // normal (que passa por pickScreenSource/picker.html, um fluxo que esse
+  // modo nao usa).
+  ipcMain.handle('native-screen-set-audio', (event, config) => {
+    lastPickedAudioConfig =
+      config && (config.mode === 'include' || config.mode === 'system')
+        ? { mode: config.mode, target: config.target }
+        : { mode: 'exclude', target: 'Discord' };
+  });
+
   ipcMain.handle('get-last-picked-quality', () => lastPickedQuality);
   ipcMain.handle('get-camera-quality', () => CAMERA_QUALITY_PRESET);
   ipcMain.handle('get-last-picked-audio-config', () => lastPickedAudioConfig);

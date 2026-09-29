@@ -267,6 +267,69 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 
+#native-monitor-picker-overlay .settings-panel {
+  width: 540px;
+}
+
+.quality-row,
+.audio-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.quality-btn,
+.audio-btn {
+  background: var(--bg);
+  border: 2px solid var(--border);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.quality-btn.selected,
+.audio-btn.selected {
+  border-color: var(--red-bright);
+  background: var(--red);
+  color: #fff;
+}
+
+#native-app-select {
+  background: var(--bg);
+  border: 2px solid var(--border);
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  max-width: 220px;
+}
+
+#btn-native-monitor-picker-confirm {
+  background: linear-gradient(180deg, var(--red-bright), var(--red));
+  border: none;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-size: 12px;
+  padding: 10px 20px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+#btn-native-monitor-picker-confirm:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#native-monitor-picker-overlay .settings-footer {
+  gap: 10px;
+}
+
 .settings-panel h2 {
   margin: 0 0 4px;
   font-size: calc(16px * var(--font-scale));

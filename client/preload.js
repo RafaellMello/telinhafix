@@ -116,6 +116,12 @@ contextBridge.exposeInMainWorld('nativeScreen', {
   listMonitors() {
     return ipcRenderer.invoke('native-screen-list');
   },
+  listApps() {
+    return ipcRenderer.invoke('list-running-apps');
+  },
+  setAudioConfig(config) {
+    return ipcRenderer.invoke('native-screen-set-audio', config);
+  },
   start(opts) {
     return ipcRenderer.invoke('native-screen-start', opts);
   },

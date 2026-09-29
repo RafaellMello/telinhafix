@@ -1063,30 +1063,119 @@ async function startShare() {
 // desenhados num canvas escondido, e o canvas.captureStream() vira a track
 // de video que a gente manda pros outros - a mesma tecnica ja usada pra
 // compor a bolinha da webcam por cima da tela.
-const NATIVE_SHARE_FPS = 60;
 const NATIVE_SHARE_QUALITY = 80;
-const NATIVE_SHARE_MAX_WIDTH = 1920;
+
+// Bitrate alvo por largura escolhida - mesmo espirito da tabela QUALITY_PRESETS
+// do main.js (usada pelo compartilhamento normal), so que mais simples,
+// ja que aqui a resolucao/fps sao dois seletores independentes em vez de
+// combinacoes fixas.
+const NATIVE_BITRATE_BY_WIDTH = {
+  1280: 3_000_000,
+  1920: 5_500_000,
+  2560: 8_000_000,
+  3840: 14_000_000,
+};
 
 let nativeShareCanvas = null;
 let nativeShareCtx = null;
 
-function pickNativeMonitor(monitors) {
+function pickNativeShareOptions(monitors) {
   return new Promise((resolve) => {
     const overlay = document.getElementById('native-monitor-picker-overlay');
     const optionsEl = document.getElementById('native-monitor-options');
     const cancelBtn = document.getElementById('btn-native-monitor-picker-cancel');
+    const confirmBtn = document.getElementById('btn-native-monitor-picker-confirm');
+    const resBtns = document.querySelectorAll('#native-resolution-row .quality-btn');
+    const fpsBtns = document.querySelectorAll('#native-fps-row .quality-btn');
+    const audioBtns = document.querySelectorAll('#native-audio-row .audio-btn');
+    const appSelect = document.getElementById('native-app-select');
+
+    let selectedMonitor = monitors.length === 1 ? monitors[0] : null;
+    let selectedWidth = 1920;
+    let selectedFps = 60;
+    let selectedAudioMode = 'exclude';
+    let appsLoaded = false;
+
+    async function loadAppsIfNeeded() {
+      if (appsLoaded) return;
+      appsLoaded = true;
+      const apps = await window.nativeScreen.listApps();
+      appSelect.innerHTML = '';
+      apps.forEach((a) => {
+        const opt = document.createElement('option');
+        opt.value = a.name;
+        opt.textContent = a.title;
+        appSelect.appendChild(opt);
+      });
+      if (apps.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Nenhum programa com janela aberta';
+        appSelect.appendChild(opt);
+      }
+    }
 
     optionsEl.innerHTML = '';
     monitors.forEach((mon, i) => {
       const opt = document.createElement('div');
-      opt.className = 'camera-option';
+      opt.className = 'camera-option' + (mon === selectedMonitor ? ' selected' : '');
       opt.textContent = `Monitor ${i + 1} (${mon.width}x${mon.height})`;
       opt.addEventListener('click', () => {
-        overlay.classList.add('hidden');
-        resolve(mon);
+        selectedMonitor = mon;
+        optionsEl.querySelectorAll('.camera-option').forEach((el) => el.classList.remove('selected'));
+        opt.classList.add('selected');
+        confirmBtn.disabled = false;
       });
       optionsEl.appendChild(opt);
     });
+
+    // .onclick (nao addEventListener) de proposito - esses botoes sao
+    // elementos fixos do HTML (nao recriados a cada vez, diferente da lista
+    // de monitores), entao addEventListener acumularia um listener novo
+    // toda vez que essa tela fosse aberta de novo.
+    resBtns.forEach((btn) => {
+      btn.onclick = () => {
+        resBtns.forEach((b) => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedWidth = Number(btn.dataset.width);
+      };
+    });
+
+    fpsBtns.forEach((btn) => {
+      btn.onclick = () => {
+        fpsBtns.forEach((b) => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedFps = Number(btn.dataset.fps);
+      };
+    });
+
+    audioBtns.forEach((btn) => {
+      btn.onclick = async () => {
+        audioBtns.forEach((b) => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedAudioMode = btn.dataset.audio;
+        if (selectedAudioMode === 'include') {
+          appSelect.classList.remove('hidden');
+          await loadAppsIfNeeded();
+        } else {
+          appSelect.classList.add('hidden');
+        }
+      };
+    });
+
+    confirmBtn.disabled = !selectedMonitor;
+    confirmBtn.onclick = () => {
+      if (!selectedMonitor) return;
+      overlay.classList.add('hidden');
+      const audioTarget = selectedAudioMode === 'include' ? appSelect.value : 'Discord';
+      resolve({
+        monitor: selectedMonitor,
+        maxWidth: selectedWidth,
+        fps: selectedFps,
+        audioMode: selectedAudioMode,
+        audioTarget,
+      });
+    };
 
     cancelBtn.onclick = () => {
       overlay.classList.add('hidden');
@@ -1103,16 +1192,21 @@ async function startNativeScreenShare() {
     console.error('Nenhum monitor encontrado pelo helper nativo.');
     return;
   }
-  const chosen = monitors.length === 1 ? monitors[0] : await pickNativeMonitor(monitors);
-  if (!chosen) return;
+  const choice = await pickNativeShareOptions(monitors);
+  if (!choice) return;
+
+  await window.nativeScreen.setAudioConfig({ mode: choice.audioMode, target: choice.audioTarget });
+
+  const { monitor } = choice;
+  const scale = choice.maxWidth < monitor.width ? choice.maxWidth / monitor.width : 1;
+  const canvasWidth = choice.maxWidth < monitor.width ? choice.maxWidth : monitor.width;
+  const canvasHeight = Math.round(monitor.height * scale);
 
   nativeShareCanvas = document.createElement('canvas');
-  nativeShareCanvas.width = chosen.width;
-  nativeShareCanvas.height = chosen.height;
+  nativeShareCanvas.width = canvasWidth;
+  nativeShareCanvas.height = canvasHeight;
   nativeShareCtx = nativeShareCanvas.getContext('2d');
 
-  window.__nativeFrameCount = 0;
-  window.__nativeFrameLastError = null;
   window.nativeScreen.onFrame((frameBuf) => {
     const blob = new Blob([frameBuf], { type: 'image/jpeg' });
     createImageBitmap(blob)
@@ -1120,27 +1214,27 @@ async function startNativeScreenShare() {
         if (!nativeShareCtx) { bmp.close(); return; }
         nativeShareCtx.drawImage(bmp, 0, 0, nativeShareCanvas.width, nativeShareCanvas.height);
         bmp.close();
-        window.__nativeFrameCount++;
       })
-      .catch((err) => { window.__nativeFrameLastError = String(err); });
+      .catch(() => {});
   });
 
   await window.nativeScreen.start({
-    adapterIndex: chosen.adapterIndex,
-    outputIndex: chosen.outputIndex,
-    fps: NATIVE_SHARE_FPS,
+    adapterIndex: monitor.adapterIndex,
+    outputIndex: monitor.outputIndex,
+    fps: choice.fps,
     quality: NATIVE_SHARE_QUALITY,
-    maxWidth: NATIVE_SHARE_MAX_WIDTH,
+    maxWidth: choice.maxWidth,
   });
 
-  localVideoStream = nativeShareCanvas.captureStream(NATIVE_SHARE_FPS);
+  localVideoStream = nativeShareCanvas.captureStream(choice.fps);
   shareMode = 'screen-native';
   // So o maxBitrate e usado aqui (via applyBitrateToSender) - largura/altura/
   // fps NAO, porque o bloco que le esses campos em finishStartingShare so
   // roda quando shareMode === 'screen', e aqui e 'screen-native'. Sem um
   // alvo de bitrate, o WebRTC comeca conservador (resolucao bem baixa) e
   // demora pra subir - isso da um empurrao inicial.
-  currentQuality = { maxBitrate: 4_500_000 };
+  const baseBitrate = NATIVE_BITRATE_BY_WIDTH[choice.maxWidth] || 5_500_000;
+  currentQuality = { maxBitrate: choice.fps >= 120 ? baseBitrate * 1.6 : choice.fps >= 60 ? baseBitrate * 1.3 : baseBitrate };
   await finishStartingShare('Você (compartilhando - sem cursor)');
 
   btnToggleCamera.classList.remove('hidden');
