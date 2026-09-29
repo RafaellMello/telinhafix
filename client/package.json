@@ -46,7 +46,8 @@
       "perMachine": false,
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "disableWebInstaller": true
     },
     "publish": {
       "provider": "github",
