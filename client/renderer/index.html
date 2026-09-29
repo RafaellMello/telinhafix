@@ -120,10 +120,35 @@
 
   <div id="native-monitor-picker-overlay" class="settings-overlay hidden">
     <div class="settings-panel">
-      <h2>Escolha o monitor (sem cursor)</h2>
+      <h2>Monitor (sem cursor)</h2>
       <div id="native-monitor-options" class="camera-options"></div>
+
+      <h2>Resolução</h2>
+      <div class="quality-row" id="native-resolution-row">
+        <div class="quality-btn" data-width="1280">720p</div>
+        <div class="quality-btn selected" data-width="1920">1080p</div>
+        <div class="quality-btn" data-width="2560">1440p (2K)</div>
+        <div class="quality-btn" data-width="3840">4K</div>
+      </div>
+
+      <h2>Taxa de quadros</h2>
+      <div class="quality-row" id="native-fps-row">
+        <div class="quality-btn" data-fps="30">30fps</div>
+        <div class="quality-btn selected" data-fps="60">60fps</div>
+        <div class="quality-btn" data-fps="120">120fps</div>
+      </div>
+
+      <h2>Áudio da transmissão</h2>
+      <div class="audio-row" id="native-audio-row">
+        <div class="audio-btn selected" data-audio="exclude">Sistema, sem o Discord</div>
+        <div class="audio-btn" data-audio="system">Sistema todo</div>
+        <div class="audio-btn" data-audio="include">Só um programa</div>
+        <select id="native-app-select" class="hidden"></select>
+      </div>
+
       <div class="settings-footer">
         <button id="btn-native-monitor-picker-cancel" class="ghost">Cancelar</button>
+        <button id="btn-native-monitor-picker-confirm">Compartilhar</button>
       </div>
     </div>
   </div>
