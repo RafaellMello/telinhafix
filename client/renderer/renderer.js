@@ -847,7 +847,15 @@ const AUDIO_WORKLET_CODE = `
 class PcmRingProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.capacity = 96000; // 2s de buffer a 48kHz
+    this.capacity = 96000; // 2s de buffer a 48kHz (capacidade maxima, so de seguranca)
+    // A captura nativa (WASAPI) e o AudioContext do Chromium sao dois
+    // relogios de audio independentes - nunca batem 48000Hz exatamente
+    // igual. Sem correcao, essa diferenca (por menor que seja) se acumula
+    // pro resto da chamada e o atraso so cresce, nunca se corrige sozinho
+    // (medido: ~300ms depois de so 15s com 2% de diferenca de ritmo).
+    // maxBuffered poe um teto de ~150ms - sempre que o buffer passa disso,
+    // descarta o excesso mais antigo e volta perto do tempo real.
+    this.maxBuffered = 7200;
     this.bufferL = new Float32Array(this.capacity);
     this.bufferR = new Float32Array(this.capacity);
     this.writeIndex = 0;
@@ -865,6 +873,11 @@ class PcmRingProcessor extends AudioWorkletProcessor {
         } else {
           this.readIndex = (this.readIndex + 1) % this.capacity;
         }
+      }
+      if (this.available > this.maxBuffered) {
+        const drop = this.available - this.maxBuffered;
+        this.readIndex = (this.readIndex + drop) % this.capacity;
+        this.available = this.maxBuffered;
       }
     };
   }
