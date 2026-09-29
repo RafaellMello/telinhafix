@@ -8,6 +8,29 @@ const PORT = process.env.PORT || 3000;
 const APP_PASSWORD = process.env.APP_PASSWORD || '';
 
 const httpServer = http.createServer((req, res) => {
+  // Endpoint do teste de qualidade (opcional, roda no app): o cliente manda
+  // um payload de tamanho conhecido e cronometra quanto tempo demora pra
+  // subir, pra estimar o upload real disponivel. So precisa drenar o corpo
+  // e responder - o conteudo em si nao importa.
+  if (req.method === 'POST' && req.url === '/bandwidth-test') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    req.on('data', () => {});
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('ok');
+    });
+    return;
+  }
+  if (req.method === 'OPTIONS' && req.url === '/bandwidth-test') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    });
+    res.end();
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('TelinhaFix signaling server ok');
 });

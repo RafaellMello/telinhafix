@@ -290,15 +290,25 @@ async function applyBitrateToSender(sender, quality) {
   }
 }
 
-// VP9 comprime bem melhor que o VP8/H264 que o Chromium normalmente escolhe
-// por padrao pro WebRTC - mais nitido pro mesmo bitrate, e a maioria das
-// placas de video dos ultimos anos ja acelera isso por hardware. AV1
-// comprime ainda melhor, mas a codificacao em tempo real pra WebRTC ainda
-// e via software na maioria das maquinas (sem aceleracao de hardware
-// disponivel de verdade ainda) - forcar ele como primeira opcao arriscaria
-// travar o compartilhamento em PCs mais fracos dos amigos, entao ele entra
-// como segunda opcao (so e usado se VP9 nao estiver disponivel dos dois
-// lados), nunca como preferencia principal.
+// Se a pessoa ja rodou o teste automatico de qualidade (opcional, no
+// seletor de aparencia - ver quality-test.js), ele mede qual codec essa
+// maquina especifica consegue codificar em tempo real de verdade (testa
+// AV1/VP9/VP8 numa conexao local e mede o fps real via getStats, em vez
+// de supor) e usa esse resultado aqui. Sem teste, cai no palpite padrao:
+// VP9 primeiro (bom equilibrio, acelerado por hardware na maioria das
+// placas recentes), AV1 depois (comprime melhor mas a codificacao pra
+// WebRTC ainda e via software na maioria das maquinas - arriscado como
+// primeira opcao sem saber se a maquina aguenta).
+function getRecommendedCodec() {
+  try {
+    const raw = localStorage.getItem('telinhafix-quality-profile');
+    const saved = raw ? JSON.parse(raw) : null;
+    return saved && saved.recommendedCodec ? saved.recommendedCodec : null;
+  } catch (err) {
+    return null;
+  }
+}
+
 function preferVideoCodecs(pc) {
   if (typeof RTCRtpSender === 'undefined' || !RTCRtpSender.getCapabilities) return;
   const caps = RTCRtpSender.getCapabilities('video');
@@ -311,7 +321,10 @@ function preferVideoCodecs(pc) {
   // os dois lados sempre rodam o mesmo Electron embutido, H264 nunca faz
   // falta como fallback de compatibilidade - so tira ele da lista em vez
   // de tentar descobrir qual variante exata passaria na validacao.
-  const order = ['video/VP9', 'video/AV1', 'video/VP8'];
+  const recommended = getRecommendedCodec();
+  const defaultOrder = ['video/VP9', 'video/AV1', 'video/VP8'];
+  const order = recommended ? [recommended, ...defaultOrder.filter((c) => c !== recommended)] : defaultOrder;
+
   const filtered = caps.codecs.filter((c) => c.mimeType !== 'video/H264');
   const preferred = filtered
     .filter((c) => order.includes(c.mimeType))

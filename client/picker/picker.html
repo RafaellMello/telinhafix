@@ -296,6 +296,29 @@
     let selectedResolution = '1080p';
     let selectedFps = '30';
 
+    // Se a pessoa ja rodou o teste automatico de qualidade (opcional, no
+    // seletor de aparencia), pre-seleciona a resolucao/fps que ele
+    // recomendou em vez de sempre comecar em 1080p30 pra todo mundo.
+    (function applyRecommendedQuality() {
+      const QUALITY_KEY_TO_RES_FPS = {
+        '720p30': { res: '720p', fps: '30' },
+        '1080p30': { res: '1080p', fps: '30' },
+        '1080p60': { res: '1080p', fps: '60' },
+        '1440p30': { res: '1440p', fps: '30' },
+      };
+      try {
+        const saved = JSON.parse(localStorage.getItem('telinhafix-quality-profile'));
+        const mapping = saved && QUALITY_KEY_TO_RES_FPS[saved.recommendedQuality];
+        if (!mapping) return;
+        selectedResolution = mapping.res;
+        selectedFps = mapping.fps;
+        resolutionBtns.forEach((b) => b.classList.toggle('selected', b.dataset.res === mapping.res));
+        fpsBtns.forEach((b) => b.classList.toggle('selected', b.dataset.fps === mapping.fps));
+      } catch (err) {
+        // sem teste salvo ou localStorage indisponivel - fica no padrao.
+      }
+    })();
+
     function selectedQualityKey() {
       return selectedResolution + selectedFps;
     }
