@@ -100,6 +100,97 @@ function stopAudioCapture() {
   }
 }
 
+// --- Captura de tela nativa sem cursor (modo "beta") ----------------------
+//
+// A captura padrao do Electron (desktopCapturer/getDisplayMedia) sempre
+// compoe o cursor do sistema por cima do frame capturado, mesmo quando o
+// jogo/app escondeu ele de verdade na tela (comum em jogos com mira via
+// raw input) - o WebRtcWgcScreenCapturer desativado la em cima nao resolveu
+// isso porque o problema nao e WGC especifico, o Chromium sempre desenha
+// esse cursor "fantasma" nao importa o backend. A Desktop Duplication API
+// (DXGI) por baixo, por outro lado, NUNCA inclui o cursor no frame - ele
+// vem como metadado separado (forma/posicao) e so aparece se o app que
+// capturou desenhar ele por cima manualmente. Esse helper nativo usa a
+// DXGI diretamente e nunca desenha o cursor, entao o problema nao existe
+// aqui por construcao.
+let screenHelperProcess = null;
+let screenFrameLeftover = Buffer.alloc(0);
+
+function getScreenHelperPath() {
+  const exeName = 'TelinhaFixScreenHelper.exe';
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'native', exeName);
+  }
+  return path.join(__dirname, 'native', exeName);
+}
+
+function listNativeScreens() {
+  return new Promise((resolve) => {
+    const proc = spawn(getScreenHelperPath(), ['list'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    proc.stdout.on('data', (chunk) => { out += chunk.toString(); });
+    proc.stderr.on('data', (chunk) => console.log('[screen-helper:list]', chunk.toString().trim()));
+    proc.on('error', (err) => {
+      console.error('Falha ao listar monitores (helper nativo):', err);
+      resolve([]);
+    });
+    proc.on('exit', () => {
+      try {
+        resolve(JSON.parse(out.trim() || '[]'));
+      } catch (err) {
+        console.error('Falha ao interpretar lista de monitores:', err);
+        resolve([]);
+      }
+    });
+  });
+}
+
+function startNativeScreenCapture(win, { adapterIndex, outputIndex, fps, quality, maxWidth }) {
+  stopNativeScreenCapture();
+
+  screenFrameLeftover = Buffer.alloc(0);
+  screenHelperProcess = spawn(
+    getScreenHelperPath(),
+    ['capture', String(adapterIndex), String(outputIndex), String(fps), String(quality), String(maxWidth)],
+    { stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+
+  // Protocolo do helper: [4 bytes big-endian = tamanho][bytes JPEG], repetido.
+  screenHelperProcess.stdout.on('data', (chunk) => {
+    screenFrameLeftover = Buffer.concat([screenFrameLeftover, chunk]);
+    while (true) {
+      if (screenFrameLeftover.length < 4) break;
+      const len = screenFrameLeftover.readUInt32BE(0);
+      if (screenFrameLeftover.length < 4 + len) break;
+      const frame = screenFrameLeftover.subarray(4, 4 + len);
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('native-screen-frame', frame);
+      }
+      screenFrameLeftover = screenFrameLeftover.subarray(4 + len);
+    }
+  });
+
+  screenHelperProcess.stderr.on('data', (chunk) => {
+    console.log('[screen-helper]', chunk.toString().trim());
+  });
+
+  screenHelperProcess.on('error', (err) => {
+    console.error('Falha ao iniciar o helper de captura de tela:', err);
+    screenHelperProcess = null;
+  });
+
+  screenHelperProcess.on('exit', () => {
+    screenHelperProcess = null;
+  });
+}
+
+function stopNativeScreenCapture() {
+  if (screenHelperProcess) {
+    screenHelperProcess.kill();
+    screenHelperProcess = null;
+  }
+}
+
 // Qualidades disponiveis no seletor. maxBitrate em bits/s - usado depois
 // pra configurar o RTCRtpSender de cada conexao (ver renderer.js).
 const QUALITY_PRESETS = {
@@ -278,6 +369,16 @@ function createWindow() {
     stopAudioCapture();
   });
 
+  ipcMain.handle('native-screen-list', () => listNativeScreens());
+
+  ipcMain.handle('native-screen-start', (event, opts) => {
+    startNativeScreenCapture(BrowserWindow.fromWebContents(event.sender), opts);
+  });
+
+  ipcMain.handle('native-screen-stop', () => {
+    stopNativeScreenCapture();
+  });
+
   ipcMain.handle('get-last-picked-quality', () => lastPickedQuality);
   ipcMain.handle('get-camera-quality', () => CAMERA_QUALITY_PRESET);
   ipcMain.handle('get-last-picked-audio-config', () => lastPickedAudioConfig);
@@ -302,9 +403,11 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopAudioCapture();
+  stopNativeScreenCapture();
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
   stopAudioCapture();
+  stopNativeScreenCapture();
 });

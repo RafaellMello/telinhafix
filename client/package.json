@@ -1,11 +1,12 @@
 {
   "name": "telinhafix",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "App local para compartilhamento de tela entre amigos, estilo Discord",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build:native": "dotnet publish native-audio -c Release && node -e \"require('fs').cpSync('native-audio/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/TelinhaFixAudioHelper.exe','native/TelinhaFixAudioHelper.exe')\"",
+    "build:native-screen": "dotnet publish native-screen -c Release && node -e \"require('fs').cpSync('native-screen/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/TelinhaFixScreenHelper.exe','native/TelinhaFixScreenHelper.exe')\"",
     "dist": "electron-builder --win zip"
   },
   "dependencies": {
@@ -29,6 +30,10 @@
       {
         "from": "native/TelinhaFixAudioHelper.exe",
         "to": "native/TelinhaFixAudioHelper.exe"
+      },
+      {
+        "from": "native/TelinhaFixScreenHelper.exe",
+        "to": "native/TelinhaFixScreenHelper.exe"
       }
     ],
     "win": {

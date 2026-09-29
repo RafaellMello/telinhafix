@@ -108,6 +108,26 @@ contextBridge.exposeInMainWorld('screenPicker', {
   },
 });
 
+// Ponte com o helper nativo de captura de tela sem cursor (modo "beta"),
+// que usa a Desktop Duplication API diretamente em vez do capturador
+// padrao do Electron - assim o cursor "fantasma" nunca aparece (ver
+// comentario detalhado em main.js).
+contextBridge.exposeInMainWorld('nativeScreen', {
+  listMonitors() {
+    return ipcRenderer.invoke('native-screen-list');
+  },
+  start(opts) {
+    return ipcRenderer.invoke('native-screen-start', opts);
+  },
+  stop() {
+    return ipcRenderer.invoke('native-screen-stop');
+  },
+  onFrame(cb) {
+    ipcRenderer.removeAllListeners('native-screen-frame');
+    ipcRenderer.on('native-screen-frame', (event, frame) => cb(frame));
+  },
+});
+
 contextBridge.exposeInMainWorld('appLinks', {
   openCredit() {
     return ipcRenderer.invoke('open-credit-link');

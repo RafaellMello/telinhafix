@@ -171,6 +171,7 @@ const roomLabel = document.getElementById('room-label');
 const participantsList = document.getElementById('participants-list');
 const videoGrid = document.getElementById('video-grid');
 const btnShare = document.getElementById('btn-share');
+const btnShareNative = document.getElementById('btn-share-native');
 const btnShareCamera = document.getElementById('btn-share-camera');
 const btnToggleCamera = document.getElementById('btn-toggle-camera');
 const btnStopShare = document.getElementById('btn-stop-share');
@@ -1051,6 +1052,100 @@ async function startShare() {
   btnToggleCamera.classList.remove('hidden');
 }
 
+// --- Compartilhamento "sem cursor" (beta, via helper nativo) --------------
+//
+// Usa a Desktop Duplication API (DXGI) diretamente em vez da captura de
+// tela padrao do Electron, porque o Chromium sempre desenha um cursor
+// "fantasma" por cima do frame capturado - mesmo quando o jogo escondeu o
+// cursor de verdade na tela - e nao existe nenhuma opcao pra desligar isso
+// no Electron. A DXGI nunca inclui o cursor no frame por padrao, entao o
+// problema nao existe aqui. Os frames chegam como JPEG via IPC, sao
+// desenhados num canvas escondido, e o canvas.captureStream() vira a track
+// de video que a gente manda pros outros - a mesma tecnica ja usada pra
+// compor a bolinha da webcam por cima da tela.
+const NATIVE_SHARE_FPS = 30;
+const NATIVE_SHARE_QUALITY = 80;
+const NATIVE_SHARE_MAX_WIDTH = 1920;
+
+let nativeShareCanvas = null;
+let nativeShareCtx = null;
+
+function pickNativeMonitor(monitors) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('native-monitor-picker-overlay');
+    const optionsEl = document.getElementById('native-monitor-options');
+    const cancelBtn = document.getElementById('btn-native-monitor-picker-cancel');
+
+    optionsEl.innerHTML = '';
+    monitors.forEach((mon, i) => {
+      const opt = document.createElement('div');
+      opt.className = 'camera-option';
+      opt.textContent = `Monitor ${i + 1} (${mon.width}x${mon.height})`;
+      opt.addEventListener('click', () => {
+        overlay.classList.add('hidden');
+        resolve(mon);
+      });
+      optionsEl.appendChild(opt);
+    });
+
+    cancelBtn.onclick = () => {
+      overlay.classList.add('hidden');
+      resolve(null);
+    };
+
+    overlay.classList.remove('hidden');
+  });
+}
+
+async function startNativeScreenShare() {
+  const monitors = await window.nativeScreen.listMonitors();
+  if (!monitors || monitors.length === 0) {
+    console.error('Nenhum monitor encontrado pelo helper nativo.');
+    return;
+  }
+  const chosen = monitors.length === 1 ? monitors[0] : await pickNativeMonitor(monitors);
+  if (!chosen) return;
+
+  nativeShareCanvas = document.createElement('canvas');
+  nativeShareCanvas.width = chosen.width;
+  nativeShareCanvas.height = chosen.height;
+  nativeShareCtx = nativeShareCanvas.getContext('2d');
+
+  window.__nativeFrameCount = 0;
+  window.__nativeFrameLastError = null;
+  window.nativeScreen.onFrame((frameBuf) => {
+    const blob = new Blob([frameBuf], { type: 'image/jpeg' });
+    createImageBitmap(blob)
+      .then((bmp) => {
+        if (!nativeShareCtx) { bmp.close(); return; }
+        nativeShareCtx.drawImage(bmp, 0, 0, nativeShareCanvas.width, nativeShareCanvas.height);
+        bmp.close();
+        window.__nativeFrameCount++;
+      })
+      .catch((err) => { window.__nativeFrameLastError = String(err); });
+  });
+
+  await window.nativeScreen.start({
+    adapterIndex: chosen.adapterIndex,
+    outputIndex: chosen.outputIndex,
+    fps: NATIVE_SHARE_FPS,
+    quality: NATIVE_SHARE_QUALITY,
+    maxWidth: NATIVE_SHARE_MAX_WIDTH,
+  });
+
+  localVideoStream = nativeShareCanvas.captureStream(NATIVE_SHARE_FPS);
+  shareMode = 'screen-native';
+  // So o maxBitrate e usado aqui (via applyBitrateToSender) - largura/altura/
+  // fps NAO, porque o bloco que le esses campos em finishStartingShare so
+  // roda quando shareMode === 'screen', e aqui e 'screen-native'. Sem um
+  // alvo de bitrate, o WebRTC comeca conservador (resolucao bem baixa) e
+  // demora pra subir - isso da um empurrao inicial.
+  currentQuality = { maxBitrate: 4_500_000 };
+  await finishStartingShare('Você (compartilhando - sem cursor)');
+
+  btnToggleCamera.classList.remove('hidden');
+}
+
 // --- Escolha de camera (quando tem mais de uma) ---------------------------
 
 const CAMERA_DEVICE_STORAGE_KEY = 'telinhafix-camera-device';
@@ -1176,6 +1271,7 @@ async function finishStartingShare(selfLabel) {
   updateSelfAudienceLabel();
 
   btnShare.classList.add('hidden');
+  btnShareNative.classList.add('hidden');
   btnShareCamera.classList.add('hidden');
   btnStopShare.classList.remove('hidden');
 
@@ -1186,6 +1282,12 @@ async function stopShare() {
   if (!localStream) return;
 
   if (cameraActive) await disableCamera();
+
+  if (shareMode === 'screen-native') {
+    await window.nativeScreen.stop();
+    nativeShareCanvas = null;
+    nativeShareCtx = null;
+  }
 
   // Avisa todo mundo explicitamente que a transmissao acabou - nao da pra
   // confiar so no evento 'ended' da track remota (as vezes fica um frame
@@ -1208,6 +1310,7 @@ async function stopShare() {
   removeVideoTile(selfId);
 
   btnShare.classList.remove('hidden');
+  btnShareNative.classList.remove('hidden');
   btnShareCamera.classList.remove('hidden');
   btnToggleCamera.classList.add('hidden');
   btnStopShare.classList.add('hidden');
@@ -1228,6 +1331,7 @@ async function leaveRoom() {
 }
 
 btnShare.addEventListener('click', startShare);
+btnShareNative.addEventListener('click', startNativeScreenShare);
 btnShareCamera.addEventListener('click', startCameraShare);
 btnToggleCamera.addEventListener('click', () => {
   if (cameraActive) disableCamera();
