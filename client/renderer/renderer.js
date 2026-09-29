@@ -1063,7 +1063,7 @@ async function startShare() {
 // desenhados num canvas escondido, e o canvas.captureStream() vira a track
 // de video que a gente manda pros outros - a mesma tecnica ja usada pra
 // compor a bolinha da webcam por cima da tela.
-const NATIVE_SHARE_FPS = 30;
+const NATIVE_SHARE_FPS = 60;
 const NATIVE_SHARE_QUALITY = 80;
 const NATIVE_SHARE_MAX_WIDTH = 1920;
 
