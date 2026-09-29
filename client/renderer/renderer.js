@@ -679,18 +679,15 @@ function removeVideoTile(peerId) {
 
 // Com varias pessoas compartilhando tela ao mesmo tempo (rede em malha: cada
 // upload multiplica por participante), e comum uma conexao especifica sofrer
-// um engasgo passageiro sob a carga - o WebRTC entra em 'disconnected' por
-// alguns segundos e geralmente se recupera sozinho. Antes, qualquer
-// 'disconnected'/'failed' removia a tile na hora, entao um engasgo de 2
-// segundos virava a pessoa "sumindo" de vez. Agora: espera um tempo, tenta
-// reiniciar o ICE, so desiste (remove a tile) se continuar caido depois de
-// tudo isso.
-const RECONNECT_RESTART_DELAY_MS = 4000;
-const RECONNECT_GIVE_UP_MS = 20000;
+// um engasgo sob a carga - o WebRTC entra em 'disconnected'/'failed'. Em vez
+// de desistir depois de um tempo, o app tenta reconectar (restartIce)
+// indefinidamente, de tempos em tempos, ate a conexao voltar - a tile so e
+// removida por um motivo explicito (a pessoa realmente saiu da sala ou
+// parou de compartilhar), nunca so por causa de uma queda de rede.
+const RECONNECT_RETRY_INTERVAL_MS = 5000;
 
 function clearReconnectTimers(state) {
-  if (state.restartTimer) { clearTimeout(state.restartTimer); state.restartTimer = null; }
-  if (state.giveUpTimer) { clearTimeout(state.giveUpTimer); state.giveUpTimer = null; }
+  if (state.reconnectInterval) { clearInterval(state.reconnectInterval); state.reconnectInterval = null; }
   state.reconnecting = false;
 }
 
@@ -700,7 +697,7 @@ function createPeerConnection(peerId) {
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   const state = {
     pc, polite, makingOffer: false, ignoreOffer: false,
-    reconnecting: false, restartTimer: null, giveUpTimer: null,
+    reconnecting: false, reconnectInterval: null,
   };
   peers.set(peerId, state);
 
@@ -760,20 +757,17 @@ function createPeerConnection(peerId) {
 
     if ((cs === 'disconnected' || cs === 'failed') && !state.reconnecting) {
       state.reconnecting = true;
+      console.error(`Conexao com ${peerId} caiu (${cs}) - tentando reconectar ate voltar, a tile fica na tela.`);
 
-      state.restartTimer = setTimeout(() => {
+      state.reconnectInterval = setInterval(() => {
         if (['disconnected', 'failed'].includes(pc.connectionState)) {
           try { pc.restartIce(); } catch (err) { console.error(`Falha ao reiniciar ICE com ${peerId}:`, err); }
+        } else {
+          // ja recuperou entre um tick e outro - o handler de 'connected'
+          // ja deveria ter limpado isso, mas por garantia.
+          clearReconnectTimers(state);
         }
-      }, RECONNECT_RESTART_DELAY_MS);
-
-      state.giveUpTimer = setTimeout(() => {
-        if (['disconnected', 'failed'].includes(pc.connectionState)) {
-          console.error(`Conexao com ${peerId} nao recuperou depois de ${RECONNECT_GIVE_UP_MS}ms - removendo tile.`);
-          removeVideoTile(peerId);
-        }
-        state.reconnecting = false;
-      }, RECONNECT_GIVE_UP_MS);
+      }, RECONNECT_RETRY_INTERVAL_MS);
     }
   };
 
