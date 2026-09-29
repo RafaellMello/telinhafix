@@ -290,6 +290,42 @@ async function applyBitrateToSender(sender, quality) {
   }
 }
 
+// VP9 comprime bem melhor que o VP8/H264 que o Chromium normalmente escolhe
+// por padrao pro WebRTC - mais nitido pro mesmo bitrate, e a maioria das
+// placas de video dos ultimos anos ja acelera isso por hardware. AV1
+// comprime ainda melhor, mas a codificacao em tempo real pra WebRTC ainda
+// e via software na maioria das maquinas (sem aceleracao de hardware
+// disponivel de verdade ainda) - forcar ele como primeira opcao arriscaria
+// travar o compartilhamento em PCs mais fracos dos amigos, entao ele entra
+// como segunda opcao (so e usado se VP9 nao estiver disponivel dos dois
+// lados), nunca como preferencia principal.
+function preferVideoCodecs(pc) {
+  if (typeof RTCRtpSender === 'undefined' || !RTCRtpSender.getCapabilities) return;
+  const caps = RTCRtpSender.getCapabilities('video');
+  if (!caps || !caps.codecs) return;
+
+  // O Chromium (testado no Electron 33) rejeita setCodecPreferences com
+  // "InvalidModificationError: invalid codec with name H264" quando a
+  // lista reordenada inclui as variantes de H264 que getCapabilities
+  // devolve (parece validar mal os varios perfis/packetization-mode). Como
+  // os dois lados sempre rodam o mesmo Electron embutido, H264 nunca faz
+  // falta como fallback de compatibilidade - so tira ele da lista em vez
+  // de tentar descobrir qual variante exata passaria na validacao.
+  const order = ['video/VP9', 'video/AV1', 'video/VP8'];
+  const filtered = caps.codecs.filter((c) => c.mimeType !== 'video/H264');
+  const preferred = filtered
+    .filter((c) => order.includes(c.mimeType))
+    .sort((a, b) => order.indexOf(a.mimeType) - order.indexOf(b.mimeType));
+  const rest = filtered.filter((c) => !order.includes(c.mimeType));
+  const sorted = [...preferred, ...rest];
+
+  pc.getTransceivers().forEach((t) => {
+    if (t.sender && t.sender.track && t.sender.track.kind === 'video' && t.setCodecPreferences) {
+      try { t.setCodecPreferences(sorted); } catch (err) { console.error('Falha ao definir codec de video preferido:', err); }
+    }
+  });
+}
+
 function setLoginError(msg, isInfo = false) {
   loginError.textContent = msg || '';
   loginError.style.color = isInfo ? 'var(--text-muted)' : '';
@@ -779,6 +815,7 @@ function createPeerConnection(peerId) {
       const sender = pc.addTrack(track, localStream);
       if (track.kind === 'video') applyBitrateToSender(sender, currentQuality);
     });
+    preferVideoCodecs(pc);
   }
 
   return state;
@@ -826,6 +863,7 @@ function attachLocalStreamToAllPeers(stream) {
       const sender = state.pc.addTrack(track, stream);
       if (track.kind === 'video') applyBitrateToSender(sender, currentQuality);
     });
+    preferVideoCodecs(state.pc);
   }
 }
 
@@ -1129,10 +1167,10 @@ const NATIVE_SHARE_QUALITY = 80;
 // ja que aqui a resolucao/fps sao dois seletores independentes em vez de
 // combinacoes fixas.
 const NATIVE_BITRATE_BY_WIDTH = {
-  1280: 3_000_000,
-  1920: 5_500_000,
-  2560: 8_000_000,
-  3840: 14_000_000,
+  1280: 3_500_000,
+  1920: 6_000_000,
+  2560: 9_000_000,
+  3840: 16_000_000,
 };
 
 let nativeShareCanvas = null;
@@ -1287,13 +1325,16 @@ async function startNativeScreenShare() {
 
   localVideoStream = nativeShareCanvas.captureStream(choice.fps);
   shareMode = 'screen-native';
-  // So o maxBitrate e usado aqui (via applyBitrateToSender) - largura/altura/
-  // fps NAO, porque o bloco que le esses campos em finishStartingShare so
-  // roda quando shareMode === 'screen', e aqui e 'screen-native'. Sem um
-  // alvo de bitrate, o WebRTC comeca conservador (resolucao bem baixa) e
-  // demora pra subir - isso da um empurrao inicial.
-  const baseBitrate = NATIVE_BITRATE_BY_WIDTH[choice.maxWidth] || 5_500_000;
-  currentQuality = { maxBitrate: choice.fps >= 120 ? baseBitrate * 1.6 : choice.fps >= 60 ? baseBitrate * 1.3 : baseBitrate };
+  // largura/altura NAO sao lidas daqui - o bloco que le esses campos em
+  // finishStartingShare so roda quando shareMode === 'screen', e aqui e
+  // 'screen-native'. maxBitrate da um empurrao inicial (sem isso o WebRTC
+  // comeca conservador e demora pra subir a resolucao), e frameRate so
+  // serve pra applyBitrateToSender escolher a degradationPreference certa.
+  const baseBitrate = NATIVE_BITRATE_BY_WIDTH[choice.maxWidth] || 6_000_000;
+  currentQuality = {
+    maxBitrate: choice.fps >= 120 ? baseBitrate * 1.6 : choice.fps >= 60 ? baseBitrate * 1.3 : baseBitrate,
+    frameRate: choice.fps,
+  };
   await finishStartingShare('Você (compartilhando - sem cursor)');
 
   btnToggleCamera.classList.remove('hidden');
@@ -1398,7 +1439,18 @@ async function finishStartingShare(selfLabel) {
     } catch (err) {
       console.error('Falha ao aplicar qualidade escolhida:', err);
     }
-    // Ajuda o codec a priorizar nitidez (texto/UI) em 30fps ou fluidez em 60fps.
+  }
+  if (currentQuality && videoTrack && currentQuality.frameRate) {
+    // contentHint e o que o Chromium realmente usa pra decidir se, quando
+    // uma conexao especifica nao aguenta o bitrate pedido, abre mao de
+    // resolucao ou de fps primeiro (testei setParameters com
+    // degradationPreference direto - o Chromium aceita a chamada sem erro
+    // mas ignora o valor silenciosamente, entao isso aqui e o que
+    // realmente funciona). 'detail' prioriza nitidez/resolucao (bom pra
+    // texto/UI em 30fps); 'motion' prioriza fluidez (bom quando a pessoa
+    // pediu 60fps+ de proposito, normalmente pra jogo). Cada RTCRtpSender
+    // e independente por peer mesmo compartilhando a mesma track local, entao
+    // a conexao mais fraca de uma pessoa degrada so o que ela recebe.
     videoTrack.contentHint = currentQuality.frameRate >= 60 ? 'motion' : 'detail';
   }
 
