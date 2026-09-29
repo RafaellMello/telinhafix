@@ -32,6 +32,15 @@
 
       <button id="btn-join">Entrar</button>
       <p id="login-error" class="error"></p>
+
+      <div id="quality-test-banner" class="quality-test-banner hidden">
+        <p>Quer que eu teste seu PC e sua internet pra recomendar a melhor qualidade de transmissão? Leva uns 30s.</p>
+        <div class="quality-test-banner-actions">
+          <button id="btn-quality-test-run" class="ghost" type="button">Testar agora</button>
+          <button id="btn-quality-test-dismiss" class="ghost" type="button">Agora não</button>
+        </div>
+      </div>
+
       <p class="credit">developed by: <a href="#" id="credit-link">bunny</a></p>
     </div>
 
@@ -102,6 +111,12 @@
         </div>
       </div>
 
+      <div class="settings-group">
+        <label>Qualidade recomendada pro seu PC/internet</label>
+        <div id="quality-test-summary" class="quality-test-summary">Nunca testado.</div>
+        <button id="btn-quality-test-open" class="ghost" type="button">Testar agora (~30s)</button>
+      </div>
+
       <div class="settings-footer">
         <button id="btn-settings-close">Fechar</button>
       </div>
@@ -153,6 +168,18 @@
     </div>
   </div>
 
+  <div id="quality-test-overlay" class="settings-overlay hidden">
+    <div class="settings-panel">
+      <h2>Testando qualidade</h2>
+      <div id="quality-test-progress" class="quality-test-progress">Preparando...</div>
+      <div id="quality-test-results" class="quality-test-results hidden"></div>
+      <div class="settings-footer">
+        <button id="btn-quality-test-close" class="hidden" type="button">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
+  <script src="quality-test.js"></script>
 </body>
 </html>
