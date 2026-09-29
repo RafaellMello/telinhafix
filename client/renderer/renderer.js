@@ -677,11 +677,31 @@ function removeVideoTile(peerId) {
   hiddenPeers.delete(peerId);
 }
 
+// Com varias pessoas compartilhando tela ao mesmo tempo (rede em malha: cada
+// upload multiplica por participante), e comum uma conexao especifica sofrer
+// um engasgo passageiro sob a carga - o WebRTC entra em 'disconnected' por
+// alguns segundos e geralmente se recupera sozinho. Antes, qualquer
+// 'disconnected'/'failed' removia a tile na hora, entao um engasgo de 2
+// segundos virava a pessoa "sumindo" de vez. Agora: espera um tempo, tenta
+// reiniciar o ICE, so desiste (remove a tile) se continuar caido depois de
+// tudo isso.
+const RECONNECT_RESTART_DELAY_MS = 4000;
+const RECONNECT_GIVE_UP_MS = 20000;
+
+function clearReconnectTimers(state) {
+  if (state.restartTimer) { clearTimeout(state.restartTimer); state.restartTimer = null; }
+  if (state.giveUpTimer) { clearTimeout(state.giveUpTimer); state.giveUpTimer = null; }
+  state.reconnecting = false;
+}
+
 function createPeerConnection(peerId) {
   const polite = selfId < peerId; // regra combinada dos dois lados
 
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-  const state = { pc, polite, makingOffer: false, ignoreOffer: false };
+  const state = {
+    pc, polite, makingOffer: false, ignoreOffer: false,
+    reconnecting: false, restartTimer: null, giveUpTimer: null,
+  };
   peers.set(peerId, state);
 
   pc.onicecandidate = ({ candidate }) => {
@@ -714,14 +734,46 @@ function createPeerConnection(peerId) {
       wireRemoteAudioGain(peerId, video, event.track);
     }
 
-    event.track.onended = () => {
-      removeVideoTile(peerId);
-    };
+    // Nao remove a tile aqui - esse evento e pouco confiavel (ja disparou
+    // com a conexao ainda saudavel) e agora quem decide se a pessoa
+    // realmente sumiu e o onconnectionstatechange, com a logica de espera/
+    // reconexao abaixo.
+    event.track.onended = () => {};
   };
 
   pc.onconnectionstatechange = () => {
-    if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+    const cs = pc.connectionState;
+
+    if (cs === 'connected') {
+      clearReconnectTimers(state);
+      return;
+    }
+
+    if (cs === 'closed') {
+      // So fica 'closed' quando ALGUEM chama pc.close() de proposito (saiu
+      // da sala, parou de compartilhar) - nunca por instabilidade de rede,
+      // entao aqui pode remover na hora, sem esperar.
+      clearReconnectTimers(state);
       removeVideoTile(peerId);
+      return;
+    }
+
+    if ((cs === 'disconnected' || cs === 'failed') && !state.reconnecting) {
+      state.reconnecting = true;
+
+      state.restartTimer = setTimeout(() => {
+        if (['disconnected', 'failed'].includes(pc.connectionState)) {
+          try { pc.restartIce(); } catch (err) { console.error(`Falha ao reiniciar ICE com ${peerId}:`, err); }
+        }
+      }, RECONNECT_RESTART_DELAY_MS);
+
+      state.giveUpTimer = setTimeout(() => {
+        if (['disconnected', 'failed'].includes(pc.connectionState)) {
+          console.error(`Conexao com ${peerId} nao recuperou depois de ${RECONNECT_GIVE_UP_MS}ms - removendo tile.`);
+          removeVideoTile(peerId);
+        }
+        state.reconnecting = false;
+      }, RECONNECT_GIVE_UP_MS);
     }
   };
 
