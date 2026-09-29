@@ -1,6 +1,7 @@
-const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const { spawn, exec } = require('child_process');
+const { autoUpdater } = require('electron-updater');
 
 // O Chromium no Windows captura tela usando a Windows Graphics Capture API
 // (WGC) por padrao. O WGC as vezes desenha o cursor "fantasma" na captura
@@ -421,8 +422,44 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
+// Checa por versao nova no GitHub Releases (metadados gerados pelo proprio
+// electron-builder no build) e baixa sozinho em segundo plano. So avisa a
+// pessoa quando ja esta pronta pra instalar - reiniciar sem avisar no meio
+// de uma transmissao seria pior que nao ter atualizacao nenhuma.
+function setupAutoUpdater() {
+  if (!app.isPackaged) return; // em dev nao tem app-update.yml, ia so dar erro
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('error', (err) => {
+    console.error('Falha ao checar/baixar atualizacao:', err);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog
+      .showMessageBox({
+        type: 'info',
+        title: 'Atualização disponível',
+        message: `Uma versão nova do TelinhaFix (${info.version}) foi baixada. Reiniciar agora para instalar?`,
+        buttons: ['Reiniciar agora', 'Depois'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+      .then((result) => {
+        if (result.response === 0) autoUpdater.quitAndInstall();
+      });
+  });
+
+  autoUpdater.checkForUpdates().catch((err) => {
+    console.error('Falha ao checar atualizacao:', err);
+  });
+}
+
 app.whenReady().then(() => {
   createWindow();
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

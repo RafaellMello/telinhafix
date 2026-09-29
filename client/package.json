@@ -7,9 +7,10 @@
     "start": "electron .",
     "build:native": "dotnet publish native-audio -c Release && node -e \"require('fs').cpSync('native-audio/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/TelinhaFixAudioHelper.exe','native/TelinhaFixAudioHelper.exe')\"",
     "build:native-screen": "dotnet publish native-screen -c Release && node -e \"require('fs').cpSync('native-screen/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/TelinhaFixScreenHelper.exe','native/TelinhaFixScreenHelper.exe')\"",
-    "dist": "electron-builder --win zip"
+    "dist": "electron-builder --win nsis"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "socket.io-client": "^4.7.5"
   },
   "devDependencies": {
@@ -37,8 +38,20 @@
       }
     ],
     "win": {
-      "target": "zip",
+      "target": "nsis",
       "icon": "renderer/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "RafaellMello",
+      "repo": "telinhafix"
     }
   }
 }

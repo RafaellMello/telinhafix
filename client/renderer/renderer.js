@@ -666,6 +666,11 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
       e.preventDefault();
       showTileContextMenu(e.clientX, e.clientY, peerId, tile);
     });
+
+    const reconnectingBadge = document.createElement('div');
+    reconnectingBadge.className = 'tile-reconnecting-badge';
+    reconnectingBadge.innerHTML = '<span class="dot"></span><span>Reconectando...</span>';
+    tile.appendChild(reconnectingBadge);
   }
 
   // Volume so afeta o que VOCE ouve dessa pessoa - e local, ninguem mais
@@ -711,6 +716,13 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
   videoGrid.appendChild(tile);
   applyFocusClassesTo(tile, peerId);
 
+  // Caso raro: a track chega e cria a tile enquanto essa conexao ja estava
+  // marcada como "reconectando" por outro motivo - sincroniza o badge com
+  // o estado real em vez de deixar a tile nova sem ele.
+  if (!isSelf && peers.get(peerId)?.reconnecting) {
+    tile.classList.add('tile-reconnecting');
+  }
+
   return video;
 }
 
@@ -724,6 +736,15 @@ function removeVideoTile(peerId) {
     remoteGainNodes.delete(peerId);
   }
   hiddenPeers.delete(peerId);
+}
+
+// Mostra/esconde o aviso de "reconectando" numa tile - a pessoa continua
+// vendo o ultimo frame congelado por baixo (nao removemos nada durante a
+// tentativa de reconexao), so fica claro que o app esta tentando voltar
+// sozinho em vez de parecer travado sem explicacao.
+function setTileReconnecting(peerId, reconnecting) {
+  const tile = document.getElementById(`tile-${peerId}`);
+  if (tile) tile.classList.toggle('tile-reconnecting', reconnecting);
 }
 
 // Com varias pessoas compartilhando tela ao mesmo tempo (rede em malha: cada
@@ -740,6 +761,107 @@ function clearReconnectTimers(state) {
   state.reconnecting = false;
 }
 
+// --- Chat de texto (via RTCDataChannel, ponto a ponto - sem servidor) -----
+
+let chatPanelOpen = false;
+let chatUnreadCount = 0;
+
+function setupChatChannel(peerId, channel) {
+  channel.onmessage = (event) => {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch (err) {
+      console.error('Mensagem de chat invalida recebida:', err);
+      return;
+    }
+    const author = peerNames.get(peerId) || 'Participante';
+    addChatMessage({ author, text: String(data.text || ''), timestamp: data.timestamp || Date.now(), self: false });
+  };
+  const state = peers.get(peerId);
+  if (state) state.chatChannel = channel;
+}
+
+// Constroi a mensagem via createElement/textContent (nunca innerHTML com o
+// texto direto) de proposito - o texto e o nome vem de outro participante,
+// entao nao da pra confiar que nao tem HTML/script dentro.
+function addChatMessage({ author, text, timestamp, self }) {
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+
+  const row = document.createElement('div');
+  row.className = 'chat-message' + (self ? ' self' : '');
+
+  const authorEl = document.createElement('span');
+  authorEl.className = 'chat-author';
+  authorEl.textContent = author;
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'chat-time';
+  timeEl.textContent = new Date(timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  row.appendChild(authorEl);
+  row.appendChild(document.createTextNode(text));
+  row.appendChild(timeEl);
+  messagesEl.appendChild(row);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  if (!self && !chatPanelOpen) {
+    chatUnreadCount++;
+    updateChatUnreadBadge();
+  }
+}
+
+function addChatSystemMessage(text) {
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+  const row = document.createElement('div');
+  row.className = 'chat-system-message';
+  row.textContent = text;
+  messagesEl.appendChild(row);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function updateChatUnreadBadge() {
+  const badge = document.getElementById('chat-unread-badge');
+  if (!badge) return;
+  if (chatUnreadCount > 0) {
+    badge.textContent = chatUnreadCount > 99 ? '99+' : String(chatUnreadCount);
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+function toggleChatPanel() {
+  const panel = document.getElementById('chat-panel');
+  if (!panel) return;
+  chatPanelOpen = !chatPanelOpen;
+  panel.classList.toggle('hidden', !chatPanelOpen);
+  if (chatPanelOpen) {
+    chatUnreadCount = 0;
+    updateChatUnreadBadge();
+    const input = document.getElementById('chat-input');
+    if (input) input.focus();
+  }
+}
+
+// Manda pra TODOS os peers com canal aberto - e uma malha, entao cada
+// conexao tem seu proprio canal independente pra essa mesma mensagem.
+function sendChatMessage(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const timestamp = Date.now();
+  addChatMessage({ author: 'Você', text: trimmed, timestamp, self: true });
+
+  const payload = JSON.stringify({ text: trimmed, timestamp });
+  for (const [, state] of peers) {
+    if (state.chatChannel && state.chatChannel.readyState === 'open') {
+      try { state.chatChannel.send(payload); } catch (err) { console.error('Falha ao enviar mensagem de chat:', err); }
+    }
+  }
+}
+
 function createPeerConnection(peerId) {
   const polite = selfId < peerId; // regra combinada dos dois lados
 
@@ -747,8 +869,19 @@ function createPeerConnection(peerId) {
   const state = {
     pc, polite, makingOffer: false, ignoreOffer: false,
     reconnecting: false, reconnectInterval: null,
+    chatChannel: null,
   };
   peers.set(peerId, state);
+
+  // Chat de texto: so o lado "impolite" cria o canal (senao os dois lados
+  // criariam um cada, duplicando) - o outro lado recebe via ondatachannel.
+  // Um canal de dados so, usado nos dois sentidos depois de aberto.
+  if (!polite) {
+    setupChatChannel(peerId, pc.createDataChannel('chat'));
+  }
+  pc.ondatachannel = (event) => {
+    if (event.channel.label === 'chat') setupChatChannel(peerId, event.channel);
+  };
 
   pc.onicecandidate = ({ candidate }) => {
     // .toJSON() vira um objeto simples - RTCIceCandidate de verdade nao
@@ -792,6 +925,7 @@ function createPeerConnection(peerId) {
 
     if (cs === 'connected') {
       clearReconnectTimers(state);
+      setTileReconnecting(peerId, false);
       return;
     }
 
@@ -806,6 +940,7 @@ function createPeerConnection(peerId) {
 
     if ((cs === 'disconnected' || cs === 'failed') && !state.reconnecting) {
       state.reconnecting = true;
+      setTileReconnecting(peerId, true);
       console.error(`Conexao com ${peerId} caiu (${cs}) - tentando reconectar ate voltar, a tile fica na tela.`);
 
       state.reconnectInterval = setInterval(() => {
@@ -1544,6 +1679,10 @@ async function leaveRoom() {
   participantsList.innerHTML = '';
   window.rtc.disconnect();
 
+  document.getElementById('chat-messages').innerHTML = '';
+  chatUnreadCount = 0;
+  updateChatUnreadBadge();
+
   roomScreen.classList.add('hidden');
   loginScreen.classList.remove('hidden');
 }
@@ -1557,6 +1696,14 @@ btnToggleCamera.addEventListener('click', () => {
 });
 btnStopShare.addEventListener('click', stopShare);
 btnLeave.addEventListener('click', leaveRoom);
+
+document.getElementById('btn-toggle-chat').addEventListener('click', toggleChatPanel);
+document.getElementById('chat-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const input = document.getElementById('chat-input');
+  sendChatMessage(input.value);
+  input.value = '';
+});
 
 document.getElementById('credit-link').addEventListener('click', (e) => {
   e.preventDefault();
@@ -1590,9 +1737,11 @@ btnJoin.addEventListener('click', async () => {
       addParticipantRow(peerId, peerName, false);
       createPeerConnection(peerId);
       updateSelfAudienceLabel();
+      addChatSystemMessage(`${peerName} entrou na sala`);
     });
 
     window.rtc.onPeerLeft(({ id: peerId }) => {
+      const leftName = peerNames.get(peerId) || 'Alguém';
       const state = peers.get(peerId);
       if (state) state.pc.close();
       peers.delete(peerId);
@@ -1600,6 +1749,7 @@ btnJoin.addEventListener('click', async () => {
       updateSelfAudienceLabel();
       removeParticipantRow(peerId);
       removeVideoTile(peerId);
+      addChatSystemMessage(`${leftName} saiu da sala`);
     });
 
     window.rtc.onDisconnected(() => {
