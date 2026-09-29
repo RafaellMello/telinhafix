@@ -1,6 +1,6 @@
 {
   "name": "telinhafix",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "App local para compartilhamento de tela entre amigos, estilo Discord",
   "main": "main.js",
   "scripts": {
@@ -42,7 +42,8 @@
       "icon": "renderer/assets/icon.ico"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
       "perMachine": false,
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
