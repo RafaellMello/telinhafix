@@ -432,11 +432,24 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[updater] checando por atualizacao...');
+  });
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[updater] atualizacao disponivel: ${info.version} - baixando...`);
+  });
+  autoUpdater.on('update-not-available', (info) => {
+    console.log(`[updater] ja esta na versao mais recente (${info.version})`);
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    console.log(`[updater] baixando: ${Math.round(progress.percent)}%`);
+  });
   autoUpdater.on('error', (err) => {
-    console.error('Falha ao checar/baixar atualizacao:', err);
+    console.error('[updater] Falha ao checar/baixar atualizacao:', err);
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] atualizacao ${info.version} baixada - pronta pra instalar`);
     dialog
       .showMessageBox({
         type: 'info',
