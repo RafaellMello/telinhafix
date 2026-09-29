@@ -332,6 +332,17 @@ function createWindow() {
     win.show();
   });
 
+  // O botao de "tela cheia" numa tile chama Element.requestFullscreen() no
+  // renderer - isso so muda o estado interno do DOM (document.fullscreenElement),
+  // o Electron NAO coloca a janela de verdade em tela cheia sozinho por
+  // padrao. Sem esse par de listeners, o clique parecia "nao fazer nada".
+  win.webContents.on('enter-html-full-screen', () => {
+    win.setFullScreen(true);
+  });
+  win.webContents.on('leave-html-full-screen', () => {
+    win.setFullScreen(false);
+  });
+
   // Libera o pedido de camera (getUserMedia) usado pela feature de webcam
   // (bolinha composta por cima da tela).
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
