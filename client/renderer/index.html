@@ -58,6 +58,9 @@
         <button id="btn-share-camera">Compartilhar câmera</button>
         <button id="btn-toggle-camera" class="hidden">Ativar câmera</button>
         <button id="btn-stop-share" class="hidden">Parar compartilhamento</button>
+        <button id="btn-toggle-chat" class="ghost" title="Chat">
+          &#128172;<span id="chat-unread-badge" class="chat-unread-badge hidden">0</span>
+        </button>
         <button id="btn-settings-room" class="ghost" title="Aparencia">&#9881;</button>
         <button id="btn-leave" class="danger">Sair</button>
       </div>
@@ -70,6 +73,15 @@
       </aside>
 
       <main id="video-grid"></main>
+
+      <aside id="chat-panel" class="hidden">
+        <h3>Chat</h3>
+        <div id="chat-messages"></div>
+        <form id="chat-form">
+          <input id="chat-input" type="text" placeholder="Mensagem..." autocomplete="off" maxlength="500" />
+          <button type="submit">Enviar</button>
+        </form>
+      </aside>
     </div>
   </div>
 

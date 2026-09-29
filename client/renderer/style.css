@@ -578,6 +578,103 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   gap: 8px;
 }
 
+#btn-toggle-chat { position: relative; }
+
+.chat-unread-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--red-bright);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  line-height: 1;
+}
+
+#chat-panel {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+#chat-panel h3 {
+  margin: 14px 14px 8px;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--red-bright);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-message {
+  font-size: calc(13px * var(--font-scale));
+  line-height: 1.35;
+  word-wrap: break-word;
+}
+
+.chat-message .chat-author {
+  color: var(--red-bright);
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+.chat-message .chat-time {
+  color: var(--text-muted);
+  font-size: calc(10.5px * var(--font-scale));
+  margin-left: 6px;
+}
+
+.chat-message.self .chat-author { color: var(--text-muted); }
+
+.chat-system-message {
+  font-size: calc(11.5px * var(--font-scale));
+  color: var(--text-dim, var(--text-muted));
+  text-align: center;
+  font-style: italic;
+}
+
+#chat-form {
+  display: flex;
+  gap: 6px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+#chat-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: calc(13px * var(--font-scale));
+  font-family: var(--font-ui);
+}
+
+#chat-form button {
+  padding: 8px 14px;
+  font-size: calc(12px * var(--font-scale));
+}
+
 .avatar-dot {
   width: 22px;
   height: 22px;
@@ -589,6 +686,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 #video-grid {
   flex: 1;
+  min-width: 0;
   padding: 14px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -782,6 +880,41 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .video-tile.content-hidden .tile-hidden-overlay { display: flex; }
 .video-tile.content-hidden video { visibility: hidden; }
+
+.tile-reconnecting-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--text);
+  z-index: 6;
+  pointer-events: none;
+}
+
+.tile-reconnecting-badge .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red-bright);
+  animation: reconnect-pulse 1s ease-in-out infinite;
+}
+
+@keyframes reconnect-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.video-tile.tile-reconnecting .tile-reconnecting-badge { display: flex; }
+/* O video continua visivel (ultimo frame antes de cair) - so fica claro
+   que aquilo esta parado/desatualizado, sem esconder o conteudo. */
+.video-tile.tile-reconnecting video { filter: grayscale(0.5) brightness(0.65); }
 
 .tile-context-menu {
   position: fixed;
