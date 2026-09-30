@@ -193,19 +193,23 @@ const ENCODE_TEST_LADDER = [
   { key: '1440p30', width: 2560, height: 1440, frameRate: 30, maxBitrate: 9_000_000 },
 ];
 
-// Codecs candidatos, em ordem de preferencia quando mais de um se mostra
-// viavel no teste (comprimem melhor nessa ordem: AV1 > VP9 > VP8 - mas so
-// importa se o PC realmente aguenta codificar em tempo real, e e
-// justamente isso que o teste mede em vez de supor). H264 fica de fora -
-// ver o comentario em setSpecificCodecPreference.
+// Codecs candidatos. CODEC_PRIORITY (comprimem melhor nessa ordem: AV1 >
+// VP9 > VP8) so serve de DESEMPATE entre codecs que tiveram desempenho
+// medido essencialmente igual nesse PC - nao decide sozinho. Escolher so
+// pela prioridade teorica ja causou recomendacao errada na pratica: numa
+// maquina real, AV1 rodou a 29fps (abaixo da meta de 30) enquanto VP9
+// rodou a 31fps, e a logica antiga escolhia AV1 assim mesmo so por vir
+// primeiro na lista - o teste media o numero certo e depois o ignorava.
+// H264 fica de fora - ver o comentario em setSpecificCodecPreference.
 const CODEC_CANDIDATES = ['video/AV1', 'video/VP9', 'video/VP8'];
 const CODEC_PRIORITY = ['video/AV1', 'video/VP9', 'video/VP8'];
+const CODEC_TIE_MARGIN = 0.03; // ~3% de diferenca no fps conta como empate
 
 // Testa cada codec candidato numa resolucao fixa (1080p30, o caso de uso
 // mais comum) - isola so a variavel "codec", separado da escada de
-// resolucao/fps. Entre os que passam no teste (fluidos, nao limitados por
-// CPU), escolhe o de melhor compressao (CODEC_PRIORITY). Se nenhum passar
-// (PC bem fraco), cai pro VP8 mesmo assim - e o mais leve pra codificar.
+// resolucao/fps. Entre os que passaram no teste, escolhe pelo desempenho
+// real medido (fpsRatio) - so usa a prioridade de compressao pra desempatar
+// entre os que ficaram praticamente iguais na pratica.
 async function testCodecs(onProgress) {
   const baseline = { width: 1920, height: 1080, frameRate: 30, maxBitrate: 6_000_000 };
   const results = {};
@@ -213,12 +217,13 @@ async function testCodecs(onProgress) {
     if (onProgress) onProgress(`Testando codec ${codec.replace('video/', '')}...`);
     results[codec] = await testEncodeConfig({ ...baseline, codec });
   }
-  let best = 'video/VP8';
-  for (const codec of CODEC_PRIORITY) {
-    if (results[codec] && results[codec].feasible) {
-      best = codec;
-      break;
-    }
+
+  const feasible = CODEC_CANDIDATES.filter((c) => results[c] && results[c].feasible);
+  let best = 'video/VP8'; // piso seguro se nenhum passar (PC bem fraco)
+  if (feasible.length > 0) {
+    const maxRatio = Math.max(...feasible.map((c) => results[c].fpsRatio));
+    const topTier = feasible.filter((c) => results[c].fpsRatio >= maxRatio - CODEC_TIE_MARGIN);
+    best = CODEC_PRIORITY.find((c) => topTier.includes(c)) || topTier[0];
   }
   return { results, best };
 }
@@ -323,33 +328,37 @@ function renderQualityResults(container, profile) {
   if (profile.codecResults) {
     for (const codec of CODEC_CANDIDATES) {
       const r = profile.codecResults[codec];
+      const isChosen = codec === profile.recommendedCodec;
       const row = document.createElement('div');
-      row.className = 'result-row' + (r && r.feasible ? ' pass' : '');
+      row.className = 'result-row' + (isChosen ? ' pass' : '');
       const label = codec.replace('video/', '');
       const status = !r || !r.ok
         ? 'erro no teste'
-        : r.feasible
-          ? `ok (${r.achievedFps}fps)`
-          : `travou (${r.qualityLimitationReason === 'cpu' ? 'CPU fraca' : r.achievedFps + 'fps'})`;
+        : !r.feasible
+          ? `travou (${r.qualityLimitationReason === 'cpu' ? 'CPU fraca' : r.achievedFps + 'fps'})`
+          : `${r.achievedFps}fps${isChosen ? ' - escolhido' : ''}`;
       row.innerHTML = `<span>Codec ${label}</span><span class="value">${status}</span>`;
       container.appendChild(row);
     }
     const codecRecRow = document.createElement('div');
     codecRecRow.className = 'recommended';
-    codecRecRow.textContent = `Codec recomendado: ${(profile.recommendedCodec || 'video/VP9').replace('video/', '')}`;
+    codecRecRow.textContent = `Codec recomendado: ${(profile.recommendedCodec || 'video/VP9').replace('video/', '')} (melhor desempenho medido nesse PC)`;
     container.appendChild(codecRecRow);
   }
 
+  const bandwidthBps = profile.bandwidth.ok ? profile.bandwidth.mbps * 1_000_000 * 0.7 : 0;
   for (const config of ENCODE_TEST_LADDER) {
     const r = profile.encodeResults[config.key];
+    const fitsBandwidth = config.maxBitrate <= bandwidthBps;
+    const isChosen = config.key === profile.recommendedQuality;
     const row = document.createElement('div');
-    row.className = 'result-row' + (r && r.feasible ? ' pass' : '');
+    row.className = 'result-row' + (isChosen ? ' pass' : '');
     const label = QUALITY_LABELS[config.key] || config.key;
-    const status = !r || !r.ok
-      ? 'erro no teste'
-      : r.feasible
-        ? `ok (${r.achievedFps}fps)`
-        : `travou (${r.qualityLimitationReason === 'cpu' ? 'CPU fraca' : r.achievedFps + 'fps'})`;
+    let status;
+    if (!r || !r.ok) status = 'erro no teste';
+    else if (!r.feasible) status = `travou (${r.qualityLimitationReason === 'cpu' ? 'CPU fraca' : r.achievedFps + 'fps'})`;
+    else if (!fitsBandwidth) status = `PC aguenta (${r.achievedFps}fps), mas passa da sua banda`;
+    else status = `${r.achievedFps}fps${isChosen ? ' - escolhido' : ''}`;
     row.innerHTML = `<span>${label}</span><span class="value">${status}</span>`;
     container.appendChild(row);
   }
