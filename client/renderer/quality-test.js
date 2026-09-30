@@ -193,37 +193,136 @@ const ENCODE_TEST_LADDER = [
   { key: '1440p30', width: 2560, height: 1440, frameRate: 30, maxBitrate: 9_000_000 },
 ];
 
-// Codecs candidatos. CODEC_PRIORITY (comprimem melhor nessa ordem: AV1 >
-// VP9 > VP8) so serve de DESEMPATE entre codecs que tiveram desempenho
-// medido essencialmente igual nesse PC - nao decide sozinho. Escolher so
-// pela prioridade teorica ja causou recomendacao errada na pratica: numa
-// maquina real, AV1 rodou a 29fps (abaixo da meta de 30) enquanto VP9
-// rodou a 31fps, e a logica antiga escolhia AV1 assim mesmo so por vir
-// primeiro na lista - o teste media o numero certo e depois o ignorava.
-// H264 fica de fora - ver o comentario em setSpecificCodecPreference.
 const CODEC_CANDIDATES = ['video/AV1', 'video/VP9', 'video/VP8'];
-const CODEC_PRIORITY = ['video/AV1', 'video/VP9', 'video/VP8'];
-const CODEC_TIE_MARGIN = 0.03; // ~3% de diferenca no fps conta como empate
 
-// Testa cada codec candidato numa resolucao fixa (1080p30, o caso de uso
+// Teto real da escala de QP (quantizacao) de cada codec no libvpx/libaom -
+// AV1 usa 0-255, VP8/VP9 usam 0-63. Sem normalizar por isso, comparar o
+// qpSum bruto entre codecs da conta errada (o mesmo tipo de erro que ja
+// causou uma recomendacao ruim antes, so que na escala de QP em vez de
+// prioridade fixa).
+const CODEC_QP_MAX = {
+  'video/AV1': 255,
+  'video/VP9': 63,
+  'video/VP8': 63,
+};
+
+// Ordem de eficiencia de compressao estabelecida (fato documentado da
+// industria, nao um palpite) - AV1 > VP9 > VP8 pra manter a MESMA
+// qualidade com MENOS bits. So entra em jogo como desempate ENTRE os
+// codecs que ja passaram nos dois testes empiricos abaixo (fluidez e
+// "nao esta sendo esganado pelo bitrate") - nunca decide sozinha.
+//
+// Por que nao mediu a nitidez de cada um diretamente (ex: comparando o
+// pixel decodificado contra o original)? Foi a primeira tentativa, e nao
+// se mostrou confiavel: um teste de sanidade isolado mostrou o PSNR
+// medido piorando com o bitrate MAIOR (o oposto do esperado), porque o
+// WebRTC adapta resolucao/bitrate por conta propria em tempo real e isso
+// contamina qualquer comparacao pixel-a-pixel de um unico frame. O que DA
+// pra medir com confianca, e o que esse teste faz: se o codec mantem
+// fluidez em tempo real, e se o QP medio indica que o bitrate testado e
+// SUFICIENTE pra ele (em vez de tentar quantificar "quao mais nitido"
+// com precisao, o que se mostrou fragil demais pra um teste de poucos
+// segundos).
+const CODEC_PRIORITY = ['video/AV1', 'video/VP9', 'video/VP8'];
+const QP_STARVED_PERCENT = 85; // % do teto de QP daquele codec - acima disso, o bitrate testado claramente nao da conta
+
+// Testa UM codec: mede fluidez (fps real) e le o QP medio reportado pelo
+// proprio encoder (normalizado pelo teto de QP desse codec) no mesmo
+// trecho de conteudo sempre mudando - sem fase separada de imagem parada,
+// que se mostrou fragil (ver comentario acima).
+async function testCodecQuality(codec, targetFps) {
+  const { stream, track, stop } = createSyntheticVideoTrack(1920, 1080, targetFps);
+  const maxBitrate = 6_000_000;
+
+  const pc1 = new RTCPeerConnection();
+  const pc2 = new RTCPeerConnection();
+  pc1.onicecandidate = (e) => { if (e.candidate) pc2.addIceCandidate(e.candidate).catch(() => {}); };
+  pc2.onicecandidate = (e) => { if (e.candidate) pc1.addIceCandidate(e.candidate).catch(() => {}); };
+  const remoteTrackPromise = new Promise((resolve) => { pc2.ontrack = (e) => resolve(e.track); });
+
+  const sender = pc1.addTrack(track, stream);
+  setSpecificCodecPreference(pc1, codec);
+
+  try {
+    const offer = await pc1.createOffer();
+    await pc1.setLocalDescription(offer);
+    await pc2.setRemoteDescription(offer);
+    const answer = await pc2.createAnswer();
+    await pc2.setLocalDescription(answer);
+    await pc1.setRemoteDescription(answer);
+    await remoteTrackPromise;
+
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+    params.encodings[0].maxBitrate = maxBitrate;
+    await sender.setParameters(params).catch(() => {});
+
+    await sleepMs(3000);
+
+    const stats = await pc1.getStats();
+    let outboundVideo = null;
+    let actualCodec = null;
+    stats.forEach((r) => { if (r.type === 'outbound-rtp' && r.kind === 'video') outboundVideo = r; });
+    if (outboundVideo) {
+      stats.forEach((r) => { if (r.type === 'codec' && r.id === outboundVideo.codecId) actualCodec = r.mimeType; });
+    }
+
+    if (!outboundVideo) return { ok: false, feasible: false };
+
+    const achievedFps = outboundVideo.framesPerSecond || 0;
+    const fpsRatio = targetFps > 0 ? achievedFps / targetFps : 0;
+    const limitedByCpu = outboundVideo.qualityLimitationReason === 'cpu';
+    const codecMatched = actualCodec === codec;
+
+    let qpPercent = null;
+    if (outboundVideo.qpSum != null && outboundVideo.framesEncoded > 0) {
+      const avgQp = outboundVideo.qpSum / outboundVideo.framesEncoded;
+      const qpMax = CODEC_QP_MAX[codec] || 63;
+      qpPercent = Math.round((avgQp / qpMax) * 1000) / 10;
+    }
+    const bitrateStarved = qpPercent !== null && qpPercent > QP_STARVED_PERCENT;
+
+    return {
+      ok: true,
+      achievedFps: Math.round(achievedFps * 10) / 10,
+      fpsRatio: Math.round(fpsRatio * 100) / 100,
+      qualityLimitationReason: outboundVideo.qualityLimitationReason || 'none',
+      actualCodec,
+      qpPercent,
+      bitrateStarved,
+      feasible: !limitedByCpu && fpsRatio >= 0.85 && codecMatched && !bitrateStarved,
+    };
+  } finally {
+    stop();
+    pc1.close();
+    pc2.close();
+  }
+}
+
+// Testa cada codec candidato numa resolucao fixa (1080p, o caso de uso
 // mais comum) - isola so a variavel "codec", separado da escada de
-// resolucao/fps. Entre os que passaram no teste, escolhe pelo desempenho
-// real medido (fpsRatio) - so usa a prioridade de compressao pra desempatar
-// entre os que ficaram praticamente iguais na pratica.
+// resolucao/fps. Fluidez e "bitrate suficiente" (QP normalizado, ver
+// CODEC_QP_MAX) sao os dois pisos EMPIRICOS - desclassificam quem nao
+// aguenta ou quem ta sendo claramente esganado pelo bitrate. Entre os que
+// passam nos dois, a ordem de eficiencia de compressao estabelecida
+// decide (CODEC_PRIORITY) - ver o comentario ali pra entender por que a
+// decisao final usa isso em vez de tentar medir "quem parece mais nitido"
+// com precisao.
 async function testCodecs(onProgress) {
-  const baseline = { width: 1920, height: 1080, frameRate: 30, maxBitrate: 6_000_000 };
+  const targetFps = 30;
   const results = {};
   for (const codec of CODEC_CANDIDATES) {
     if (onProgress) onProgress(`Testando codec ${codec.replace('video/', '')}...`);
-    results[codec] = await testEncodeConfig({ ...baseline, codec });
+    results[codec] = await testCodecQuality(codec, targetFps);
   }
 
   const feasible = CODEC_CANDIDATES.filter((c) => results[c] && results[c].feasible);
-  let best = 'video/VP8'; // piso seguro se nenhum passar (PC bem fraco)
+  let best = 'video/VP8'; // piso seguro: o mais leve de codificar, se nada mais passar
   if (feasible.length > 0) {
-    const maxRatio = Math.max(...feasible.map((c) => results[c].fpsRatio));
-    const topTier = feasible.filter((c) => results[c].fpsRatio >= maxRatio - CODEC_TIE_MARGIN);
-    best = CODEC_PRIORITY.find((c) => topTier.includes(c)) || topTier[0];
+    best = CODEC_PRIORITY.find((c) => feasible.includes(c)) || feasible[0];
+  } else {
+    const anyOk = CODEC_CANDIDATES.filter((c) => results[c] && results[c].ok);
+    if (anyOk.length > 0) best = anyOk.reduce((a, b) => (results[b].fpsRatio > results[a].fpsRatio ? b : a));
   }
   return { results, best };
 }
@@ -332,17 +431,18 @@ function renderQualityResults(container, profile) {
       const row = document.createElement('div');
       row.className = 'result-row' + (isChosen ? ' pass' : '');
       const label = codec.replace('video/', '');
-      const status = !r || !r.ok
-        ? 'erro no teste'
-        : !r.feasible
-          ? `travou (${r.qualityLimitationReason === 'cpu' ? 'CPU fraca' : r.achievedFps + 'fps'})`
-          : `${r.achievedFps}fps${isChosen ? ' - escolhido' : ''}`;
+      let status;
+      if (!r || !r.ok) status = 'erro no teste';
+      else if (r.qualityLimitationReason === 'cpu') status = `travou (CPU fraca)`;
+      else if (r.bitrateStarved) status = `${r.achievedFps}fps, mas comprimido demais pro bitrate testado`;
+      else if (!r.feasible) status = `travou (${r.achievedFps}fps)`;
+      else status = `${r.achievedFps}fps, uso do bitrate: ${r.qpPercent != null ? r.qpPercent + '%' : '?'}${isChosen ? ' - escolhido' : ''}`;
       row.innerHTML = `<span>Codec ${label}</span><span class="value">${status}</span>`;
       container.appendChild(row);
     }
     const codecRecRow = document.createElement('div');
     codecRecRow.className = 'recommended';
-    codecRecRow.textContent = `Codec recomendado: ${(profile.recommendedCodec || 'video/VP9').replace('video/', '')} (melhor desempenho medido nesse PC)`;
+    codecRecRow.textContent = `Codec recomendado: ${(profile.recommendedCodec || 'video/VP9').replace('video/', '')} (o de melhor compressao entre os que rodaram fluidos e com bitrate suficiente)`;
     container.appendChild(codecRecRow);
   }
 
