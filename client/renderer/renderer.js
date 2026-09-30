@@ -559,11 +559,14 @@ function wireRemoteAudioGain(peerId, video, audioTrack) {
 function applyGain(peerId) {
   const entry = remoteGainNodes.get(peerId);
   if (!entry) return;
-  // Enquanto voce compartilha, suprime o audio dos outros pra nao vazar
-  // eco na sua propria transmissao. E corta de vez quando a transmissao
-  // esta oculta (botao direito na tile).
+  // Enquanto voce compartilha capturando audio do sistema, suprime o audio
+  // dos outros pra nao vazar eco na sua propria transmissao. No modo camera
+  // isso nao se aplica: nao capturamos audio do sistema nesse modo, entao
+  // nao ha risco de eco e a pessoa continua ouvindo os outros normalmente.
+  // E corta de vez quando a transmissao esta oculta (botao direito na tile).
   const hiddenFactor = hiddenPeers.has(peerId) ? 0 : 1;
-  entry.gainNode.gain.value = (localStream ? 0 : entry.sliderValue / 100) * hiddenFactor;
+  const suppressForEcho = !!localStream && shareMode !== 'camera';
+  entry.gainNode.gain.value = (suppressForEcho ? 0 : entry.sliderValue / 100) * hiddenFactor;
 }
 
 function refreshAllGainsForSharingState() {
@@ -1602,11 +1605,16 @@ async function finishStartingShare(selfLabel) {
     videoTrack.contentHint = currentQuality.frameRate >= 60 ? 'motion' : 'detail';
   }
 
+  // No modo camera (so a webcam, sem tela), nao captura o audio do sistema -
+  // quem quer so mostrar o rosto normalmente nao quer que o audio dos jogos/
+  // musica/notificacoes do PC va junto.
   let audioTrack = null;
-  try {
-    audioTrack = await setupCapturedAudioTrack();
-  } catch (err) {
-    console.error('Falha ao capturar audio do sistema:', err);
+  if (shareMode !== 'camera') {
+    try {
+      audioTrack = await setupCapturedAudioTrack();
+    } catch (err) {
+      console.error('Falha ao capturar audio do sistema:', err);
+    }
   }
 
   const tracks = [...localVideoStream.getVideoTracks()];
