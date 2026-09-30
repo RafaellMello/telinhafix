@@ -139,3 +139,7 @@ contextBridge.exposeInMainWorld('appLinks', {
     return ipcRenderer.invoke('open-credit-link');
   },
 });
+
+contextBridge.exposeInMainWorld('appInfo', {
+  version: require('./package.json').version,
+});

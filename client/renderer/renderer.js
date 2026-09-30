@@ -1718,6 +1718,8 @@ document.getElementById('credit-link').addEventListener('click', (e) => {
   window.appLinks.openCredit();
 });
 
+document.getElementById('build-version').textContent = `build (${window.appInfo.version})`;
+
 btnJoin.addEventListener('click', async () => {
   setLoginError('');
   const serverUrl = document.getElementById('server-url').value.trim();
