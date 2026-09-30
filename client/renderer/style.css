@@ -245,6 +245,15 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 }
 #btn-settings:hover { filter: none; border-color: var(--red); }
 
+/* Numero da versao instalada, fixo no canto oposto ao das configuracoes */
+#build-version {
+  position: absolute;
+  bottom: 14px;
+  left: 18px;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--text-muted);
+}
+
 /* Painel de configuracoes (aparencia) */
 .settings-overlay {
   position: fixed;
