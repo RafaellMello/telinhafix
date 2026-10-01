@@ -13,23 +13,66 @@
     <div id="members-left" class="members-col"></div>
 
     <div class="login-box">
-      <div class="brand">
-        <img src="assets/logo.png" alt="TelinhaFix" />
-        <h1>Telinha<span>Fix</span></h1>
+      <div class="box-reveal" style="--i:0">
+        <div class="box-reveal-content">
+          <div class="brand">
+            <img src="assets/logo.png" alt="TelinhaFix" />
+            <h1>Telinha<span>Fix</span></h1>
+          </div>
+        </div>
+        <div class="box-reveal-cover"></div>
       </div>
-      <p class="subtitle">fiz essa parada aqui pra gente streamar tela, sucumba lula e janja</p>
+
+      <div class="box-reveal" style="--i:1">
+        <div class="box-reveal-content">
+          <p class="subtitle">fiz essa parada aqui pra gente streamar tela, sucumba lula e janja</p>
+        </div>
+        <div class="box-reveal-cover"></div>
+      </div>
+
       <hr class="divider" />
 
-      <label>Seu nome</label>
-      <input id="display-name" type="text" />
+      <div class="box-reveal" style="--i:2">
+        <div class="box-reveal-content">
+          <label>Seu nome</label>
+          <div class="input-spotlight">
+            <input id="display-name" type="text" />
+          </div>
+        </div>
+        <div class="box-reveal-cover"></div>
+      </div>
 
-      <label>Senha global (Pergunte ao Bunny)</label>
-      <input id="server-password" type="password" placeholder="" />
+      <div class="box-reveal" style="--i:3">
+        <div class="box-reveal-content">
+          <label>Senha global (Pergunte ao Bunny)</label>
+          <div class="input-spotlight password-field">
+            <input id="server-password" type="password" placeholder="" />
+            <button type="button" id="btn-toggle-password" class="input-eye-toggle" title="Mostrar/esconder senha" aria-label="Mostrar senha">
+              <svg class="eye-icon eye-icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-icon eye-icon-hide hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 11s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="box-reveal-cover"></div>
+      </div>
 
-      <label>Código da sala</label>
-      <input id="room-id" type="text" placeholder="Ex: turma-do-rafael" value="latadelixo" />
+      <div class="box-reveal" style="--i:4">
+        <div class="box-reveal-content">
+          <label>Código da sala</label>
+          <div class="input-spotlight">
+            <input id="room-id" type="text" placeholder="Ex: turma-do-rafael" value="latadelixo" />
+          </div>
+        </div>
+        <div class="box-reveal-cover"></div>
+      </div>
 
-      <button id="btn-join">Entrar</button>
+      <div class="box-reveal" style="--i:5">
+        <div class="box-reveal-content">
+          <button id="btn-join">Entrar</button>
+        </div>
+        <div class="box-reveal-cover"></div>
+      </div>
+
       <p id="login-error" class="error"></p>
 
       <div id="quality-test-banner" class="quality-test-banner hidden">

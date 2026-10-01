@@ -172,6 +172,52 @@ function setupSettingsPanel() {
 
 setupSettingsPanel();
 
+// --- Animacoes da tela de login (entrada em cascata + brilho nos inputs) ---
+
+// Toca (ou retoca) a animacao de entrada em cascata do formulario de login.
+// Chamado no carregamento inicial e de novo toda vez que a pessoa volta pra
+// essa tela (ver leaveRoom) - remove a classe, forca um reflow pra garantir
+// que o navegador registre o estado "escondido" de novo, e re-adiciona num
+// requestAnimationFrame pra disparar a transicao do zero.
+function triggerLoginReveal() {
+  const box = document.querySelector('.login-box');
+  if (!box) return;
+  box.classList.remove('revealed');
+  void box.offsetWidth; // forca reflow
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => box.classList.add('revealed'));
+  });
+}
+
+function setupInputSpotlights() {
+  document.querySelectorAll('.input-spotlight').forEach((wrapper) => {
+    wrapper.addEventListener('mousemove', (e) => {
+      const rect = wrapper.getBoundingClientRect();
+      wrapper.style.setProperty('--spot-x', `${e.clientX - rect.left}px`);
+      wrapper.style.setProperty('--spot-y', `${e.clientY - rect.top}px`);
+    });
+    wrapper.addEventListener('mouseenter', () => wrapper.classList.add('spotlight-active'));
+    wrapper.addEventListener('mouseleave', () => wrapper.classList.remove('spotlight-active'));
+  });
+}
+
+function setupPasswordToggle() {
+  const btn = document.getElementById('btn-toggle-password');
+  const input = document.getElementById('server-password');
+  if (!btn || !input) return;
+  btn.addEventListener('click', () => {
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    btn.querySelector('.eye-icon-show').classList.toggle('hidden', !showing);
+    btn.querySelector('.eye-icon-hide').classList.toggle('hidden', showing);
+    btn.setAttribute('aria-label', showing ? 'Mostrar senha' : 'Esconder senha');
+  });
+}
+
+setupInputSpotlights();
+setupPasswordToggle();
+triggerLoginReveal();
+
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 const loginScreen = document.getElementById('login-screen');
@@ -1704,6 +1750,7 @@ async function leaveRoom() {
 
   roomScreen.classList.add('hidden');
   loginScreen.classList.remove('hidden');
+  triggerLoginReveal();
 }
 
 btnShare.addEventListener('click', startShare);

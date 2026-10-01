@@ -65,6 +65,7 @@
   --border: rgba(var(--red-rgb), 0.35);
   --text: #f2f0ec;
   --text-muted: #9a9499;
+  --input-radius: 3px;
 }
 
 * { box-sizing: border-box; }
@@ -148,6 +149,50 @@ body {
 
 .login-box h1 span { color: var(--red-bright); }
 
+/* Entrada em cascata dos blocos do formulario: cada ".box-reveal" comeca
+   escondido atras de uma capa solida que desliza pra fora (feito so com
+   left/right, sem precisar de overflow:hidden), enquanto o conteudo sobe
+   e aparece por baixo. --i (definido inline em cada bloco) escalona o
+   atraso de cada um, criando o efeito cascata. Disparado via JS
+   (ver triggerLoginReveal em renderer.js) adicionando .revealed na
+   .login-box - assim funciona tanto na entrada inicial quanto toda vez
+   que a pessoa volta pra essa tela (sai de uma sala, por exemplo). */
+.box-reveal {
+  position: relative;
+  overflow: hidden;
+}
+
+.box-reveal-content {
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.login-box.revealed .box-reveal-content {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+
+.box-reveal-cover {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  background: var(--red);
+  border-radius: 4px;
+  transition: left 0.45s ease-in;
+}
+
+.login-box.revealed .box-reveal-cover {
+  left: 100%;
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+
 .divider {
   border: none;
   height: 1px;
@@ -177,9 +222,9 @@ input {
   border: 1px solid #2a2a2d;
   color: var(--text);
   padding: 9px 10px;
-  border-radius: 3px;
+  border-radius: var(--input-radius);
   font-size: calc(14px * var(--font-scale));
-  margin-top: 4px;
+  width: 100%;
   font-family: var(--font-ui);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -189,6 +234,49 @@ input:focus {
   border-color: var(--red);
   box-shadow: 0 0 0 3px rgba(var(--red-rgb), 0.15);
 }
+
+/* Moldura em volta do input que acende um brilho seguindo o mouse (so
+   enquanto o cursor esta em cima) - puramente decorativo, nao interfere
+   no campo em si. */
+.input-spotlight {
+  position: relative;
+  border-radius: calc(var(--input-radius) + 2px);
+  padding: 2px;
+  margin-top: 4px;
+  transition: background 0.3s;
+}
+
+.input-spotlight.spotlight-active {
+  background: radial-gradient(
+    120px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    rgba(var(--red-rgb), 0.55),
+    transparent 80%
+  );
+}
+
+.input-spotlight input { margin-top: 0; display: block; }
+
+.password-field { position: relative; }
+.password-field input { padding-right: 38px; }
+
+.input-eye-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 6px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.input-eye-toggle:hover { filter: none; color: var(--text); }
+.input-eye-toggle:active { transform: translateY(-50%); }
+.input-eye-toggle .eye-icon { width: 17px; height: 17px; }
+.input-eye-toggle .eye-icon.hidden { display: none; }
 
 button {
   cursor: pointer;
@@ -219,7 +307,28 @@ button.ghost {
 }
 button.ghost:hover { filter: none; border-color: var(--red); }
 
-#btn-join { margin-top: 20px; }
+#btn-join {
+  margin-top: 20px;
+  position: relative;
+  overflow: visible;
+}
+
+/* Linha de brilho que acende embaixo do botao principal no hover - so
+   decoracao, acompanha a cor de destaque escolhida. */
+#btn-join::after {
+  content: '';
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--red-bright), transparent);
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+
+#btn-join:hover::after { opacity: 1; }
 
 .error { color: var(--red-bright); font-size: calc(12px * var(--font-scale)); min-height: 16px; margin-top: 10px; text-align: center; }
 
@@ -990,6 +1099,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
    translucido neutro, combinando com o visual liquid glass. */
 :root.mode-serio {
   --border: rgba(255, 255, 255, 0.14);
+  --input-radius: 14px;
 }
 
 .mode-serio body {
@@ -1033,9 +1143,10 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .mode-serio #chat-panel,
 .mode-serio #participants { box-shadow: none; }
 
-/* Bordas bem arredondadas em tudo que e clicavel/retangular. */
+/* Bordas bem arredondadas em tudo que e clicavel/retangular (input ja
+   vem arredondado via --input-radius, que tambem controla a moldura do
+   spotlight em volta dele). */
 .mode-serio button,
-.mode-serio input,
 .mode-serio #btn-settings,
 .mode-serio .font-option,
 .mode-serio .size-option,
