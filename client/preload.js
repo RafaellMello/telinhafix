@@ -106,6 +106,12 @@ contextBridge.exposeInMainWorld('screenPicker', {
   getCameraQuality() {
     return ipcRenderer.invoke('get-camera-quality');
   },
+  // Avisa o processo principal que o PROXIMO getDisplayMedia deve pular o
+  // seletor e usar direto o monitor principal com o preset rapido (ver
+  // quickShareRequested em main.js) - usado pelo atalho de compartilhar.
+  requestQuickShare() {
+    return ipcRenderer.invoke('quick-share-screen-request');
+  },
 });
 
 // Ponte com o helper nativo de captura de tela sem cursor (modo "beta"),
@@ -157,5 +163,8 @@ contextBridge.exposeInMainWorld('hotkeys', {
   },
   onToggleMute(cb) {
     ipcRenderer.on('global-hotkey-toggle-mute', cb);
+  },
+  onQuickShare(cb) {
+    ipcRenderer.on('global-hotkey-quick-share', cb);
   },
 });
