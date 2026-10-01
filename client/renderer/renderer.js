@@ -10,7 +10,7 @@ const FONT_STACKS = {
 };
 
 const THEME_STORAGE_KEY = 'telinhafix-theme';
-const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo' };
+const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada' };
 
 function hexToRgbString(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -88,6 +88,10 @@ function applyTheme(theme) {
   // (default - identico ao app de sempre, zero mudanca pra quem nao mexe
   // nessa opcao).
   document.documentElement.classList.toggle('mode-serio', theme.mode === 'serio');
+  // Bordas: independente do modo acima - "chama2k19" zera o arredondamento
+  // de tudo no app (ver .border-chama2k19 * no CSS), "arredondada" (default)
+  // nao mexe em nada.
+  document.documentElement.classList.toggle('border-chama2k19', theme.border === 'chama2k19');
 }
 
 function loadTheme() {
@@ -116,6 +120,7 @@ function setupSettingsPanel() {
   const btnOpenRoom = document.getElementById('btn-settings-room');
   const btnClose = document.getElementById('btn-settings-close');
   const modeOptions = document.querySelectorAll('.mode-option');
+  const borderOptions = document.querySelectorAll('.border-option');
   const fontOptions = document.querySelectorAll('.font-option');
   const sizeOptions = document.querySelectorAll('.size-option');
   const colorSwatches = document.querySelectorAll('.color-swatch');
@@ -124,6 +129,7 @@ function setupSettingsPanel() {
 
   function refreshUI() {
     modeOptions.forEach((el) => el.classList.toggle('selected', el.dataset.mode === currentTheme.mode));
+    borderOptions.forEach((el) => el.classList.toggle('selected', el.dataset.border === currentTheme.border));
     fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
     sizeOptions.forEach((el) => el.classList.toggle('selected', Number(el.dataset.scale) === currentTheme.scale));
     colorSwatches.forEach((el) => {
@@ -157,6 +163,9 @@ function setupSettingsPanel() {
 
   modeOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ mode: el.dataset.mode }));
+  });
+  borderOptions.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ border: el.dataset.border }));
   });
   fontOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ font: el.dataset.font }));

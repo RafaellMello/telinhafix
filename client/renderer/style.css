@@ -559,14 +559,14 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .font-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
-.mode-options, .size-options, .color-swatches {
+.mode-options, .border-options, .size-options, .color-swatches {
   display: flex;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
 
-.mode-option {
+.mode-option, .border-option {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 4px;
@@ -577,7 +577,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 700;
 }
 
-.mode-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.mode-option.selected, .border-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
 .size-option {
   background: var(--bg);
@@ -1107,9 +1107,11 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 }
 
 /* Sem as fotos dos membros nem no login nem na lista de participantes da
-   chamada - so o essencial, limpo. */
+   chamada - so o essencial, limpo. Isso inclui a fotinho do logo do lado
+   do nome "TelinhaFix". */
 .mode-serio .members-col,
-.mode-serio .avatar-dot {
+.mode-serio .avatar-dot,
+.mode-serio .brand img {
   display: none;
 }
 
@@ -1120,9 +1122,9 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   opacity: 1;
 }
 
-/* Vidro liquido: fundo translucido com blur por cima do que estiver atras
-   (incluindo a onda de particulas), sem os brilhos/sombras vermelhos
-   pesados do modo normal. */
+/* Vidro liquido: bem transparente, quase so o blur mesmo, deixando a onda
+   de particulas por tras aparecer forte atraves do vidro em vez de um
+   fundo solido/opaco. */
 .mode-serio .login-box,
 .mode-serio .settings-panel,
 .mode-serio .topbar,
@@ -1130,10 +1132,10 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .mode-serio #chat-panel,
 .mode-serio .quality-test-banner,
 .mode-serio .tile-context-menu {
-  background: rgba(255, 255, 255, 0.055);
-  backdrop-filter: blur(28px) saturate(150%);
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
 }
 
 .mode-serio .login-box,
@@ -1151,6 +1153,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .mode-serio .font-option,
 .mode-serio .size-option,
 .mode-serio .mode-option,
+.mode-serio .border-option,
 .mode-serio .quality-btn,
 .mode-serio .audio-btn,
 .mode-serio #participants-list li,
@@ -1188,4 +1191,16 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .mode-serio #video-grid {
   background-image: none;
+}
+
+/* ========================================================================
+   Modo de bordas "Chama2k19" - independente do modo de aparencia (Lata de
+   lixo/Serio): zera o arredondamento de TUDO no app, de uma vez, com
+   !important pra nao precisar listar cada elemento individualmente (tem
+   muita coisa com border-radius espalhada, incluindo o que o modo Serio
+   define). "Arredondada" (default) nao aplica nada aqui - cada elemento
+   fica com o raio que ja tinha.
+   ======================================================================== */
+.border-chama2k19 * {
+  border-radius: 0 !important;
 }
