@@ -162,7 +162,17 @@
           <div class="hotkeys-option" data-hotkeys="ligado">Ligados</div>
           <div class="hotkeys-option" data-hotkeys="desligado">Desligados</div>
         </div>
-        <p class="settings-hint">Funcionam mesmo com o app em segundo plano: Ctrl+Alt+S para parar de compartilhar, Ctrl+Alt+M para mutar/desmutar todo mundo.</p>
+        <p class="settings-hint">Funcionam mesmo com o app em segundo plano. Clique numa combinação pra trocar.</p>
+        <div class="keybind-row">
+          <span class="keybind-label">Parar de compartilhar</span>
+          <button type="button" class="keybind-capture" data-action="stopShare">Ctrl+Alt+S</button>
+        </div>
+        <div class="keybind-row">
+          <span class="keybind-label">Mutar/desmutar todos</span>
+          <button type="button" class="keybind-capture" data-action="toggleMute">Ctrl+Alt+M</button>
+        </div>
+        <p id="keybind-error" class="settings-hint keybind-error hidden"></p>
+        <button type="button" id="btn-keybinds-reset" class="ghost keybinds-reset-btn">Restaurar padrão</button>
       </div>
 
       <div class="settings-group">

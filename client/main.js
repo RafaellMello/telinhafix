@@ -419,30 +419,48 @@ function createWindow() {
     shell.openExternal('https://rafaelmello.site');
   });
 
-  // Atalhos globais (funcionam mesmo com o TelinhaFix em segundo plano,
-  // tipo enquanto a pessoa ta num jogo) - a pessoa pode desligar isso nas
-  // configuracoes de aparencia, entao o estado "ligado" vem do renderer
-  // (localStorage), nao daqui.
-  let hotkeysRegistered = false;
-  function registerGlobalHotkeys() {
-    if (hotkeysRegistered) return;
-    hotkeysRegistered = true;
-    const okStop = globalShortcut.register('Control+Alt+S', () => {
-      if (!win.isDestroyed()) win.webContents.send('global-hotkey-stop-share');
-    });
-    const okMute = globalShortcut.register('Control+Alt+M', () => {
-      if (!win.isDestroyed()) win.webContents.send('global-hotkey-toggle-mute');
-    });
-    if (!okStop) console.error('Falha ao registrar atalho Ctrl+Alt+S - outro programa deve estar usando essa combinacao.');
-    if (!okMute) console.error('Falha ao registrar atalho Ctrl+Alt+M - outro programa deve estar usando essa combinacao.');
-  }
-  function unregisterGlobalHotkeys() {
+  // Atalhos globais (funcionam mesmo com o TelinhaFix em segundo plano, tipo
+  // enquanto a pessoa ta num jogo) - a pessoa escolhe a combinacao de cada
+  // um e pode desligar tudo nas configuracoes de aparencia; esse estado
+  // inteiro (ligado/desligado + qual tecla pra cada acao) mora no renderer
+  // (localStorage), entao aqui so aplicamos o que ele mandar via IPC.
+  // Sempre reconstroi do zero (unregisterAll + registra de novo) em vez de
+  // tentar atualizar so o que mudou - mais simples e sem risco de deixar
+  // uma combinacao antiga presa registrada por engano.
+  const HOTKEY_CHANNELS = {
+    stopShare: 'global-hotkey-stop-share',
+    toggleMute: 'global-hotkey-toggle-mute',
+  };
+  let hotkeysEnabled = false;
+  let hotkeyBindings = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M' };
+
+  function applyHotkeys() {
     globalShortcut.unregisterAll();
-    hotkeysRegistered = false;
+    const results = {};
+    for (const [action, channel] of Object.entries(HOTKEY_CHANNELS)) {
+      const accelerator = hotkeyBindings[action];
+      if (!hotkeysEnabled || !accelerator) {
+        results[action] = true;
+        continue;
+      }
+      const ok = globalShortcut.register(accelerator, () => {
+        if (!win.isDestroyed()) win.webContents.send(channel);
+      });
+      results[action] = ok;
+      if (!ok) console.error(`Falha ao registrar atalho ${accelerator} (${action}) - outro programa deve estar usando essa combinacao.`);
+    }
+    return results;
   }
-  ipcMain.handle('hotkeys-set-enabled', (event, enabled) => {
-    if (enabled) registerGlobalHotkeys();
-    else unregisterGlobalHotkeys();
+
+  // state: { enabled, bindings: { stopShare, toggleMute } }. Retorna
+  // { stopShare: bool, toggleMute: bool } dizendo quais combinacoes
+  // conseguiram ser registradas de verdade no sistema operacional - o
+  // renderer usa isso pra saber se precisa avisar a pessoa de um conflito
+  // com outro programa e desfazer a troca.
+  ipcMain.handle('hotkeys-apply-state', (event, state) => {
+    hotkeysEnabled = !!(state && state.enabled);
+    if (state && state.bindings) hotkeyBindings = { ...hotkeyBindings, ...state.bindings };
+    return applyHotkeys();
   });
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
