@@ -10,7 +10,7 @@ const FONT_STACKS = {
 };
 
 const THEME_STORAGE_KEY = 'telinhafix-theme';
-const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a' };
+const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo' };
 
 function hexToRgbString(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -83,6 +83,11 @@ function applyTheme(theme) {
   root.setProperty('--red-bright', bright);
   root.setProperty('--red-bright-rgb', hexToRgbString(bright));
   root.setProperty('--red-dark', dark);
+  // Modo "serio": tira as fotos dos membros/participantes e troca os paineis
+  // por um visual liquid glass limpo, em vez do visual "lata de lixo" normal
+  // (default - identico ao app de sempre, zero mudanca pra quem nao mexe
+  // nessa opcao).
+  document.documentElement.classList.toggle('mode-serio', theme.mode === 'serio');
 }
 
 function loadTheme() {
@@ -110,6 +115,7 @@ function setupSettingsPanel() {
   const btnOpen = document.getElementById('btn-settings');
   const btnOpenRoom = document.getElementById('btn-settings-room');
   const btnClose = document.getElementById('btn-settings-close');
+  const modeOptions = document.querySelectorAll('.mode-option');
   const fontOptions = document.querySelectorAll('.font-option');
   const sizeOptions = document.querySelectorAll('.size-option');
   const colorSwatches = document.querySelectorAll('.color-swatch');
@@ -117,6 +123,7 @@ function setupSettingsPanel() {
   if (!overlay) return;
 
   function refreshUI() {
+    modeOptions.forEach((el) => el.classList.toggle('selected', el.dataset.mode === currentTheme.mode));
     fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
     sizeOptions.forEach((el) => el.classList.toggle('selected', Number(el.dataset.scale) === currentTheme.scale));
     colorSwatches.forEach((el) => {
@@ -148,6 +155,9 @@ function setupSettingsPanel() {
     if (e.target === overlay) closeSettings();
   });
 
+  modeOptions.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ mode: el.dataset.mode }));
+  });
   fontOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ font: el.dataset.font }));
   });

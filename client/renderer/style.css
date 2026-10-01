@@ -450,12 +450,25 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .font-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
-.size-options, .color-swatches {
+.mode-options, .size-options, .color-swatches {
   display: flex;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
+
+.mode-option {
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 14px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mode-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
 .size-option {
   background: var(--bg);
@@ -963,3 +976,105 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 }
 
 .tile-context-menu-item:hover { background: rgba(var(--red-rgb), 0.15); }
+
+/* ========================================================================
+   Modo "Serio" - visual liquid glass limpo, sem as fotos dos membros/
+   participantes. Tudo aqui so se aplica com a classe .mode-serio na <html>
+   (ver applyTheme em renderer.js) - o modo "lata de lixo" (default) nao
+   usa nada disso, fica identico ao app de sempre.
+   ======================================================================== */
+
+/* Troca a cor de borda usada em quase todo elemento do app (inputs,
+   botoes ghost, paineis, banner do teste de qualidade, video-tile, menu
+   de contexto...) de uma so vez - de um vermelho sutil pra um branco
+   translucido neutro, combinando com o visual liquid glass. */
+:root.mode-serio {
+  --border: rgba(255, 255, 255, 0.14);
+}
+
+.mode-serio body {
+  background-image: none;
+}
+
+/* Sem as fotos dos membros nem no login nem na lista de participantes da
+   chamada - so o essencial, limpo. */
+.mode-serio .members-col,
+.mode-serio .avatar-dot {
+  display: none;
+}
+
+.mode-serio .login-box h1 { text-shadow: none; }
+
+.mode-serio .divider {
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+}
+
+/* Vidro liquido: fundo translucido com blur por cima do que estiver atras
+   (incluindo a onda de particulas), sem os brilhos/sombras vermelhos
+   pesados do modo normal. */
+.mode-serio .login-box,
+.mode-serio .settings-panel,
+.mode-serio .topbar,
+.mode-serio #participants,
+.mode-serio #chat-panel,
+.mode-serio .quality-test-banner,
+.mode-serio .tile-context-menu {
+  background: rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+}
+
+.mode-serio .login-box,
+.mode-serio .quality-test-banner { border-radius: 20px; }
+.mode-serio .settings-panel,
+.mode-serio .tile-context-menu { border-radius: 20px; }
+.mode-serio #chat-panel,
+.mode-serio #participants { box-shadow: none; }
+
+/* Bordas bem arredondadas em tudo que e clicavel/retangular. */
+.mode-serio button,
+.mode-serio input,
+.mode-serio #btn-settings,
+.mode-serio .font-option,
+.mode-serio .size-option,
+.mode-serio .mode-option,
+.mode-serio .quality-btn,
+.mode-serio .audio-btn,
+.mode-serio #participants-list li,
+.mode-serio .video-tile,
+.mode-serio .video-tile .label {
+  border-radius: 14px;
+}
+
+.mode-serio button {
+  box-shadow: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.mode-serio button:not(.ghost):not(.danger) {
+  background: rgba(var(--red-rgb), 0.32);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+.mode-serio button.ghost { background: rgba(255, 255, 255, 0.05); }
+.mode-serio button.danger { background: rgba(255, 255, 255, 0.08); }
+
+.mode-serio input {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mode-serio #btn-settings {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.mode-serio #participants-list li {
+  background: rgba(255, 255, 255, 0.04);
+  border-left-color: rgba(255, 255, 255, 0.2);
+}
+
+.mode-serio #video-grid {
+  background-image: none;
+}
