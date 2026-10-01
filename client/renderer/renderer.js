@@ -199,6 +199,10 @@ function startNamePlaceholderCycle() {
 
 startNamePlaceholderCycle();
 
+// Endereco do servidor fixo - a pessoa nao escolhe mais, pra evitar erro
+// de digitacao/configuracao e simplificar a tela de login.
+const DEFAULT_SERVER_URL = 'https://screenbunny.onrender.com';
+
 // Lembra a ultima senha do servidor digitada, pra nao ter que redigitar
 // toda vez que abrir o app.
 const SERVER_PASSWORD_STORAGE_KEY = 'telinhafix-server-password';
@@ -1722,13 +1726,13 @@ document.getElementById('build-version').textContent = `build (${window.appInfo.
 
 btnJoin.addEventListener('click', async () => {
   setLoginError('');
-  const serverUrl = document.getElementById('server-url').value.trim();
+  const serverUrl = DEFAULT_SERVER_URL;
   const password = document.getElementById('server-password').value;
   const name = document.getElementById('display-name').value.trim() || 'Anonimo';
   const roomId = document.getElementById('room-id').value.trim();
 
-  if (!serverUrl || !roomId) {
-    setLoginError('Preencha o servidor e o código da sala.');
+  if (!roomId) {
+    setLoginError('Preencha o código da sala.');
     return;
   }
 
