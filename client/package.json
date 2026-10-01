@@ -1,6 +1,6 @@
 {
   "name": "telinhafix",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "description": "App local para compartilhamento de tela entre amigos, estilo Discord",
   "main": "main.js",
   "scripts": {
@@ -15,7 +15,8 @@
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "three": "^0.186.1"
   },
   "build": {
     "appId": "com.telinhafix.app",

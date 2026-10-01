@@ -95,6 +95,18 @@ body {
   position: relative;
 }
 
+/* Fundo animado (onda de particulas), fora do fluxo do flex pra nao
+   empurrar o resto do layout - so decoracao atras de tudo. */
+#particle-wave-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+
 .login-box {
   background: linear-gradient(180deg, var(--bg-elevated), var(--bg-card));
   border: 1px solid var(--border);
@@ -105,6 +117,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  position: relative;
+  z-index: 1;
 }
 
 .brand {
@@ -228,6 +242,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 /* Botao de configuracoes (engrenagem), fixo no canto da tela de login */
 #btn-settings {
   position: absolute;
+  z-index: 1;
   top: 18px;
   right: 18px;
   width: 34px;
@@ -248,6 +263,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 /* Numero da versao instalada, fixo no canto oposto ao das configuracoes */
 #build-version {
   position: absolute;
+  z-index: 1;
   bottom: 14px;
   left: 18px;
   font-size: calc(11px * var(--font-scale));
@@ -517,6 +533,8 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   gap: 16px;
   width: 68px;
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 720px) {
