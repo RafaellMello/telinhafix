@@ -10,7 +10,7 @@ const FONT_STACKS = {
 };
 
 const THEME_STORAGE_KEY = 'telinhafix-theme';
-const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada', sound: 'ligado' };
+const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada', sound: 'ligado', hotkeys: 'ligado' };
 
 function hexToRgbString(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -113,6 +113,9 @@ function saveTheme(theme) {
 
 let currentTheme = loadTheme();
 applyTheme(currentTheme);
+window.hotkeys.setEnabled(currentTheme.hotkeys !== 'desligado');
+window.hotkeys.onStopShare(() => stopShare());
+window.hotkeys.onToggleMute(() => toggleMasterMute());
 
 function setupSettingsPanel() {
   const overlay = document.getElementById('settings-overlay');
@@ -122,6 +125,7 @@ function setupSettingsPanel() {
   const modeOptions = document.querySelectorAll('.mode-option');
   const borderOptions = document.querySelectorAll('.border-option');
   const soundOptions = document.querySelectorAll('.sound-option');
+  const hotkeyOptions = document.querySelectorAll('.hotkeys-option');
   const fontOptions = document.querySelectorAll('.font-option');
   const sizeOptions = document.querySelectorAll('.size-option');
   const colorSwatches = document.querySelectorAll('.color-swatch');
@@ -132,6 +136,7 @@ function setupSettingsPanel() {
     modeOptions.forEach((el) => el.classList.toggle('selected', el.dataset.mode === currentTheme.mode));
     borderOptions.forEach((el) => el.classList.toggle('selected', el.dataset.border === currentTheme.border));
     soundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.sound === currentTheme.sound));
+    hotkeyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.hotkeys === currentTheme.hotkeys));
     fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
     sizeOptions.forEach((el) => el.classList.toggle('selected', Number(el.dataset.scale) === currentTheme.scale));
     colorSwatches.forEach((el) => {
@@ -145,6 +150,7 @@ function setupSettingsPanel() {
     applyTheme(currentTheme);
     saveTheme(currentTheme);
     refreshUI();
+    if (patch.hotkeys !== undefined) window.hotkeys.setEnabled(currentTheme.hotkeys !== 'desligado');
   }
 
   function openSettings() {
@@ -171,6 +177,9 @@ function setupSettingsPanel() {
   });
   soundOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ sound: el.dataset.sound }));
+  });
+  hotkeyOptions.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ hotkeys: el.dataset.hotkeys }));
   });
   fontOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ font: el.dataset.font }));
@@ -606,6 +615,25 @@ function updateSelfAudienceLabel() {
 let sharedAudioCtx = null;
 const remoteGainNodes = new Map(); // peerId -> { gainNode, sliderValue, video }
 
+// Mudo geral (atalho global Ctrl+Alt+M) - corta o audio de todo mundo de uma
+// vez sem mexer nos sliders individuais de cada um, pra nao perder o volume
+// que a pessoa tinha ajustado quando desmutar de novo.
+let masterMuted = false;
+
+function updateMuteAllButton() {
+  const btn = document.getElementById('btn-mute-all');
+  if (!btn) return;
+  btn.textContent = masterMuted ? '🔇' : '🔊';
+  btn.classList.toggle('active-mute', masterMuted);
+  btn.title = masterMuted ? 'Desmutar todos (Ctrl+Alt+M)' : 'Mutar todos (Ctrl+Alt+M)';
+}
+
+function toggleMasterMute() {
+  masterMuted = !masterMuted;
+  refreshAllGainsForSharingState();
+  updateMuteAllButton();
+}
+
 // --- Ocultar transmissao de alguem (so pra voce, botao direito na tile) --
 const hiddenPeers = new Set();
 let activeTileContextMenu = null;
@@ -689,7 +717,8 @@ function applyGain(peerId) {
   // E corta de vez quando a transmissao esta oculta (botao direito na tile).
   const hiddenFactor = hiddenPeers.has(peerId) ? 0 : 1;
   const suppressForEcho = !!localStream && shareMode !== 'camera';
-  entry.gainNode.gain.value = (suppressForEcho ? 0 : entry.sliderValue / 100) * hiddenFactor;
+  const muteFactor = masterMuted ? 0 : 1;
+  entry.gainNode.gain.value = (suppressForEcho ? 0 : entry.sliderValue / 100) * hiddenFactor * muteFactor;
 }
 
 function refreshAllGainsForSharingState() {
@@ -1813,6 +1842,8 @@ async function leaveRoom() {
   peers.clear();
   peerNames.clear();
   assignedAvatars.clear();
+  masterMuted = false;
+  updateMuteAllButton();
   videoGrid.innerHTML = '';
   participantsList.innerHTML = '';
   window.rtc.disconnect();
@@ -1835,6 +1866,8 @@ btnToggleCamera.addEventListener('click', () => {
 });
 btnStopShare.addEventListener('click', stopShare);
 btnLeave.addEventListener('click', leaveRoom);
+
+document.getElementById('btn-mute-all').addEventListener('click', toggleMasterMute);
 
 document.getElementById('btn-toggle-chat').addEventListener('click', toggleChatPanel);
 document.getElementById('chat-form').addEventListener('submit', (e) => {

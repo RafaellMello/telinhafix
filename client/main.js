@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const { autoUpdater } = require('electron-updater');
@@ -419,6 +419,32 @@ function createWindow() {
     shell.openExternal('https://rafaelmello.site');
   });
 
+  // Atalhos globais (funcionam mesmo com o TelinhaFix em segundo plano,
+  // tipo enquanto a pessoa ta num jogo) - a pessoa pode desligar isso nas
+  // configuracoes de aparencia, entao o estado "ligado" vem do renderer
+  // (localStorage), nao daqui.
+  let hotkeysRegistered = false;
+  function registerGlobalHotkeys() {
+    if (hotkeysRegistered) return;
+    hotkeysRegistered = true;
+    const okStop = globalShortcut.register('Control+Alt+S', () => {
+      if (!win.isDestroyed()) win.webContents.send('global-hotkey-stop-share');
+    });
+    const okMute = globalShortcut.register('Control+Alt+M', () => {
+      if (!win.isDestroyed()) win.webContents.send('global-hotkey-toggle-mute');
+    });
+    if (!okStop) console.error('Falha ao registrar atalho Ctrl+Alt+S - outro programa deve estar usando essa combinacao.');
+    if (!okMute) console.error('Falha ao registrar atalho Ctrl+Alt+M - outro programa deve estar usando essa combinacao.');
+  }
+  function unregisterGlobalHotkeys() {
+    globalShortcut.unregisterAll();
+    hotkeysRegistered = false;
+  }
+  ipcMain.handle('hotkeys-set-enabled', (event, enabled) => {
+    if (enabled) registerGlobalHotkeys();
+    else unregisterGlobalHotkeys();
+  });
+
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
@@ -488,4 +514,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   stopAudioCapture();
   stopNativeScreenCapture();
+  globalShortcut.unregisterAll();
 });
