@@ -559,14 +559,14 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .font-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
-.mode-options, .border-options, .size-options, .color-swatches {
+.mode-options, .border-options, .sound-options, .size-options, .color-swatches {
   display: flex;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
 
-.mode-option, .border-option {
+.mode-option, .border-option, .sound-option {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 4px;
@@ -577,7 +577,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 700;
 }
 
-.mode-option.selected, .border-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.mode-option.selected, .border-option.selected, .sound-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
 .size-option {
   background: var(--bg);
@@ -1154,6 +1154,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .mode-serio .size-option,
 .mode-serio .mode-option,
 .mode-serio .border-option,
+.mode-serio .sound-option,
 .mode-serio .quality-btn,
 .mode-serio .audio-btn,
 .mode-serio #participants-list li,
