@@ -143,3 +143,16 @@ contextBridge.exposeInMainWorld('appLinks', {
 contextBridge.exposeInMainWorld('appInfo', {
   version: require('./package.json').version,
 });
+
+// Atalhos de teclado globais (funcionam com o app em segundo plano).
+contextBridge.exposeInMainWorld('hotkeys', {
+  setEnabled(enabled) {
+    return ipcRenderer.invoke('hotkeys-set-enabled', enabled);
+  },
+  onStopShare(cb) {
+    ipcRenderer.on('global-hotkey-stop-share', cb);
+  },
+  onToggleMute(cb) {
+    ipcRenderer.on('global-hotkey-toggle-mute', cb);
+  },
+});
