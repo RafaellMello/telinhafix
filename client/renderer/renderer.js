@@ -203,8 +203,9 @@ startNamePlaceholderCycle();
 // de digitacao/configuracao e simplificar a tela de login.
 const DEFAULT_SERVER_URL = 'https://screenbunny.onrender.com';
 
-// Lembra a ultima senha do servidor digitada, pra nao ter que redigitar
-// toda vez que abrir o app.
+// Lembra a senha global, mas so depois que ela realmente funcionou (conectou
+// de verdade) - assim um typo nao fica salvo e preenchido de novo na proxima
+// vez, fazendo a pessoa achar que a senha mudou sozinha.
 const SERVER_PASSWORD_STORAGE_KEY = 'telinhafix-server-password';
 
 function restoreSavedServerPassword() {
@@ -216,19 +217,15 @@ function restoreSavedServerPassword() {
   }
 }
 
-function watchServerPasswordInput() {
-  const input = document.getElementById('server-password');
-  input.addEventListener('input', () => {
-    try {
-      localStorage.setItem(SERVER_PASSWORD_STORAGE_KEY, input.value);
-    } catch (err) {
-      // localStorage indisponivel - segue sem lembrar a senha.
-    }
-  });
+function saveWorkingServerPassword(password) {
+  try {
+    localStorage.setItem(SERVER_PASSWORD_STORAGE_KEY, password);
+  } catch (err) {
+    // localStorage indisponivel - segue sem lembrar a senha.
+  }
 }
 
 restoreSavedServerPassword();
-watchServerPasswordInput();
 
 const AVATAR_FILES = [
   'babini.jpg', 'babini2.jpg', 'coka.jpg', 'dani.jpg', 'rudeus.jpg',
@@ -1741,6 +1738,7 @@ btnJoin.addEventListener('click', async () => {
   try {
     await window.rtc.connect(serverUrl, password);
     setLoginError('');
+    saveWorkingServerPassword(password);
     const { selfId: id, peers: existingPeers } = await window.rtc.joinRoom(roomId, name);
     selfId = id;
 
