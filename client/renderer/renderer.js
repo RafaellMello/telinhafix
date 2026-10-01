@@ -10,7 +10,7 @@ const FONT_STACKS = {
 };
 
 const THEME_STORAGE_KEY = 'telinhafix-theme';
-const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada' };
+const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada', sound: 'ligado' };
 
 function hexToRgbString(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -121,6 +121,7 @@ function setupSettingsPanel() {
   const btnClose = document.getElementById('btn-settings-close');
   const modeOptions = document.querySelectorAll('.mode-option');
   const borderOptions = document.querySelectorAll('.border-option');
+  const soundOptions = document.querySelectorAll('.sound-option');
   const fontOptions = document.querySelectorAll('.font-option');
   const sizeOptions = document.querySelectorAll('.size-option');
   const colorSwatches = document.querySelectorAll('.color-swatch');
@@ -130,6 +131,7 @@ function setupSettingsPanel() {
   function refreshUI() {
     modeOptions.forEach((el) => el.classList.toggle('selected', el.dataset.mode === currentTheme.mode));
     borderOptions.forEach((el) => el.classList.toggle('selected', el.dataset.border === currentTheme.border));
+    soundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.sound === currentTheme.sound));
     fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
     sizeOptions.forEach((el) => el.classList.toggle('selected', Number(el.dataset.scale) === currentTheme.scale));
     colorSwatches.forEach((el) => {
@@ -167,6 +169,9 @@ function setupSettingsPanel() {
   borderOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ border: el.dataset.border }));
   });
+  soundOptions.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ sound: el.dataset.sound }));
+  });
   fontOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ font: el.dataset.font }));
   });
@@ -180,6 +185,58 @@ function setupSettingsPanel() {
 }
 
 setupSettingsPanel();
+
+// --- Notificacoes sonoras (entrada/saida, chat, conexao caiu/voltou) ------
+//
+// Sintetizadas na hora via Web Audio (osciladores curtos com um envelope de
+// volume pra nao estalar) em vez de arquivos de audio - sem asset pra
+// empacotar/licenciar, e o resultado e leve e consistente com o resto do
+// app (nada "importado").
+
+let notifyAudioCtx = null;
+
+function soundsEnabled() {
+  return currentTheme.sound !== 'desligado';
+}
+
+function getNotifyAudioCtx() {
+  if (!notifyAudioCtx) notifyAudioCtx = new AudioContext();
+  return notifyAudioCtx;
+}
+
+// notes: lista de { freq, start, duration, type, gain } tocadas em paralelo/
+// sequencia (start em segundos, relativo ao disparo).
+function playTones(notes) {
+  if (!soundsEnabled()) return;
+  try {
+    const ctx = getNotifyAudioCtx();
+    const now = ctx.currentTime;
+    notes.forEach(({ freq, start = 0, duration = 0.12, type = 'sine', gain = 0.12 }) => {
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const t0 = now + start;
+      const t1 = t0 + duration;
+      // ataque/decaimento rapidos (poucos ms) pra nao estalar no inicio/fim.
+      gainNode.gain.setValueAtTime(0, t0);
+      gainNode.gain.linearRampToValueAtTime(gain, t0 + 0.012);
+      gainNode.gain.linearRampToValueAtTime(0, t1);
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t1 + 0.02);
+    });
+  } catch (err) {
+    // Web Audio indisponivel por algum motivo - so nao toca o som.
+  }
+}
+
+function playJoinSound() { playTones([{ freq: 523.25, duration: 0.09 }, { freq: 659.25, start: 0.08, duration: 0.14 }]); }
+function playLeaveSound() { playTones([{ freq: 523.25, duration: 0.09 }, { freq: 392.0, start: 0.08, duration: 0.16 }]); }
+function playChatSound() { playTones([{ freq: 880, duration: 0.07, gain: 0.09 }]); }
+function playDisconnectSound() { playTones([{ freq: 220, duration: 0.22, type: 'sawtooth', gain: 0.08 }]); }
+function playReconnectedSound() { playTones([{ freq: 440, duration: 0.08 }, { freq: 880, start: 0.07, duration: 0.12 }]); }
 
 // --- Animacoes da tela de login (entrada em cascata + brilho nos inputs) ---
 
@@ -813,7 +870,11 @@ function removeVideoTile(peerId) {
 // sozinho em vez de parecer travado sem explicacao.
 function setTileReconnecting(peerId, reconnecting) {
   const tile = document.getElementById(`tile-${peerId}`);
-  if (tile) tile.classList.toggle('tile-reconnecting', reconnecting);
+  if (!tile) return;
+  const wasReconnecting = tile.classList.contains('tile-reconnecting');
+  tile.classList.toggle('tile-reconnecting', reconnecting);
+  if (reconnecting && !wasReconnecting) playDisconnectSound();
+  else if (!reconnecting && wasReconnecting) playReconnectedSound();
 }
 
 // Com varias pessoas compartilhando tela ao mesmo tempo (rede em malha: cada
@@ -875,9 +936,12 @@ function addChatMessage({ author, text, timestamp, self }) {
   messagesEl.appendChild(row);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
-  if (!self && !chatPanelOpen) {
-    chatUnreadCount++;
-    updateChatUnreadBadge();
+  if (!self) {
+    playChatSound();
+    if (!chatPanelOpen) {
+      chatUnreadCount++;
+      updateChatUnreadBadge();
+    }
   }
 }
 
@@ -1816,6 +1880,7 @@ btnJoin.addEventListener('click', async () => {
       createPeerConnection(peerId);
       updateSelfAudienceLabel();
       addChatSystemMessage(`${peerName} entrou na sala`);
+      playJoinSound();
     });
 
     window.rtc.onPeerLeft(({ id: peerId }) => {
@@ -1828,6 +1893,7 @@ btnJoin.addEventListener('click', async () => {
       removeParticipantRow(peerId);
       removeVideoTile(peerId);
       addChatSystemMessage(`${leftName} saiu da sala`);
+      playLeaveSound();
     });
 
     window.rtc.onDisconnected(() => {
