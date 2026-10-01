@@ -146,8 +146,11 @@ contextBridge.exposeInMainWorld('appInfo', {
 
 // Atalhos de teclado globais (funcionam com o app em segundo plano).
 contextBridge.exposeInMainWorld('hotkeys', {
-  setEnabled(enabled) {
-    return ipcRenderer.invoke('hotkeys-set-enabled', enabled);
+  // state: { enabled, bindings: { stopShare, toggleMute } }. Retorna quais
+  // combinacoes conseguiram ser registradas de verdade (pra avisar de
+  // conflito com outro programa).
+  applyState(state) {
+    return ipcRenderer.invoke('hotkeys-apply-state', state);
   },
   onStopShare(cb) {
     ipcRenderer.on('global-hotkey-stop-share', cb);

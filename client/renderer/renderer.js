@@ -10,7 +10,11 @@ const FONT_STACKS = {
 };
 
 const THEME_STORAGE_KEY = 'telinhafix-theme';
-const DEFAULT_THEME = { font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada', sound: 'ligado', hotkeys: 'ligado' };
+const DEFAULT_KEYBINDS = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M' };
+const DEFAULT_THEME = {
+  font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada',
+  sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS },
+};
 
 function hexToRgbString(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -97,9 +101,14 @@ function applyTheme(theme) {
 function loadTheme() {
   try {
     const saved = JSON.parse(localStorage.getItem(THEME_STORAGE_KEY));
-    return { ...DEFAULT_THEME, ...(saved || {}) };
+    const merged = { ...DEFAULT_THEME, ...(saved || {}) };
+    // merge raso no objeto todo perderia um keybind default se o salvo so
+    // tiver outro customizado (ex: pessoa so trocou stopShare) - funde os
+    // dois por dentro tambem.
+    merged.keybinds = { ...DEFAULT_KEYBINDS, ...((saved && saved.keybinds) || {}) };
+    return merged;
   } catch (err) {
-    return { ...DEFAULT_THEME };
+    return { ...DEFAULT_THEME, keybinds: { ...DEFAULT_KEYBINDS } };
   }
 }
 
@@ -113,7 +122,19 @@ function saveTheme(theme) {
 
 let currentTheme = loadTheme();
 applyTheme(currentTheme);
-window.hotkeys.setEnabled(currentTheme.hotkeys !== 'desligado');
+
+// Manda o estado atual (ligado/desligado + qual tecla pra cada acao) pro
+// processo principal registrar de verdade no sistema operacional. Retorna
+// quais combinacoes conseguiram ser registradas - usado pela UI de
+// configuracoes pra saber se uma troca deu conflito com outro programa.
+function syncHotkeysToMain() {
+  return window.hotkeys.applyState({
+    enabled: currentTheme.hotkeys !== 'desligado',
+    bindings: currentTheme.keybinds,
+  });
+}
+
+syncHotkeysToMain();
 window.hotkeys.onStopShare(() => stopShare());
 window.hotkeys.onToggleMute(() => toggleMasterMute());
 
@@ -150,7 +171,7 @@ function setupSettingsPanel() {
     applyTheme(currentTheme);
     saveTheme(currentTheme);
     refreshUI();
-    if (patch.hotkeys !== undefined) window.hotkeys.setEnabled(currentTheme.hotkeys !== 'desligado');
+    if (patch.hotkeys !== undefined) syncHotkeysToMain();
   }
 
   function openSettings() {
@@ -194,6 +215,151 @@ function setupSettingsPanel() {
 }
 
 setupSettingsPanel();
+
+// --- Captura de keybinds customizaveis (atalhos globais) ------------------
+
+const KEYBIND_ACTION_LABELS = { stopShare: 'Parar de compartilhar', toggleMute: 'Mutar/desmutar todos' };
+
+// So nomes especiais que o formato "Accelerator" do Electron exige - letras/
+// numeros/F1-F24 usam o proprio caractere, entao nao precisam de mapa.
+const ACCELERATOR_KEY_NAMES = {
+  ' ': 'Space', 'Escape': 'Esc', 'Enter': 'Return', 'Tab': 'Tab',
+  'ArrowUp': 'Up', 'ArrowDown': 'Down', 'ArrowLeft': 'Left', 'ArrowRight': 'Right',
+  'Backspace': 'Backspace', 'Delete': 'Delete', 'Insert': 'Insert',
+  'Home': 'Home', 'End': 'End', 'PageUp': 'PageUp', 'PageDown': 'PageDown',
+  ',': 'Comma', '.': 'Period', '-': 'Minus', '=': 'Plus',
+};
+
+// Converte um KeyboardEvent num Accelerator valido pro Electron (formato
+// "Control+Alt+S"), ou null se ainda nao da pra formar um (so modificador
+// pressionado) ou a tecla nao e suportada. Exige pelo menos 1 modificador -
+// sem isso o atalho tomaria conta de uma tecla normal em qualquer outro
+// programa do sistema, o que seria uma armadilha.
+function keyboardEventToAccelerator(event) {
+  const parts = [];
+  if (event.ctrlKey) parts.push('Control');
+  if (event.altKey) parts.push('Alt');
+  if (event.shiftKey) parts.push('Shift');
+  if (event.metaKey) parts.push('Super');
+  if (parts.length === 0) return null;
+
+  const key = event.key;
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(key)) return null; // so modificador por enquanto
+
+  let mainKey = ACCELERATOR_KEY_NAMES[key];
+  if (!mainKey) {
+    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(key)) mainKey = key;
+    else if (key.length === 1) mainKey = key.toUpperCase();
+    else return null; // tecla sem nome de Accelerator conhecido
+  }
+
+  parts.push(mainKey);
+  return parts.join('+');
+}
+
+function formatAccelerator(accelerator) {
+  return (accelerator || '').replace(/\bControl\b/, 'Ctrl').replace(/\bSuper\b/, 'Win');
+}
+
+function setupKeybindCapture() {
+  const buttons = document.querySelectorAll('.keybind-capture');
+  const errorEl = document.getElementById('keybind-error');
+  const btnReset = document.getElementById('btn-keybinds-reset');
+  if (buttons.length === 0) return;
+
+  function refreshKeybindButtons() {
+    buttons.forEach((btn) => {
+      if (!btn.classList.contains('recording')) {
+        btn.textContent = formatAccelerator(currentTheme.keybinds[btn.dataset.action]);
+      }
+    });
+  }
+
+  function showKeybindError(msg) {
+    if (!errorEl) return;
+    errorEl.textContent = msg;
+    errorEl.classList.remove('hidden');
+  }
+
+  function hideKeybindError() {
+    if (!errorEl) return;
+    errorEl.classList.add('hidden');
+  }
+
+  refreshKeybindButtons();
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('recording')) return;
+      const action = btn.dataset.action;
+      const previous = currentTheme.keybinds[action];
+      hideKeybindError();
+      btn.textContent = 'Pressione uma tecla... (Esc cancela)';
+      btn.classList.add('recording');
+
+      function cleanup() {
+        document.removeEventListener('keydown', onKeydown, true);
+        btn.classList.remove('recording');
+      }
+
+      function onKeydown(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+          cleanup();
+          btn.textContent = formatAccelerator(previous);
+          return;
+        }
+
+        const accelerator = keyboardEventToAccelerator(e);
+        if (!accelerator) return; // continua esperando uma tecla principal valida
+
+        cleanup();
+
+        const otherAction = action === 'stopShare' ? 'toggleMute' : 'stopShare';
+        if (currentTheme.keybinds[otherAction] === accelerator) {
+          showKeybindError(`"${formatAccelerator(accelerator)}" ja esta em uso pra "${KEYBIND_ACTION_LABELS[otherAction]}".`);
+          btn.textContent = formatAccelerator(previous);
+          return;
+        }
+
+        const trialKeybinds = { ...currentTheme.keybinds, [action]: accelerator };
+        window.hotkeys.applyState({ enabled: currentTheme.hotkeys !== 'desligado', bindings: trialKeybinds }).then((result) => {
+          if (result && result[action] === false) {
+            showKeybindError(`"${formatAccelerator(accelerator)}" ja esta em uso por outro programa no seu PC.`);
+            btn.textContent = formatAccelerator(previous);
+            syncHotkeysToMain(); // restaura a combinacao antiga, que ainda funciona
+          } else {
+            currentTheme = { ...currentTheme, keybinds: trialKeybinds };
+            saveTheme(currentTheme);
+            btn.textContent = formatAccelerator(accelerator);
+          }
+        });
+      }
+
+      document.addEventListener('keydown', onKeydown, true);
+    });
+  });
+
+  if (btnReset) {
+    btnReset.addEventListener('click', () => {
+      const trialKeybinds = { ...DEFAULT_KEYBINDS };
+      window.hotkeys.applyState({ enabled: currentTheme.hotkeys !== 'desligado', bindings: trialKeybinds }).then((result) => {
+        currentTheme = { ...currentTheme, keybinds: trialKeybinds };
+        saveTheme(currentTheme);
+        refreshKeybindButtons();
+        if (result && (result.stopShare === false || result.toggleMute === false)) {
+          showKeybindError('Uma das combinacoes padrao ja esta em uso por outro programa agora - troque ela manualmente.');
+        } else {
+          hideKeybindError();
+        }
+      });
+    });
+  }
+}
+
+setupKeybindCapture();
 
 // --- Notificacoes sonoras (entrada/saida, chat, conexao caiu/voltou) ------
 //
