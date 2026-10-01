@@ -505,7 +505,7 @@ function setupQualityTestUI() {
     progressEl.classList.remove('hidden');
     overlay.classList.remove('hidden');
 
-    const serverUrl = (document.getElementById('server-url').value || '').trim() || 'https://screenbunny.onrender.com';
+    const serverUrl = 'https://screenbunny.onrender.com';
 
     try {
       const profile = await runQualityTest(serverUrl, (msg) => { progressEl.textContent = msg; });
