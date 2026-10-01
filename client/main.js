@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, globalShortcut } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, globalShortcut, screen } = require('electron');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const { autoUpdater } = require('electron-updater');
@@ -309,6 +309,18 @@ function pickScreenSource(parentWin) {
   });
 }
 
+// Acha a fonte do desktopCapturer que corresponde ao monitor PRINCIPAL (o
+// que o Windows tem marcado como principal nas configuracoes de tela), pra
+// usar no "compartilhar com preset rapido" (atalho de teclado) - sem abrir
+// o seletor. display_id vem do desktopCapturer desde o Electron 11 e bate
+// com o id que o modulo screen usa pros monitores.
+async function getPrimaryScreenSource() {
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
+  if (sources.length === 0) return null;
+  const primaryId = String(screen.getPrimaryDisplay().id);
+  return sources.find((s) => s.display_id === primaryId) || sources[0];
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1100,
@@ -363,9 +375,26 @@ function createWindow() {
   // (TelinhaFixAudioHelper), que captura o sistema todo excluindo o
   // Discord. Se por algum motivo o renderer pedir audio por esse caminho
   // mesmo assim, ainda respondemos com o loopback padrao como fallback.
+  // "Compartilhar com preset rapido" (atalho de teclado, ver quickShareRequested
+  // abaixo) pula o seletor inteiro: pega o monitor principal direto e ja
+  // define qualidade 1080p60 + audio do sistema todo exceto Discord, do
+  // jeito que a pessoa pediu pra esse atalho.
+  let quickShareRequested = false;
+  ipcMain.handle('quick-share-screen-request', () => {
+    quickShareRequested = true;
+  });
+
   session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
     try {
-      const source = await pickScreenSource(win);
+      let source;
+      if (quickShareRequested) {
+        quickShareRequested = false;
+        source = await getPrimaryScreenSource();
+        lastPickedQuality = QUALITY_PRESETS['1080p60'];
+        lastPickedAudioConfig = { mode: 'exclude', target: 'Discord' };
+      } else {
+        source = await pickScreenSource(win);
+      }
       if (!source) {
         callback({});
         return;
@@ -430,9 +459,10 @@ function createWindow() {
   const HOTKEY_CHANNELS = {
     stopShare: 'global-hotkey-stop-share',
     toggleMute: 'global-hotkey-toggle-mute',
+    quickShare: 'global-hotkey-quick-share',
   };
   let hotkeysEnabled = false;
-  let hotkeyBindings = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M' };
+  let hotkeyBindings = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M', quickShare: 'Control+Alt+Q' };
 
   function applyHotkeys() {
     globalShortcut.unregisterAll();

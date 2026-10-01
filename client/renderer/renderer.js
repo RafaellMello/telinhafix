@@ -10,7 +10,7 @@ const FONT_STACKS = {
 };
 
 const THEME_STORAGE_KEY = 'telinhafix-theme';
-const DEFAULT_KEYBINDS = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M' };
+const DEFAULT_KEYBINDS = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M', quickShare: 'Control+Alt+Q' };
 const DEFAULT_THEME = {
   font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada',
   sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS },
@@ -137,6 +137,7 @@ function syncHotkeysToMain() {
 syncHotkeysToMain();
 window.hotkeys.onStopShare(() => stopShare());
 window.hotkeys.onToggleMute(() => toggleMasterMute());
+window.hotkeys.onQuickShare(() => startQuickShare());
 
 function setupSettingsPanel() {
   const overlay = document.getElementById('settings-overlay');
@@ -218,7 +219,11 @@ setupSettingsPanel();
 
 // --- Captura de keybinds customizaveis (atalhos globais) ------------------
 
-const KEYBIND_ACTION_LABELS = { stopShare: 'Parar de compartilhar', toggleMute: 'Mutar/desmutar todos' };
+const KEYBIND_ACTION_LABELS = {
+  stopShare: 'Parar de compartilhar',
+  toggleMute: 'Mutar/desmutar todos',
+  quickShare: 'Compartilhar tela (preset rápido)',
+};
 
 // So nomes especiais que o formato "Accelerator" do Electron exige - letras/
 // numeros/F1-F24 usam o proprio caractere, entao nao precisam de mapa.
@@ -317,9 +322,11 @@ function setupKeybindCapture() {
 
         cleanup();
 
-        const otherAction = action === 'stopShare' ? 'toggleMute' : 'stopShare';
-        if (currentTheme.keybinds[otherAction] === accelerator) {
-          showKeybindError(`"${formatAccelerator(accelerator)}" ja esta em uso pra "${KEYBIND_ACTION_LABELS[otherAction]}".`);
+        const conflictAction = Object.keys(currentTheme.keybinds).find(
+          (otherAction) => otherAction !== action && currentTheme.keybinds[otherAction] === accelerator
+        );
+        if (conflictAction) {
+          showKeybindError(`"${formatAccelerator(accelerator)}" ja esta em uso pra "${KEYBIND_ACTION_LABELS[conflictAction]}".`);
           btn.textContent = formatAccelerator(previous);
           return;
         }
@@ -1623,6 +1630,18 @@ async function startShare() {
   await finishStartingShare('Você (compartilhando)');
 
   btnToggleCamera.classList.remove('hidden');
+}
+
+// Atalho de "compartilhar com preset rapido": monitor principal, qualidade
+// 1080p60 e audio do sistema todo exceto Discord - sem abrir o seletor.
+// Avisa o processo principal (requestQuickShare) que o PROXIMO
+// getDisplayMedia deve pular o seletor e usar esse preset direto, e so
+// entao chama o startShare() normal - reaproveita toda a logica de
+// qualidade/audio/finishStartingShare que ja existe, sem duplicar nada.
+async function startQuickShare() {
+  if (!selfId || localStream) return; // precisa estar numa sala e nao ja compartilhando algo
+  await window.screenPicker.requestQuickShare();
+  await startShare();
 }
 
 // --- Compartilhamento "sem cursor" (beta, via helper nativo) --------------
