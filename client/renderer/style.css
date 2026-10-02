@@ -565,14 +565,14 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .font-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
-.mode-options, .border-options, .sound-options, .hotkeys-options, .size-options, .color-swatches {
+.mode-options, .border-options, .sound-options, .hotkeys-options, .priority-options, .size-options, .color-swatches {
   display: flex;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
 
-.mode-option, .border-option, .sound-option, .hotkeys-option {
+.mode-option, .border-option, .sound-option, .hotkeys-option, .priority-option {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 4px;
@@ -583,7 +583,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 700;
 }
 
-.mode-option.selected, .border-option.selected, .sound-option.selected, .hotkeys-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.mode-option.selected, .border-option.selected, .sound-option.selected, .hotkeys-option.selected, .priority-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
 .settings-hint {
   margin: 8px 0 0;
@@ -1212,6 +1212,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .mode-serio .border-option,
 .mode-serio .sound-option,
 .mode-serio .hotkeys-option,
+.mode-serio .priority-option,
 .mode-serio .quality-btn,
 .mode-serio .audio-btn,
 .mode-serio #participants-list li,

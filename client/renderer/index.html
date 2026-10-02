@@ -76,7 +76,7 @@
       <p id="login-error" class="error"></p>
 
       <div id="quality-test-banner" class="quality-test-banner hidden">
-        <p>Quer que eu teste seu PC e sua internet pra recomendar a melhor qualidade de transmissão? Leva uns 30s.</p>
+        <p>Quer que eu teste seu PC e sua internet pra recomendar a melhor qualidade de transmissão? Leva uns 40s.</p>
         <div class="quality-test-banner-actions">
           <button id="btn-quality-test-run" class="ghost" type="button">Testar agora</button>
           <button id="btn-quality-test-dismiss" class="ghost" type="button">Agora não</button>
@@ -215,9 +215,18 @@
       </div>
 
       <div class="settings-group">
+        <label>Prioridade de qualidade</label>
+        <div id="priority-options" class="priority-options">
+          <div class="priority-option" data-priority="nitidez">Nitidez (resolução)</div>
+          <div class="priority-option" data-priority="fluidez">Fluidez (FPS)</div>
+        </div>
+        <p class="settings-hint">Entre duas opções que seu PC/internet aguentam, qual vence: mais resolução ou mais fps? Não precisa testar de novo pra trocar.</p>
+      </div>
+
+      <div class="settings-group">
         <label>Qualidade recomendada pro seu PC/internet</label>
         <div id="quality-test-summary" class="quality-test-summary">Nunca testado.</div>
-        <button id="btn-quality-test-open" class="ghost" type="button">Testar agora (~30s)</button>
+        <button id="btn-quality-test-open" class="ghost" type="button">Testar agora (~40s)</button>
       </div>
 
       <div class="settings-footer">

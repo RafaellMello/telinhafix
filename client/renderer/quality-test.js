@@ -191,6 +191,8 @@ const ENCODE_TEST_LADDER = [
   { key: '1080p30', width: 1920, height: 1080, frameRate: 30, maxBitrate: 6_000_000 },
   { key: '1080p60', width: 1920, height: 1080, frameRate: 60, maxBitrate: 8_500_000 },
   { key: '1440p30', width: 2560, height: 1440, frameRate: 30, maxBitrate: 9_000_000 },
+  { key: '1080p120', width: 1920, height: 1080, frameRate: 120, maxBitrate: 11_000_000 },
+  { key: '720p120', width: 1280, height: 720, frameRate: 120, maxBitrate: 6_000_000 },
 ];
 
 const CODEC_CANDIDATES = ['video/AV1', 'video/VP9', 'video/VP8'];
@@ -327,21 +329,47 @@ async function testCodecs(onProgress) {
   return { results, best };
 }
 
+// Le a prioridade escolhida nas configuracoes de aparencia (mesmo objeto de
+// tema que o renderer.js usa) direto do localStorage, em vez de depender de
+// variavel compartilhada entre scripts - mais robusto a ordem de carregamento.
+// 'nitidez' e o padrao (igual o comportamento de sempre, pra nao surpreender
+// quem nunca mexeu nisso).
+function getQualityPriority() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('telinhafix-theme'));
+    return (saved && saved.priority) || 'nitidez';
+  } catch (err) {
+    return 'nitidez';
+  }
+}
+
 // A partir dos resultados, escolhe a melhor qualidade que passou no teste
 // de CPU E cujo bitrate cabe numa fracao segura da banda medida (deixa
 // margem pra nao usar 100% do upload - sobra nada pra audio/overhead/
 // variacao real da rede, e numa sala com mais gente compartilhando ao
-// mesmo tempo precisa de folga tambem).
-function recommendQuality(encodeResults, bandwidthMbps) {
+// mesmo tempo precisa de folga tambem). Entre as opcoes que passam nos dois
+// testes, a ORDEM de desempate depende da prioridade: "fluidez" rankeia por
+// fps primeiro (resolucao so desempata entre fps iguais), "nitidez" faz o
+// oposto - resolucao primeiro, fps desempata.
+function recommendQuality(encodeResults, bandwidthMbps, priority) {
   const bandwidthBps = bandwidthMbps > 0 ? bandwidthMbps * 1_000_000 * 0.7 : 0;
-  let best = '720p30'; // piso seguro - quase qualquer PC/conexao aguenta
-  for (const config of ENCODE_TEST_LADDER) {
+  const candidates = ENCODE_TEST_LADDER.filter((config) => {
     const result = encodeResults[config.key];
-    if (result && result.feasible && config.maxBitrate <= bandwidthBps) {
-      best = config.key;
+    return result && result.feasible && config.maxBitrate <= bandwidthBps;
+  });
+  if (candidates.length === 0) return '720p30'; // piso seguro - quase qualquer PC/conexao aguenta
+
+  const sorted = [...candidates].sort((a, b) => {
+    const pxA = a.width * a.height;
+    const pxB = b.width * b.height;
+    if (priority === 'fluidez') {
+      if (b.frameRate !== a.frameRate) return b.frameRate - a.frameRate;
+      return pxB - pxA;
     }
-  }
-  return best;
+    if (pxB !== pxA) return pxB - pxA;
+    return b.frameRate - a.frameRate;
+  });
+  return sorted[0].key;
 }
 
 async function runQualityTest(serverUrl, onProgress) {
@@ -358,7 +386,7 @@ async function runQualityTest(serverUrl, onProgress) {
     encodeResults[config.key] = await testEncodeConfig({ ...config, codec: codecTest.best });
   }
 
-  const recommended = recommendQuality(encodeResults, bandwidth.ok ? bandwidth.mbps : 0);
+  const recommended = recommendQuality(encodeResults, bandwidth.ok ? bandwidth.mbps : 0, getQualityPriority());
 
   const profile = {
     testedAt: Date.now(),
@@ -404,6 +432,8 @@ const QUALITY_LABELS = {
   '1080p30': '1080p a 30fps',
   '1080p60': '1080p a 60fps',
   '1440p30': '1440p (2K) a 30fps',
+  '1080p120': '1080p a 120fps',
+  '720p120': '720p a 120fps',
 };
 
 function formatQualitySummary(profile) {
@@ -488,6 +518,23 @@ function setupQualityTestUI() {
     if (summaryEl) summaryEl.textContent = formatQualitySummary(getSavedQualityProfile());
   }
   refreshSummary();
+
+  // Troca de prioridade (fluidez/nitidez) nao precisa re-rodar o teste todo
+  // (~40s) - todos os tiers da escada ja foram medidos e ficaram salvos no
+  // perfil, entao so reordena com a nova prioridade e resalva. Exposto no
+  // window pra o renderer.js (dono do botao de prioridade nas configuracoes)
+  // poder chamar sem precisar que os dois scripts compartilhem escopo.
+  window.__recomputeQualityRecommendation = function (priority) {
+    const profile = getSavedQualityProfile();
+    if (!profile || !profile.encodeResults) return;
+    profile.recommendedQuality = recommendQuality(
+      profile.encodeResults,
+      profile.bandwidth && profile.bandwidth.ok ? profile.bandwidth.mbps : 0,
+      priority
+    );
+    try { localStorage.setItem(QUALITY_TEST_STORAGE_KEY, JSON.stringify(profile)); } catch (err) { /* ok */ }
+    refreshSummary();
+  };
 
   // So mostra o banner de primeira vez se a pessoa nunca testou nem
   // dispensou antes - nunca insiste de novo sozinho depois disso.
