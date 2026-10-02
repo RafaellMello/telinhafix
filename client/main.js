@@ -3,17 +3,18 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
-// O Chromium no Windows captura tela usando a Windows Graphics Capture API
-// (WGC) por padrao. O WGC as vezes desenha o cursor "fantasma" na captura
-// mesmo quando o jogo escondeu o cursor de verdade na tela (acontece com
-// alguns jogos que usam raw input pra travar o mouse durante a mira) -
-// o cursor que aparece na transmissao nao e o que a pessoa que compartilha
-// esta vendo na propria tela. Desativando o WGC so pra captura de MONITOR
-// (nao janela, pra nao arriscar tela preta em jogos DirectX capturados por
-// janela), o Chromium cai pro Desktop Duplication API (DXGI), que consulta
-// o estado real de visibilidade do cursor do sistema em vez de compor um
-// estado desatualizado.
-app.commandLine.appendSwitch('disable-features', 'WebRtcWgcScreenCapturer');
+// Ja tentamos desativar o WGC (Windows Graphics Capture, o backend padrao
+// do Chromium no Windows) pra tentar resolver o cursor "fantasma" na
+// captura - NAO funcionou (o Chromium continuou desenhando o cursor de
+// qualquer jeito, nao importa o backend; ver historico do commit 79b7138),
+// entao a correcao de verdade virou o helper nativo separado usado pelo
+// botao "Compartilhar sem cursor (beta)". Manter o WGC desativado sem
+// nenhum beneficio real so trazia um efeito colateral ruim: a Desktop
+// Duplication API (DXGI), pra onde o Chromium caia sem o WGC, trava num
+// frame parado quando a pessoa esta com um jogo em tela cheia EXCLUSIVA
+// (osu! e um exemplo classico) ate o jogo sair desse modo - o WGC lida
+// com isso bem melhor, entao deixamos ele ligado (padrao do Chromium) pro
+// compartilhamento normal de novo.
 
 let audioHelperProcess = null;
 let audioLeftover = Buffer.alloc(0);
@@ -106,10 +107,11 @@ function stopAudioCapture() {
 // A captura padrao do Electron (desktopCapturer/getDisplayMedia) sempre
 // compoe o cursor do sistema por cima do frame capturado, mesmo quando o
 // jogo/app escondeu ele de verdade na tela (comum em jogos com mira via
-// raw input) - o WebRtcWgcScreenCapturer desativado la em cima nao resolveu
-// isso porque o problema nao e WGC especifico, o Chromium sempre desenha
-// esse cursor "fantasma" nao importa o backend. A Desktop Duplication API
-// (DXGI) por baixo, por outro lado, NUNCA inclui o cursor no frame - ele
+// raw input) - ja tentamos desativar o WGC (ver comentario no topo do
+// arquivo) achando que resolveria isso, mas nao resolveu: o Chromium
+// sempre desenha esse cursor "fantasma" nao importa o backend. A Desktop
+// Duplication API (DXGI) por baixo, por outro lado, NUNCA inclui o cursor
+// no frame quando usada diretamente (como aqui) - ele
 // vem como metadado separado (forma/posicao) e so aparece se o app que
 // capturou desenhar ele por cima manualmente. Esse helper nativo usa a
 // DXGI diretamente e nunca desenha o cursor, entao o problema nao existe
