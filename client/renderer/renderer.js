@@ -539,6 +539,31 @@ function saveWorkingServerPassword(password) {
 
 restoreSavedServerPassword();
 
+// Lembra o nome da ultima vez que a pessoa entrou numa sala de verdade (nao
+// salva a cada letra digitada - so quando realmente usou pra entrar, igual
+// a senha acima).
+const DISPLAY_NAME_STORAGE_KEY = 'telinhafix-display-name';
+
+function restoreSavedDisplayName() {
+  try {
+    const saved = localStorage.getItem(DISPLAY_NAME_STORAGE_KEY);
+    if (saved) document.getElementById('display-name').value = saved;
+  } catch (err) {
+    // localStorage indisponivel - segue sem lembrar o nome.
+  }
+}
+
+function saveWorkingDisplayName(name) {
+  if (!name) return; // nao salva o fallback "Anonimo" como se a pessoa tivesse escolhido
+  try {
+    localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, name);
+  } catch (err) {
+    // localStorage indisponivel - segue sem lembrar o nome.
+  }
+}
+
+restoreSavedDisplayName();
+
 const AVATAR_FILES = [
   'babini.jpg', 'babini2.jpg', 'coka.jpg', 'dani.jpg', 'rudeus.jpg',
   'fab.jpg', 'hent.jpg', 'img-20240330-wa0127_original.jpg', 'nathan.jpg',
@@ -2081,7 +2106,8 @@ btnJoin.addEventListener('click', async () => {
   setLoginError('');
   const serverUrl = DEFAULT_SERVER_URL;
   const password = document.getElementById('server-password').value;
-  const name = document.getElementById('display-name').value.trim() || 'Anonimo';
+  const rawName = document.getElementById('display-name').value.trim();
+  const name = rawName || 'Anonimo';
   const roomId = document.getElementById('room-id').value.trim();
 
   if (!roomId) {
@@ -2095,6 +2121,7 @@ btnJoin.addEventListener('click', async () => {
     await window.rtc.connect(serverUrl, password);
     setLoginError('');
     saveWorkingServerPassword(password);
+    saveWorkingDisplayName(rawName);
     const { selfId: id, peers: existingPeers } = await window.rtc.joinRoom(roomId, name);
     selfId = id;
 
