@@ -1955,13 +1955,42 @@ async function startCameraShare() {
   await finishStartingShare('Você (câmera)');
 }
 
+// Forcar width E height exatos do preset escolhido (que supoe 16:9) deixava
+// a imagem achatada/esticada errado sempre que a fonte capturada NAO e
+// 16:9 de verdade - monitor ultrawide, ou resolucao "esticada" (comum em
+// CS2/competitivo, tipo 4:3 renderizado e esticado pro monitor) cuja
+// saida final nao bate com a proporcao do preset. Em vez de travar os
+// dois lados no valor do preset, limita pelo lado que o preset realmente
+// restringe (o mais apertado dos dois) e calcula o outro lado
+// proporcionalmente, preservando a proporcao de verdade da tela
+// capturada - so limita o tamanho, nunca distorce.
+function computeAspectPreservingTarget(sourceWidth, sourceHeight, presetWidth, presetHeight) {
+  if (!sourceWidth || !sourceHeight) return { width: presetWidth, height: presetHeight };
+  const sourceAspect = sourceWidth / sourceHeight;
+  const presetAspect = presetWidth / presetHeight;
+  if (Math.abs(sourceAspect - presetAspect) < 0.01) return { width: presetWidth, height: presetHeight };
+  if (sourceAspect > presetAspect) {
+    // fonte mais larga que o preset (ex: ultrawide) - a largura e quem limita
+    return { width: presetWidth, height: Math.round(presetWidth / sourceAspect) };
+  }
+  // fonte mais "quadrada"/estreita que o preset - a altura e quem limita
+  return { width: Math.round(presetHeight * sourceAspect), height: presetHeight };
+}
+
 async function finishStartingShare(selfLabel) {
   const videoTrack = localVideoStream.getVideoTracks()[0];
   if (currentQuality && videoTrack && shareMode === 'screen') {
     try {
+      const sourceSettings = videoTrack.getSettings();
+      const target = computeAspectPreservingTarget(
+        sourceSettings.width,
+        sourceSettings.height,
+        currentQuality.width,
+        currentQuality.height
+      );
       await videoTrack.applyConstraints({
-        width: { ideal: currentQuality.width, max: currentQuality.width },
-        height: { ideal: currentQuality.height, max: currentQuality.height },
+        width: { ideal: target.width, max: target.width },
+        height: { ideal: target.height, max: target.height },
         frameRate: { ideal: currentQuality.frameRate, max: currentQuality.frameRate },
       });
     } catch (err) {
