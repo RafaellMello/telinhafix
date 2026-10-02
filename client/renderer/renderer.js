@@ -13,7 +13,7 @@ const THEME_STORAGE_KEY = 'telinhafix-theme';
 const DEFAULT_KEYBINDS = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M', quickShare: 'Control+Alt+Q' };
 const DEFAULT_THEME = {
   font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada',
-  sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS },
+  sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS }, priority: 'nitidez',
 };
 
 function hexToRgbString(hex) {
@@ -148,6 +148,7 @@ function setupSettingsPanel() {
   const borderOptions = document.querySelectorAll('.border-option');
   const soundOptions = document.querySelectorAll('.sound-option');
   const hotkeyOptions = document.querySelectorAll('.hotkeys-option');
+  const priorityOptions = document.querySelectorAll('.priority-option');
   const fontOptions = document.querySelectorAll('.font-option');
   const sizeOptions = document.querySelectorAll('.size-option');
   const colorSwatches = document.querySelectorAll('.color-swatch');
@@ -159,6 +160,7 @@ function setupSettingsPanel() {
     borderOptions.forEach((el) => el.classList.toggle('selected', el.dataset.border === currentTheme.border));
     soundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.sound === currentTheme.sound));
     hotkeyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.hotkeys === currentTheme.hotkeys));
+    priorityOptions.forEach((el) => el.classList.toggle('selected', el.dataset.priority === currentTheme.priority));
     fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
     sizeOptions.forEach((el) => el.classList.toggle('selected', Number(el.dataset.scale) === currentTheme.scale));
     colorSwatches.forEach((el) => {
@@ -173,6 +175,9 @@ function setupSettingsPanel() {
     saveTheme(currentTheme);
     refreshUI();
     if (patch.hotkeys !== undefined) syncHotkeysToMain();
+    if (patch.priority !== undefined && window.__recomputeQualityRecommendation) {
+      window.__recomputeQualityRecommendation(currentTheme.priority);
+    }
   }
 
   function openSettings() {
@@ -202,6 +207,9 @@ function setupSettingsPanel() {
   });
   hotkeyOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ hotkeys: el.dataset.hotkeys }));
+  });
+  priorityOptions.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ priority: el.dataset.priority }));
   });
   fontOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ font: el.dataset.font }));
