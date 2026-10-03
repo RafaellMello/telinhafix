@@ -122,7 +122,12 @@ io.on('connection', (socket) => {
   // esperando pra sempre (ex: alguem digita a senha normal por engano em
   // vez da ADMIN_PASSWORD - o socket conecta normal, mas sem isso aqui a
   // tela fica travada em "Conectando..." sem nenhum erro).
-  socket.on('admin-list-rooms', (ack) => {
+  // Recebe (dado, ack) mesmo sem usar "dado" - o client manda um payload
+  // (mesmo que undefined) + callback de ack, e isso chega aqui como dois
+  // argumentos separados. Com so "(ack)" no parametro, "ack" vira o dado
+  // (undefined) por engano e o calback de ack de verdade nunca e chamado -
+  // a Promise do lado do cliente fica esperando pra sempre.
+  socket.on('admin-list-rooms', (_data, ack) => {
     if (!socket.data.isAdmin) { if (ack) ack({ error: 'nao autorizado' }); return; }
     if (ack) ack(getFullAdminSnapshot());
   });

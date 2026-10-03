@@ -17,6 +17,13 @@ function connect(serverUrl, password) {
     // pra acordar na primeira conexao do dia - dava timeout antes de
     // conseguir conectar.
     timeout: 60000,
+    // Sem isso, chamadas repetidas de connect() pro MESMO serverUrl (ex:
+    // errou a senha, corrigiu e clicou em Entrar de novo) podem reaproveitar
+    // o Manager interno do socket.io-client por baixo, mesmo com um Socket
+    // "novo" - a segunda tentativa, com a senha CERTA, ainda carregava o
+    // auth antigo (errado) por alguns segundos, parecendo travar ou dar erro
+    // errado. forceNew garante uma conexao 100% independente a cada chamada.
+    forceNew: true,
   });
   return socket;
 }
