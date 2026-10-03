@@ -117,8 +117,13 @@ io.on('connection', (socket) => {
     socket.emit('admin-rooms-updated', getFullAdminSnapshot());
   }
 
+  // Em TODOS os handlers de admin abaixo: sempre chama o ack, mesmo quando
+  // nao autorizado. Um "return" sem ack deixa a Promise do lado do cliente
+  // esperando pra sempre (ex: alguem digita a senha normal por engano em
+  // vez da ADMIN_PASSWORD - o socket conecta normal, mas sem isso aqui a
+  // tela fica travada em "Conectando..." sem nenhum erro).
   socket.on('admin-list-rooms', (ack) => {
-    if (!socket.data.isAdmin) return;
+    if (!socket.data.isAdmin) { if (ack) ack({ error: 'nao autorizado' }); return; }
     if (ack) ack(getFullAdminSnapshot());
   });
 
@@ -126,7 +131,7 @@ io.on('connection', (socket) => {
   // - so desconecta o socket dela, o resto (avisar os outros, limpar a sala)
   // reaproveita exatamente a mesma logica do disconnect normal abaixo.
   socket.on('admin-kick', ({ socketId }, ack) => {
-    if (!socket.data.isAdmin) return;
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
     const target = io.sockets.sockets.get(socketId);
     if (target) target.disconnect(true);
     if (ack) ack({ ok: !!target });
@@ -135,7 +140,7 @@ io.on('connection', (socket) => {
   // Desconecta todo mundo de uma sala de uma vez (participantes E
   // espectadores admin que estiverem la).
   socket.on('admin-close-room', ({ roomId }, ack) => {
-    if (!socket.data.isAdmin) return;
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
     const room = rooms.get(roomId);
     if (room) Array.from(room.keys()).forEach((id) => io.sockets.sockets.get(id)?.disconnect(true));
     const specs = spectatorsByRoom.get(roomId);
