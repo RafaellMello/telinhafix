@@ -11,6 +11,8 @@ client/native-audio/bin/
 client/native-audio/obj/
 client/native-screen/bin/
 client/native-screen/obj/
+admin-client/native/*.exe
+admin-client/dist/
 
 # Fotos originais (grandes, algumas dezenas de MB) usadas so como fonte
 # para gerar os avatares pequenos em client/renderer/assets/avatars/.
