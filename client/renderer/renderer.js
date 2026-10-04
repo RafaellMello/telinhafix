@@ -15,13 +15,15 @@ const DEFAULT_KEYBINDS = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+
 const DEFAULT_THEME = {
   font: 'inter', scale: 1, color: '#e2231a', mode: 'serio', border: 'arredondada',
   sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS }, priority: 'nitidez',
-  background: 'particulas', loginOpacity: 1,
-  // false ate a pessoa clicar em Lata de lixo/Serio pela primeira vez (ver
-  // loadTheme e o clique de .mode-option abaixo) - diferencia "nunca
-  // escolheu um modo" (recebe o padrao mais novo sempre) de "escolheu de
-  // proposito" (fica travado nisso pra sempre, mesmo se o padrao mudar nos
-  // proximos updates).
+  background: 'particulas', loginOpacity: 0.25,
+  // false ate a pessoa mexer de proposito (clicar num modo, arrastar o
+  // slider de transparencia) - diferencia "nunca escolheu" (recebe o
+  // padrao mais novo sempre, mesmo em quem ja tinha outro tema salvo por
+  // ter mexido em outra coisa) de "escolheu de proposito" (fica travado
+  // nisso pra sempre, mesmo se o padrao mudar em updates futuros). Ver
+  // loadTheme e os cliques de .mode-option/#login-opacity-slider abaixo.
   modeExplicit: false,
+  loginOpacityExplicit: false,
 };
 
 function hexToRgbString(hex) {
@@ -121,6 +123,7 @@ function loadTheme() {
     // trocou a fonte) - sem isso, o "latadelixo" de um default antigo
     // ficaria congelado pra sempre no cache dessa pessoa.
     if (!merged.modeExplicit) merged.mode = DEFAULT_THEME.mode;
+    if (!merged.loginOpacityExplicit) merged.loginOpacity = DEFAULT_THEME.loginOpacity;
     return merged;
   } catch (err) {
     return { ...DEFAULT_THEME, keybinds: { ...DEFAULT_KEYBINDS } };
@@ -257,7 +260,7 @@ function setupSettingsPanel() {
   });
   if (opacitySlider) {
     opacitySlider.addEventListener('input', () => {
-      updateTheme({ loginOpacity: Number(opacitySlider.value) / 100 });
+      updateTheme({ loginOpacity: Number(opacitySlider.value) / 100, loginOpacityExplicit: true });
     });
   }
 
