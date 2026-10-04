@@ -289,6 +289,10 @@
               <span class="game-picker-card-title">Stop / Adedonha</span>
               <span class="game-picker-card-desc">Sorteia uma letra, todo mundo digita contra o tempo.</span>
             </button>
+            <button type="button" class="game-picker-card" data-game="sketch">
+              <span class="game-picker-card-title">Sketch do PC</span>
+              <span class="game-picker-card-desc">"Você prefere A ou B?" com votação ao vivo da sala.</span>
+            </button>
           </div>
         </div>
 
@@ -387,6 +391,43 @@
             <h3 id="stop-reveal-letter" class="stop-reveal-letter"></h3>
             <div id="stop-results" class="stop-results"></div>
             <button type="button" id="btn-stop-play-again">Jogar de novo (nova letra)</button>
+          </div>
+        </div>
+
+        <div id="sketch-view" class="hidden">
+          <div id="sketch-idle-view">
+            <p class="settings-hint">Crie uma pergunta "Você prefere A ou B?" - todo mundo na sala vota ao vivo e o resultado atualiza na hora, pra todo mundo.</p>
+            <form id="sketch-create-form" class="sketch-create-form">
+              <div class="sketch-create-row">
+                <label>Opção A</label>
+                <input type="text" id="sketch-option-a" maxlength="60" placeholder="Ex: Pizza" autocomplete="off" />
+              </div>
+              <div class="sketch-create-row">
+                <label>Opção B</label>
+                <input type="text" id="sketch-option-b" maxlength="60" placeholder="Ex: Hambúrguer" autocomplete="off" />
+              </div>
+              <button type="submit">Criar votação</button>
+            </form>
+            <p id="sketch-create-error" class="settings-hint game-error hidden"></p>
+          </div>
+
+          <div id="sketch-result-view" class="hidden">
+            <p id="sketch-author" class="sketch-author"></p>
+            <div class="sketch-options-row">
+              <button type="button" class="sketch-option-card" id="sketch-btn-a" data-choice="a">
+                <span class="sketch-option-text" id="sketch-text-a"></span>
+                <div class="sketch-bar-track"><div class="sketch-bar-fill" id="sketch-bar-a"></div></div>
+                <span class="sketch-option-stats" id="sketch-stats-a"></span>
+              </button>
+              <button type="button" class="sketch-option-card" id="sketch-btn-b" data-choice="b">
+                <span class="sketch-option-text" id="sketch-text-b"></span>
+                <div class="sketch-bar-track"><div class="sketch-bar-fill" id="sketch-bar-b"></div></div>
+                <span class="sketch-option-stats" id="sketch-stats-b"></span>
+              </button>
+            </div>
+            <p id="sketch-total" class="sketch-total"></p>
+            <button type="button" id="btn-sketch-end" class="ghost hidden">Encerrar votação</button>
+            <button type="button" id="btn-sketch-new" class="hidden">Nova pergunta</button>
           </div>
         </div>
       </div>
