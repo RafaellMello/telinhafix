@@ -7,6 +7,7 @@ const FONT_STACKS = {
   jetbrains: "'JetBrains Mono', Consolas, monospace",
   anton: "'Anton', 'Segoe UI', Arial, sans-serif",
   nunito: "'Nunito', 'Segoe UI', Arial, sans-serif",
+  montserrat: "'Montserrat', 'Segoe UI', Arial, sans-serif",
 };
 
 const THEME_STORAGE_KEY = 'telinhafix-theme';
@@ -151,8 +152,10 @@ function setupSettingsPanel() {
   const priorityOptions = document.querySelectorAll('.priority-option');
   const fontOptions = document.querySelectorAll('.font-option');
   const sizeOptions = document.querySelectorAll('.size-option');
-  const colorSwatches = document.querySelectorAll('.color-swatch');
   const colorCustom = document.getElementById('color-custom');
+  const colorCustomHex = document.getElementById('color-custom-hex');
+  const tabButtons = document.querySelectorAll('.settings-tab-btn');
+  const panes = document.querySelectorAll('.settings-pane');
   if (!overlay) return;
 
   function refreshUI() {
@@ -163,10 +166,13 @@ function setupSettingsPanel() {
     priorityOptions.forEach((el) => el.classList.toggle('selected', el.dataset.priority === currentTheme.priority));
     fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
     sizeOptions.forEach((el) => el.classList.toggle('selected', Number(el.dataset.scale) === currentTheme.scale));
-    colorSwatches.forEach((el) => {
-      el.classList.toggle('selected', el.dataset.color.toLowerCase() === currentTheme.color.toLowerCase());
-    });
     colorCustom.value = currentTheme.color;
+    if (colorCustomHex) colorCustomHex.textContent = currentTheme.color.toUpperCase();
+  }
+
+  function selectTab(tabName) {
+    tabButtons.forEach((btn) => btn.classList.toggle('selected', btn.dataset.tab === tabName));
+    panes.forEach((pane) => pane.classList.toggle('hidden', pane.dataset.pane !== tabName));
   }
 
   function updateTheme(patch) {
@@ -182,6 +188,7 @@ function setupSettingsPanel() {
 
   function openSettings() {
     refreshUI();
+    selectTab('aparencia');
     overlay.classList.remove('hidden');
   }
 
@@ -217,10 +224,11 @@ function setupSettingsPanel() {
   sizeOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ scale: Number(el.dataset.scale) }));
   });
-  colorSwatches.forEach((el) => {
-    el.addEventListener('click', () => updateTheme({ color: el.dataset.color }));
-  });
   colorCustom.addEventListener('input', () => updateTheme({ color: colorCustom.value }));
+
+  tabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => selectTab(btn.dataset.tab));
+  });
 }
 
 setupSettingsPanel();

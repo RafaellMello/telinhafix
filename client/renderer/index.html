@@ -129,108 +129,121 @@
   </div>
 
   <div id="settings-overlay" class="settings-overlay hidden">
-    <div class="settings-panel">
-      <h2>Aparência</h2>
+    <div class="settings-modal">
+      <nav class="settings-sidebar">
+        <h3 class="settings-sidebar-title">Configurações</h3>
+        <button type="button" class="settings-tab-btn selected" data-tab="aparencia">Aparência</button>
+        <button type="button" class="settings-tab-btn" data-tab="atalhos">Atalhos</button>
+        <button type="button" class="settings-tab-btn" data-tab="desempenho">Teste de Desempenho</button>
+      </nav>
 
-      <div class="settings-group">
-        <label>Modo</label>
-        <div id="mode-options" class="mode-options">
-          <div class="mode-option" data-mode="latadelixo">Lata de lixo</div>
-          <div class="mode-option" data-mode="serio">Sério</div>
-        </div>
-      </div>
+      <div class="settings-content">
+        <button id="btn-settings-close" class="settings-modal-close" type="button" aria-label="Fechar">&times;</button>
 
-      <div class="settings-group">
-        <label>Bordas</label>
-        <div id="border-options" class="border-options">
-          <div class="border-option" data-border="arredondada">Arredondada</div>
-          <div class="border-option" data-border="chama2k19">Chama2k19</div>
-        </div>
-      </div>
+        <section class="settings-pane" data-pane="aparencia">
+          <h2>Aparência</h2>
 
-      <div class="settings-group">
-        <label>Notificações sonoras</label>
-        <div id="sound-options" class="sound-options">
-          <div class="sound-option" data-sound="ligado">Ligadas</div>
-          <div class="sound-option" data-sound="desligado">Desligadas</div>
-        </div>
-      </div>
+          <div class="settings-group">
+            <label>Modo</label>
+            <div id="mode-options" class="mode-options">
+              <div class="mode-option" data-mode="latadelixo">Lata de lixo</div>
+              <div class="mode-option" data-mode="serio">Sério</div>
+            </div>
+          </div>
 
-      <div class="settings-group">
-        <label>Atalhos de teclado globais</label>
-        <div id="hotkeys-options" class="hotkeys-options">
-          <div class="hotkeys-option" data-hotkeys="ligado">Ligados</div>
-          <div class="hotkeys-option" data-hotkeys="desligado">Desligados</div>
-        </div>
-        <p class="settings-hint">Funcionam mesmo com o app em segundo plano. Clique numa combinação pra trocar.</p>
-        <div class="keybind-row">
-          <span class="keybind-label">Compartilhar tela (preset rápido)</span>
-          <button type="button" class="keybind-capture" data-action="quickShare">Ctrl+Alt+Q</button>
-        </div>
-        <div class="keybind-row">
-          <span class="keybind-label">Parar de compartilhar</span>
-          <button type="button" class="keybind-capture" data-action="stopShare">Ctrl+Alt+S</button>
-        </div>
-        <div class="keybind-row">
-          <span class="keybind-label">Mutar/desmutar todos</span>
-          <button type="button" class="keybind-capture" data-action="toggleMute">Ctrl+Alt+M</button>
-        </div>
-        <p class="settings-hint">O preset rápido compartilha o monitor principal (tela toda) com áudio do sistema (exceto Discord) em 1080p60.</p>
-        <p id="keybind-error" class="settings-hint keybind-error hidden"></p>
-        <button type="button" id="btn-keybinds-reset" class="ghost keybinds-reset-btn">Restaurar padrão</button>
-      </div>
+          <div class="settings-group">
+            <label>Bordas</label>
+            <div id="border-options" class="border-options">
+              <div class="border-option" data-border="arredondada">Arredondada</div>
+              <div class="border-option" data-border="chama2k19">Chama2k19</div>
+            </div>
+          </div>
 
-      <div class="settings-group">
-        <label>Fonte</label>
-        <div id="font-options" class="font-options">
-          <div class="font-option" data-font="inter" style="font-family:'Inter'">Inter</div>
-          <div class="font-option" data-font="poppins" style="font-family:'Poppins'">Poppins</div>
-          <div class="font-option" data-font="jetbrains" style="font-family:'JetBrains Mono'">JetBrains Mono</div>
-          <div class="font-option" data-font="anton" style="font-family:'Anton'">Anton</div>
-          <div class="font-option" data-font="nunito" style="font-family:'Nunito'">Nunito</div>
-        </div>
-      </div>
+          <div class="settings-group">
+            <label>Notificações sonoras</label>
+            <div id="sound-options" class="sound-options">
+              <div class="sound-option" data-sound="ligado">Ligadas</div>
+              <div class="sound-option" data-sound="desligado">Desligadas</div>
+            </div>
+          </div>
 
-      <div class="settings-group">
-        <label>Tamanho do texto</label>
-        <div id="size-options" class="size-options">
-          <div class="size-option" data-scale="0.85">Pequeno</div>
-          <div class="size-option" data-scale="1">Médio</div>
-          <div class="size-option" data-scale="1.15">Grande</div>
-          <div class="size-option" data-scale="1.3">Extra</div>
-        </div>
-      </div>
+          <div class="settings-group">
+            <label>Fonte</label>
+            <div id="font-options" class="font-options">
+              <div class="font-option" data-font="inter" style="font-family:'Inter'">Inter</div>
+              <div class="font-option" data-font="poppins" style="font-family:'Poppins'">Poppins</div>
+              <div class="font-option" data-font="jetbrains" style="font-family:'JetBrains Mono'">JetBrains Mono</div>
+              <div class="font-option" data-font="anton" style="font-family:'Anton'">Anton</div>
+              <div class="font-option" data-font="nunito" style="font-family:'Nunito'">Nunito</div>
+              <div class="font-option" data-font="montserrat" style="font-family:'Montserrat'">Montserrat</div>
+            </div>
+          </div>
 
-      <div class="settings-group">
-        <label>Cor principal</label>
-        <div id="color-swatches" class="color-swatches">
-          <button type="button" class="color-swatch" data-color="#e2231a" style="background:#e2231a" title="Vermelho"></button>
-          <button type="button" class="color-swatch" data-color="#8a2be2" style="background:#8a2be2" title="Roxo"></button>
-          <button type="button" class="color-swatch" data-color="#2e6fee" style="background:#2e6fee" title="Azul"></button>
-          <button type="button" class="color-swatch" data-color="#1db954" style="background:#1db954" title="Verde"></button>
-          <button type="button" class="color-swatch" data-color="#ff3d8b" style="background:#ff3d8b" title="Rosa"></button>
-          <button type="button" class="color-swatch" data-color="#ff8c1a" style="background:#ff8c1a" title="Laranja"></button>
-          <input type="color" id="color-custom" value="#e2231a" title="Escolher outra cor" />
-        </div>
-      </div>
+          <div class="settings-group">
+            <label>Tamanho do texto</label>
+            <div id="size-options" class="size-options">
+              <div class="size-option" data-scale="0.85">Pequeno</div>
+              <div class="size-option" data-scale="1">Médio</div>
+              <div class="size-option" data-scale="1.15">Grande</div>
+              <div class="size-option" data-scale="1.3">Extra</div>
+            </div>
+          </div>
 
-      <div class="settings-group">
-        <label>Prioridade de qualidade</label>
-        <div id="priority-options" class="priority-options">
-          <div class="priority-option" data-priority="nitidez">Nitidez (resolução)</div>
-          <div class="priority-option" data-priority="fluidez">Fluidez (FPS)</div>
-        </div>
-        <p class="settings-hint">Entre duas opções que seu PC/internet aguentam, qual vence: mais resolução ou mais fps? Não precisa testar de novo pra trocar.</p>
-      </div>
+          <div class="settings-group">
+            <label>Cor principal</label>
+            <div class="color-picker-row">
+              <input type="color" id="color-custom" value="#e2231a" title="Escolher cor" />
+              <span id="color-custom-hex" class="color-custom-hex">#E2231A</span>
+            </div>
+          </div>
+        </section>
 
-      <div class="settings-group">
-        <label>Qualidade recomendada pro seu PC/internet</label>
-        <div id="quality-test-summary" class="quality-test-summary">Nunca testado.</div>
-        <button id="btn-quality-test-open" class="ghost" type="button">Testar agora (~40s)</button>
-      </div>
+        <section class="settings-pane hidden" data-pane="atalhos">
+          <h2>Atalhos</h2>
 
-      <div class="settings-footer">
-        <button id="btn-settings-close">Fechar</button>
+          <div class="settings-group">
+            <label>Atalhos de teclado globais</label>
+            <div id="hotkeys-options" class="hotkeys-options">
+              <div class="hotkeys-option" data-hotkeys="ligado">Ligados</div>
+              <div class="hotkeys-option" data-hotkeys="desligado">Desligados</div>
+            </div>
+            <p class="settings-hint">Funcionam mesmo com o app em segundo plano. Clique numa combinação pra trocar.</p>
+            <div class="keybind-row">
+              <span class="keybind-label">Compartilhar tela (preset rápido)</span>
+              <button type="button" class="keybind-capture" data-action="quickShare">Ctrl+Alt+Q</button>
+            </div>
+            <div class="keybind-row">
+              <span class="keybind-label">Parar de compartilhar</span>
+              <button type="button" class="keybind-capture" data-action="stopShare">Ctrl+Alt+S</button>
+            </div>
+            <div class="keybind-row">
+              <span class="keybind-label">Mutar/desmutar todos</span>
+              <button type="button" class="keybind-capture" data-action="toggleMute">Ctrl+Alt+M</button>
+            </div>
+            <p class="settings-hint">O preset rápido compartilha o monitor principal (tela toda) com áudio do sistema (exceto Discord) em 1080p60.</p>
+            <p id="keybind-error" class="settings-hint keybind-error hidden"></p>
+            <button type="button" id="btn-keybinds-reset" class="ghost keybinds-reset-btn">Restaurar padrão</button>
+          </div>
+        </section>
+
+        <section class="settings-pane hidden" data-pane="desempenho">
+          <h2>Teste de Desempenho</h2>
+
+          <div class="settings-group">
+            <label>Prioridade de qualidade</label>
+            <div id="priority-options" class="priority-options">
+              <div class="priority-option" data-priority="nitidez">Nitidez (resolução)</div>
+              <div class="priority-option" data-priority="fluidez">Fluidez (FPS)</div>
+            </div>
+            <p class="settings-hint">Entre duas opções que seu PC/internet aguentam, qual vence: mais resolução ou mais fps? Não precisa testar de novo pra trocar.</p>
+          </div>
+
+          <div class="settings-group">
+            <label>Qualidade recomendada pro seu PC/internet</label>
+            <div id="quality-test-summary" class="quality-test-summary">Nunca testado.</div>
+            <button id="btn-quality-test-open" class="ghost" type="button">Testar agora (~40s)</button>
+          </div>
+        </section>
       </div>
     </div>
   </div>
