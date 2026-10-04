@@ -179,6 +179,30 @@ contextBridge.exposeInMainWorld('stopGame', {
   },
 });
 
+// Minijogo "Sketch do PC" - "Voce prefere A ou B?" com votacao ao vivo.
+// Mesmo padrao server-authoritative por sala dos outros dois minijogos.
+contextBridge.exposeInMainWorld('sketchGame', {
+  getState() {
+    return emitAck('sketch-get-state', null).then((res) => res.state);
+  },
+  create(optionA, optionB) {
+    return emitAck('sketch-create', { optionA, optionB });
+  },
+  vote(choice) {
+    return emitAck('sketch-vote', { choice });
+  },
+  endVote() {
+    return emitAck('sketch-end-vote', null);
+  },
+  reset() {
+    return emitAck('sketch-reset', null);
+  },
+  onState(cb) {
+    if (!socket) return;
+    socket.on('sketch-state', (state) => cb(state));
+  },
+});
+
 // Ponte com o helper nativo (TelinhaFixAudioHelper.exe), que captura o
 // audio do sistema excluindo o Discord. O main process cuida de ligar/
 // desligar o processo; aqui so repassamos os pedacos de audio crus (PCM

@@ -1297,7 +1297,7 @@ let mySecretMapRound = -1;
 let currentGameView = 'picker';
 
 const GAME_TEAM_LABEL = { red: 'Vermelha', blue: 'Azul' };
-const GAME_TITLES = { picker: 'Minijogos', codenames: 'Código Secreto', stop: 'Stop / Adedonha' };
+const GAME_TITLES = { picker: 'Minijogos', codenames: 'Código Secreto', stop: 'Stop / Adedonha', sketch: 'Sketch do PC' };
 
 function showGamePicker() {
   currentGameView = 'picker';
@@ -1306,6 +1306,7 @@ function showGamePicker() {
   document.getElementById('game-picker-view').classList.remove('hidden');
   document.getElementById('codenames-view').classList.add('hidden');
   document.getElementById('stop-view').classList.add('hidden');
+  document.getElementById('sketch-view').classList.add('hidden');
 }
 
 function selectGame(name) {
@@ -1315,8 +1316,10 @@ function selectGame(name) {
   document.getElementById('game-picker-view').classList.add('hidden');
   document.getElementById('codenames-view').classList.toggle('hidden', name !== 'codenames');
   document.getElementById('stop-view').classList.toggle('hidden', name !== 'stop');
+  document.getElementById('sketch-view').classList.toggle('hidden', name !== 'sketch');
   if (name === 'codenames') refreshGameState();
   else if (name === 'stop') refreshStopState();
+  else if (name === 'sketch') refreshSketchState();
 }
 
 function myGameRole() {
@@ -1512,6 +1515,9 @@ function resetGameUiState() {
   stopState = null;
   stopFieldsBuilt = -1;
   clearTimeout(stopSyncDebounce);
+  sketchState = null;
+  mySketchVote = null;
+  mySketchRound = -1;
   closeGameOverlay();
 }
 
@@ -1669,6 +1675,81 @@ function renderStop() {
   } else {
     renderStopReveal();
   }
+}
+
+// --- Minijogo "Sketch do PC" ("Você prefere A ou B?") ---------------------
+// Diferente do Codigo Secreto/Stop, aqui nao tem nada escondido - a
+// contagem de votos e sempre publica e atualiza ao vivo pra todo mundo a
+// cada voto. O unico estado "privado" e qual das duas opcoes EU escolhi, e
+// isso a gente so guarda localmente (o broadcast publico manda so a
+// contagem agregada, nao quem votou em que).
+
+let sketchState = null;
+let mySketchVote = null; // 'a' | 'b' | null
+let mySketchRound = -1;
+
+async function refreshSketchState() {
+  try {
+    sketchState = await window.sketchGame.getState();
+    if (mySketchRound !== sketchState.round) { mySketchVote = null; mySketchRound = sketchState.round; }
+    renderSketch();
+  } catch (err) {
+    console.error('Falha ao buscar estado do Sketch do PC:', err);
+  }
+}
+
+function setSketchCreateError(msg) {
+  const el = document.getElementById('sketch-create-error');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('hidden', !msg);
+}
+
+function renderSketch() {
+  if (!sketchState || !gameOverlayOpen || currentGameView !== 'sketch') return;
+  const isIdle = sketchState.status === 'idle';
+  document.getElementById('sketch-idle-view').classList.toggle('hidden', !isIdle);
+  document.getElementById('sketch-result-view').classList.toggle('hidden', isIdle);
+  if (isIdle) return;
+
+  const authorEl = document.getElementById('sketch-author');
+  authorEl.innerHTML = '';
+  authorEl.appendChild(document.createTextNode('Pergunta de '));
+  const strong = document.createElement('strong');
+  strong.textContent = sketchState.authorName || 'alguém';
+  authorEl.appendChild(strong);
+  authorEl.appendChild(document.createTextNode(':'));
+
+  const total = sketchState.total || 0;
+  const pctA = total > 0 ? Math.round((sketchState.counts.a / total) * 100) : 0;
+  const pctB = total > 0 ? Math.round((sketchState.counts.b / total) * 100) : 0;
+
+  document.getElementById('sketch-text-a').textContent = sketchState.optionA;
+  document.getElementById('sketch-text-b').textContent = sketchState.optionB;
+  document.getElementById('sketch-bar-a').style.width = `${pctA}%`;
+  document.getElementById('sketch-bar-b').style.width = `${pctB}%`;
+  document.getElementById('sketch-stats-a').textContent = `${sketchState.counts.a} voto(s) · ${pctA}%`;
+  document.getElementById('sketch-stats-b').textContent = `${sketchState.counts.b} voto(s) · ${pctB}%`;
+  document.getElementById('sketch-total').textContent = `${total} voto(s) no total`;
+
+  const locked = sketchState.status === 'ended';
+  const btnA = document.getElementById('sketch-btn-a');
+  const btnB = document.getElementById('sketch-btn-b');
+  btnA.classList.toggle('sketch-option-locked', locked);
+  btnB.classList.toggle('sketch-option-locked', locked);
+  btnA.classList.toggle('sketch-option-mine', mySketchVote === 'a');
+  btnB.classList.toggle('sketch-option-mine', mySketchVote === 'b');
+
+  document.getElementById('btn-sketch-end').classList.toggle('hidden', locked);
+  document.getElementById('btn-sketch-new').classList.toggle('hidden', !locked);
+}
+
+function castSketchVote(choice) {
+  if (!sketchState || sketchState.status !== 'voting') return;
+  window.sketchGame.vote(choice).then(() => {
+    mySketchVote = choice;
+    renderSketch();
+  }).catch((err) => console.error('Falha ao votar no Sketch do PC:', err));
 }
 
 function createPeerConnection(peerId) {
@@ -2591,6 +2672,25 @@ document.getElementById('btn-stop-call').addEventListener('click', () => {
   });
 });
 
+document.getElementById('sketch-create-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  setSketchCreateError('');
+  const a = document.getElementById('sketch-option-a');
+  const b = document.getElementById('sketch-option-b');
+  window.sketchGame.create(a.value, b.value).then(() => {
+    a.value = '';
+    b.value = '';
+  }).catch((err) => setSketchCreateError(err.message));
+});
+document.getElementById('sketch-btn-a').addEventListener('click', () => castSketchVote('a'));
+document.getElementById('sketch-btn-b').addEventListener('click', () => castSketchVote('b'));
+document.getElementById('btn-sketch-end').addEventListener('click', () => {
+  window.sketchGame.endVote().catch((err) => console.error('Falha ao encerrar votação:', err));
+});
+document.getElementById('btn-sketch-new').addEventListener('click', () => {
+  window.sketchGame.reset().catch((err) => console.error('Falha ao criar nova pergunta:', err));
+});
+
 document.querySelectorAll('.game-pick-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     setGameError('');
@@ -2700,6 +2800,13 @@ btnJoin.addEventListener('click', async () => {
     window.stopGame.onState((newState) => {
       stopState = newState;
       renderStop();
+    });
+
+    window.sketchGame.onState((newState) => {
+      const roundChanged = mySketchRound !== newState.round;
+      sketchState = newState;
+      if (roundChanged) { mySketchVote = null; mySketchRound = newState.round; }
+      renderSketch();
     });
 
     // Painel de admin: o dono do app pode entrar numa sala no modo

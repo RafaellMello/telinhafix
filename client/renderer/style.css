@@ -1601,6 +1601,95 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .stop-result-breakdown .stop-item-invalida { color: var(--red-bright); text-decoration: line-through; }
 .stop-result-breakdown .stop-item-unica { color: var(--text); }
 
+/* --- Sketch do PC ("Você prefere A ou B?") -------------------------------- */
+
+.sketch-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 16px 0;
+  max-width: 420px;
+}
+
+.sketch-create-row { display: flex; flex-direction: column; gap: 6px; }
+.sketch-create-row label {
+  font-size: calc(11px * var(--font-scale));
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sketch-author {
+  margin: 0 0 16px;
+  font-size: calc(13px * var(--font-scale));
+  color: var(--text-muted);
+}
+.sketch-author strong { color: var(--text); }
+
+.sketch-options-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.sketch-option-card {
+  flex: 1;
+  text-align: left;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+.sketch-option-card:hover { border-color: var(--red-bright); filter: none; }
+.sketch-option-card.sketch-option-mine { border-color: var(--red-bright); box-shadow: inset 0 0 0 1px var(--red-bright); }
+.sketch-option-card.sketch-option-locked { cursor: default; }
+.sketch-option-card.sketch-option-locked:hover { border-color: var(--border); }
+
+.sketch-option-text {
+  font-size: calc(15px * var(--font-scale));
+  font-weight: 800;
+}
+
+.sketch-bar-track {
+  /* largura explicita em vez de confiar em align-items:stretch - um
+     <button> (que e o que .sketch-option-card e) tem align-items:
+     flex-start por padrao do navegador, diferente de uma <div>, entao a
+     barra ficava com largura 0 sem isso. */
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.sketch-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--red), var(--red-bright));
+  transition: width 0.3s ease;
+}
+
+.sketch-option-stats {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.sketch-total {
+  margin: 0 0 16px;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--text-muted);
+}
+
 .game-teams-row {
   display: flex;
   gap: 16px;

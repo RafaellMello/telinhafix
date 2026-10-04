@@ -337,6 +337,65 @@ function broadcastStopState(roomId) {
   io.to(roomId).emit('stop-state', stopPublicState(roomId));
 }
 
+// ============================================================================
+// Minijogo "Sketch do PC" - alguem cria uma pergunta "Voce prefere A ou B?",
+// e quem estiver na sala vota ao vivo (contagem atualiza em tempo real pra
+// todo mundo a cada voto, sem esperar ninguem "revelar" nada - diferente do
+// Stop/Codigo Secreto, aqui nao tem nada escondido). A votacao se encerra
+// sozinha quando todo mundo que esta na sala ja votou, ou qualquer um pode
+// encerrar na mao a qualquer momento (ex: alguem ficou ausente).
+// ============================================================================
+
+const SKETCH_OPTION_MAX_LEN = 60;
+
+// roomId -> estado do Sketch. So existe enquanto a sala existir.
+const sketchGames = new Map();
+
+function createSketchGame() {
+  return {
+    status: 'idle', // idle | voting | ended
+    round: 0,
+    optionA: null,
+    optionB: null,
+    authorName: null,
+    votes: new Map(), // socketId -> 'a' | 'b'
+  };
+}
+
+function getOrCreateSketchGame(roomId) {
+  if (!sketchGames.has(roomId)) sketchGames.set(roomId, createSketchGame());
+  return sketchGames.get(roomId);
+}
+
+function sketchPublicState(roomId) {
+  const game = sketchGames.get(roomId);
+  if (!game || game.status === 'idle') {
+    return { status: 'idle', round: game ? game.round : 0, optionA: null, optionB: null, authorName: null, counts: { a: 0, b: 0 }, total: 0 };
+  }
+  const counts = { a: 0, b: 0 };
+  for (const v of game.votes.values()) counts[v] += 1;
+  return {
+    status: game.status,
+    round: game.round,
+    optionA: game.optionA,
+    optionB: game.optionB,
+    authorName: game.authorName,
+    counts,
+    total: game.votes.size,
+  };
+}
+
+function broadcastSketchState(roomId) {
+  io.to(roomId).emit('sketch-state', sketchPublicState(roomId));
+}
+
+function maybeAutoEndSketchVote(roomId, game) {
+  if (game.status !== 'voting') return;
+  const room = rooms.get(roomId);
+  const roomSize = room ? room.size : 0;
+  if (roomSize > 0 && game.votes.size >= roomSize) game.status = 'ended';
+}
+
 // roomId -> Set<socketId> de admins espectando essa sala de forma invisivel
 // (nao entram no Map "rooms" acima - nao contam como participante, nao
 // aparecem pra ninguem, so recebem video/audio dos outros).
@@ -725,6 +784,64 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
+  // Minijogo "Sketch do PC" - "Voce prefere A ou B?" com votacao ao vivo.
+  // Sem roster fixo (diferente do Stop): qualquer um que estiver na sala
+  // pode votar a qualquer momento enquanto a votacao estiver aberta, mesmo
+  // quem entrou depois da pergunta ter sido criada.
+  socket.on('sketch-get-state', (_data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    if (ack) ack({ ok: true, state: sketchPublicState(currentRoom) });
+  });
+
+  socket.on('sketch-create', ({ optionA, optionB } = {}, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = getOrCreateSketchGame(currentRoom);
+    if (game.status === 'voting') { if (ack) ack({ ok: false, error: 'Já tem uma votação em andamento' }); return; }
+    const cleanA = String(optionA || '').trim().slice(0, SKETCH_OPTION_MAX_LEN);
+    const cleanB = String(optionB || '').trim().slice(0, SKETCH_OPTION_MAX_LEN);
+    if (!cleanA || !cleanB) { if (ack) ack({ ok: false, error: 'Preencha as duas opções' }); return; }
+    game.optionA = cleanA;
+    game.optionB = cleanB;
+    game.authorName = (rooms.get(currentRoom)?.get(socket.id)?.name) || 'Alguém';
+    game.votes = new Map();
+    game.status = 'voting';
+    game.round += 1;
+    broadcastSketchState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
+  socket.on('sketch-vote', ({ choice } = {}, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = sketchGames.get(currentRoom);
+    if (!game || game.status !== 'voting') { if (ack) ack({ ok: false, error: 'Não tem votação em andamento' }); return; }
+    if (choice !== 'a' && choice !== 'b') { if (ack) ack({ ok: false, error: 'Escolha inválida' }); return; }
+    game.votes.set(socket.id, choice);
+    maybeAutoEndSketchVote(currentRoom, game);
+    broadcastSketchState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
+  socket.on('sketch-end-vote', (_data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = sketchGames.get(currentRoom);
+    if (!game || game.status !== 'voting') { if (ack) ack({ ok: false, error: 'Não tem votação em andamento' }); return; }
+    game.status = 'ended';
+    broadcastSketchState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
+  socket.on('sketch-reset', (_data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = getOrCreateSketchGame(currentRoom);
+    game.status = 'idle';
+    game.optionA = null;
+    game.optionB = null;
+    game.authorName = null;
+    game.votes = new Map();
+    broadcastSketchState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
   socket.on('disconnect', () => {
     adminSockets.delete(socket);
 
@@ -743,12 +860,20 @@ io.on('connection', (socket) => {
         const stopGame = stopGames.get(currentRoom);
         if (stopGame && stopGame.timer) clearTimeout(stopGame.timer);
         stopGames.delete(currentRoom);
+        sketchGames.delete(currentRoom);
       } else {
         socket.to(currentRoom).emit('peer-left', { id: socket.id });
         const game = codenamesGames.get(currentRoom);
         if (game) {
           removeFromGameTeams(game, socket.id);
           broadcastGameState(currentRoom);
+        }
+        // Quem sai pode ter sido justamente quem faltava votar - reavalia
+        // se a votacao deve se encerrar sozinha agora.
+        const sketchGame = sketchGames.get(currentRoom);
+        if (sketchGame) {
+          maybeAutoEndSketchVote(currentRoom, sketchGame);
+          broadcastSketchState(currentRoom);
         }
       }
       // Mesma logica do join: espectadores recebem o peer-left direto.
