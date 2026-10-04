@@ -157,6 +157,28 @@ contextBridge.exposeInMainWorld('game', {
   },
 });
 
+// Minijogo "Stop / Adedonha" - mesmo padrao do Codigo Secreto acima (estado
+// no servidor, por sala). stop-sync-answers e fire-and-forget de proposito
+// (ver comentario no handler do servidor).
+contextBridge.exposeInMainWorld('stopGame', {
+  getState() {
+    return emitAck('stop-get-state', null).then((res) => res.state);
+  },
+  startRound() {
+    return emitAck('stop-start-round', null);
+  },
+  syncAnswers(values) {
+    if (socket) socket.emit('stop-sync-answers', { values });
+  },
+  callStop(values) {
+    return emitAck('stop-call-stop', { values });
+  },
+  onState(cb) {
+    if (!socket) return;
+    socket.on('stop-state', (state) => cb(state));
+  },
+});
+
 // Ponte com o helper nativo (TelinhaFixAudioHelper.exe), que captura o
 // audio do sistema excluindo o Discord. O main process cuida de ligar/
 // desligar o processo; aqui so repassamos os pedacos de audio crus (PCM

@@ -1293,8 +1293,31 @@ let gameState = null;
 let gameOverlayOpen = false;
 let mySecretMap = null;
 let mySecretMapRound = -1;
+// 'picker' | 'codenames' | 'stop' - qual tela o painel 🎮 ta mostrando.
+let currentGameView = 'picker';
 
 const GAME_TEAM_LABEL = { red: 'Vermelha', blue: 'Azul' };
+const GAME_TITLES = { picker: 'Minijogos', codenames: 'Código Secreto', stop: 'Stop / Adedonha' };
+
+function showGamePicker() {
+  currentGameView = 'picker';
+  document.getElementById('game-title').textContent = GAME_TITLES.picker;
+  document.getElementById('btn-game-back').classList.add('hidden');
+  document.getElementById('game-picker-view').classList.remove('hidden');
+  document.getElementById('codenames-view').classList.add('hidden');
+  document.getElementById('stop-view').classList.add('hidden');
+}
+
+function selectGame(name) {
+  currentGameView = name;
+  document.getElementById('game-title').textContent = GAME_TITLES[name] || '';
+  document.getElementById('btn-game-back').classList.remove('hidden');
+  document.getElementById('game-picker-view').classList.add('hidden');
+  document.getElementById('codenames-view').classList.toggle('hidden', name !== 'codenames');
+  document.getElementById('stop-view').classList.toggle('hidden', name !== 'stop');
+  if (name === 'codenames') refreshGameState();
+  else if (name === 'stop') refreshStopState();
+}
 
 function myGameRole() {
   if (!gameState || !selfId) return null;
@@ -1325,12 +1348,13 @@ async function refreshGameState() {
 function openGameOverlay() {
   gameOverlayOpen = true;
   document.getElementById('game-overlay').classList.remove('hidden');
-  refreshGameState();
+  showGamePicker();
 }
 
 function closeGameOverlay() {
   gameOverlayOpen = false;
   document.getElementById('game-overlay').classList.add('hidden');
+  clearStopTimerInterval();
 }
 
 function ensureSecretMap() {
@@ -1346,7 +1370,7 @@ function ensureSecretMap() {
 }
 
 function renderGame() {
-  if (!gameState || !gameOverlayOpen) return;
+  if (!gameState || !gameOverlayOpen || currentGameView !== 'codenames') return;
   const playing = gameState.status === 'playing' || gameState.status === 'over';
   document.getElementById('game-lobby-view').classList.toggle('hidden', playing);
   document.getElementById('game-board-view').classList.toggle('hidden', !playing);
@@ -1485,7 +1509,166 @@ function resetGameUiState() {
   gameState = null;
   mySecretMap = null;
   mySecretMapRound = -1;
+  stopState = null;
+  stopFieldsBuilt = -1;
+  clearTimeout(stopSyncDebounce);
   closeGameOverlay();
+}
+
+// --- Minijogo "Stop / Adedonha" -------------------------------------------
+// Mesmo padrao do Codigo Secreto: estado de verdade no servidor, por sala.
+// Sem equipes/papeis - todo mundo que estiver na sala quando a rodada
+// comecar vira jogador. Os campos de texto sao sincronizados aos poucos
+// (debounce) enquanto a pessoa digita, pra o servidor sempre ter uma copia
+// atualizada na hora que alguem apertar "PARAR".
+
+let stopState = null;
+// round pra que os <input> em #stop-fields foram construidos da ultima vez -
+// evita recriar os campos (e perder o foco/cursor de quem ta digitando) a
+// cada atualizacao de estado recebida durante a mesma rodada.
+let stopFieldsBuilt = -1;
+let stopSyncDebounce = null;
+let stopTickInterval = null;
+
+async function refreshStopState() {
+  try {
+    stopState = await window.stopGame.getState();
+    renderStop();
+  } catch (err) {
+    console.error('Falha ao buscar estado do Stop:', err);
+  }
+}
+
+function collectStopFieldValues() {
+  const values = {};
+  document.querySelectorAll('#stop-fields input').forEach((input) => {
+    values[input.dataset.category] = input.value;
+  });
+  return values;
+}
+
+function buildStopFields() {
+  const container = document.getElementById('stop-fields');
+  container.innerHTML = '';
+  stopState.categories.forEach((cat) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'stop-field';
+    const label = document.createElement('label');
+    label.textContent = cat;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 40;
+    input.autocomplete = 'off';
+    input.dataset.category = cat;
+    input.addEventListener('input', () => {
+      clearTimeout(stopSyncDebounce);
+      stopSyncDebounce = setTimeout(() => {
+        window.stopGame.syncAnswers(collectStopFieldValues());
+      }, 300);
+    });
+    wrap.appendChild(label);
+    wrap.appendChild(input);
+    container.appendChild(wrap);
+  });
+  stopFieldsBuilt = stopState.round;
+  container.querySelector('input')?.focus();
+}
+
+function updateStopTimerDisplay() {
+  const el = document.getElementById('stop-timer');
+  if (!el || !stopState || stopState.status !== 'playing' || !stopState.startedAt) return;
+  const remainingMs = Math.max(0, stopState.durationMs - (Date.now() - stopState.startedAt));
+  const seconds = Math.ceil(remainingMs / 1000);
+  el.textContent = `${seconds}s`;
+  el.classList.toggle('stop-timer-urgent', seconds <= 10);
+}
+
+function startStopTimerInterval() {
+  if (stopTickInterval) return;
+  updateStopTimerDisplay();
+  stopTickInterval = setInterval(updateStopTimerDisplay, 250);
+}
+
+function clearStopTimerInterval() {
+  if (stopTickInterval) { clearInterval(stopTickInterval); stopTickInterval = null; }
+}
+
+function renderStopCategoriesPreview() {
+  const el = document.getElementById('stop-categories-preview');
+  el.innerHTML = '';
+  (stopState.categories || []).forEach((cat) => {
+    const chip = document.createElement('span');
+    chip.className = 'stop-cat-chip';
+    chip.textContent = cat;
+    el.appendChild(chip);
+  });
+}
+
+function renderStopPlaying() {
+  document.getElementById('stop-letter-badge').textContent = stopState.letter || '';
+  if (stopFieldsBuilt !== stopState.round) buildStopFields();
+  document.getElementById('stop-call-error').classList.add('hidden');
+  startStopTimerInterval();
+}
+
+function renderStopReveal() {
+  clearStopTimerInterval();
+  const results = stopState.results;
+  if (!results) return;
+
+  const letterEl = document.getElementById('stop-reveal-letter');
+  letterEl.textContent = '';
+  letterEl.appendChild(document.createTextNode('Letra sorteada: '));
+  const letterSpan = document.createElement('span');
+  letterSpan.textContent = results.letter;
+  letterEl.appendChild(letterSpan);
+
+  const resultsEl = document.getElementById('stop-results');
+  resultsEl.innerHTML = '';
+  results.perPlayer.forEach((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'stop-result-card';
+
+    const head = document.createElement('div');
+    head.className = 'stop-result-head';
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = `${i + 1}º ${p.name}${p.id === selfId ? ' (você)' : ''}`;
+    const totalSpan = document.createElement('span');
+    totalSpan.className = 'stop-result-total';
+    totalSpan.textContent = `${p.total} pts`;
+    head.appendChild(nameSpan);
+    head.appendChild(totalSpan);
+
+    const breakdown = document.createElement('div');
+    breakdown.className = 'stop-result-breakdown';
+    results.categories.forEach((cat) => {
+      const info = p.categories[cat];
+      const item = document.createElement('span');
+      item.className = `stop-item-${info.status}`;
+      item.textContent = `${cat}: ${info.value || '—'} (${info.points})`;
+      breakdown.appendChild(item);
+    });
+
+    card.appendChild(head);
+    card.appendChild(breakdown);
+    resultsEl.appendChild(card);
+  });
+}
+
+function renderStop() {
+  if (!stopState || !gameOverlayOpen || currentGameView !== 'stop') return;
+  document.getElementById('stop-idle-view').classList.toggle('hidden', stopState.status !== 'idle');
+  document.getElementById('stop-playing-view').classList.toggle('hidden', stopState.status !== 'playing');
+  document.getElementById('stop-reveal-view').classList.toggle('hidden', stopState.status !== 'reveal');
+
+  if (stopState.status === 'idle') {
+    clearStopTimerInterval();
+    renderStopCategoriesPreview();
+  } else if (stopState.status === 'playing') {
+    renderStopPlaying();
+  } else {
+    renderStopReveal();
+  }
 }
 
 function createPeerConnection(peerId) {
@@ -2389,6 +2572,24 @@ document.getElementById('btn-toggle-game').addEventListener('click', () => {
   else openGameOverlay();
 });
 document.getElementById('btn-game-close').addEventListener('click', closeGameOverlay);
+document.getElementById('btn-game-back').addEventListener('click', showGamePicker);
+document.querySelectorAll('.game-picker-card').forEach((card) => {
+  card.addEventListener('click', () => selectGame(card.dataset.game));
+});
+
+document.getElementById('btn-stop-start').addEventListener('click', () => {
+  window.stopGame.startRound().catch((err) => console.error('Falha ao iniciar rodada do Stop:', err));
+});
+document.getElementById('btn-stop-play-again').addEventListener('click', () => {
+  window.stopGame.startRound().catch((err) => console.error('Falha ao iniciar rodada do Stop:', err));
+});
+document.getElementById('btn-stop-call').addEventListener('click', () => {
+  window.stopGame.callStop(collectStopFieldValues()).catch((err) => {
+    const el = document.getElementById('stop-call-error');
+    el.textContent = err.message;
+    el.classList.remove('hidden');
+  });
+});
 
 document.querySelectorAll('.game-pick-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -2494,6 +2695,11 @@ btnJoin.addEventListener('click', async () => {
     window.game.onState((newState) => {
       gameState = newState;
       renderGame();
+    });
+
+    window.stopGame.onState((newState) => {
+      stopState = newState;
+      renderStop();
     });
 
     // Painel de admin: o dono do app pode entrar numa sala no modo
