@@ -273,8 +273,26 @@
       <button id="btn-game-close" class="settings-modal-close" type="button" aria-label="Fechar">&times;</button>
 
       <div class="game-content">
-        <h2 class="game-title">Código Secreto</h2>
+        <div class="game-header">
+          <button type="button" id="btn-game-back" class="ghost game-back-btn hidden">&larr; Jogos</button>
+          <h2 class="game-title" id="game-title">Minijogos</h2>
+        </div>
 
+        <div id="game-picker-view" class="game-picker">
+          <p class="settings-hint">Escolha um minijogo pra jogar com quem estiver na sala.</p>
+          <div class="game-picker-grid">
+            <button type="button" class="game-picker-card" data-game="codenames">
+              <span class="game-picker-card-title">Código Secreto</span>
+              <span class="game-picker-card-desc">Duas equipes, pistas e um assassino escondido no tabuleiro.</span>
+            </button>
+            <button type="button" class="game-picker-card" data-game="stop">
+              <span class="game-picker-card-title">Stop / Adedonha</span>
+              <span class="game-picker-card-desc">Sorteia uma letra, todo mundo digita contra o tempo.</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="codenames-view" class="hidden">
         <div id="game-lobby-view" class="game-lobby">
           <p class="settings-hint">Escolham uma equipe e um papel. Cada equipe precisa de 1 Mestre-Espião e pelo menos 1 Agente pra começar. Quem não escolher fica só assistindo.</p>
 
@@ -344,6 +362,31 @@
               <button type="button" id="btn-game-play-again">Jogar de novo</button>
               <button type="button" id="btn-game-reset-lobby" class="ghost">Trocar equipes</button>
             </div>
+          </div>
+        </div>
+        </div>
+
+        <div id="stop-view" class="hidden">
+          <div id="stop-idle-view">
+            <p class="settings-hint">Sorteia uma letra; todo mundo digita uma palavra por categoria que comece com ela, correndo contra o tempo. Quem terminar primeiro aperta "PARAR" e encerra a rodada pra todo mundo na hora.</p>
+            <div id="stop-categories-preview" class="stop-categories-preview"></div>
+            <button type="button" id="btn-stop-start">Sortear letra e começar</button>
+          </div>
+
+          <div id="stop-playing-view" class="hidden">
+            <div class="stop-playing-header">
+              <span class="stop-letter-badge" id="stop-letter-badge"></span>
+              <span class="stop-timer" id="stop-timer"></span>
+            </div>
+            <div id="stop-fields" class="stop-fields"></div>
+            <button type="button" id="btn-stop-call" class="stop-call-btn">PARAR!</button>
+            <p id="stop-call-error" class="settings-hint game-error hidden"></p>
+          </div>
+
+          <div id="stop-reveal-view" class="hidden">
+            <h3 id="stop-reveal-letter" class="stop-reveal-letter"></h3>
+            <div id="stop-results" class="stop-results"></div>
+            <button type="button" id="btn-stop-play-again">Jogar de novo (nova letra)</button>
           </div>
         </div>
       </div>

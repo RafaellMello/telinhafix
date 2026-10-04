@@ -217,6 +217,126 @@ function broadcastGameState(roomId) {
   io.to(roomId).emit('game-state', publicGameState(roomId));
 }
 
+// ============================================================================
+// Minijogo "Stop / Adedonha" - sorteia uma letra, todo mundo (quem estiver na
+// sala quando a rodada comecar) digita uma palavra por categoria comecando
+// com ela, correndo contra um cronometro no servidor. Quem termina primeiro
+// aperta "PARAR", o que encerra a rodada pra todo mundo na hora (regra
+// classica do jogo). Sem equipes/papeis - todo mundo joga contra todo mundo.
+// ============================================================================
+
+const STOP_CATEGORIES = ['Nome', 'Animal', 'Fruta', 'Cor', 'País', 'Objeto'];
+// Letras raras como inicial em portugues (K, W, X, Y, Z) ficam de fora pra
+// nao sortear uma rodada praticamente impossivel de preencher.
+const STOP_LETTERS = 'ABCDEFGHIJLMNOPQRSTUV'.split('');
+const STOP_ROUND_MS = 60000;
+
+// roomId -> estado do Stop. So existe enquanto a sala existir.
+const stopGames = new Map();
+
+function createStopGame() {
+  return {
+    status: 'idle', // idle | playing | reveal
+    round: 0,
+    letter: null,
+    startedAt: null,
+    durationMs: STOP_ROUND_MS,
+    players: new Map(), // socketId -> { name, values: { categoria: texto } }
+    results: null,
+    timer: null,
+  };
+}
+
+function getOrCreateStopGame(roomId) {
+  if (!stopGames.has(roomId)) stopGames.set(roomId, createStopGame());
+  return stopGames.get(roomId);
+}
+
+function sanitizeStopValues(values) {
+  const out = {};
+  for (const cat of STOP_CATEGORIES) {
+    const v = values && typeof values === 'object' ? values[cat] : '';
+    out[cat] = typeof v === 'string' ? v.trim().slice(0, 40) : '';
+  }
+  return out;
+}
+
+function computeStopResults(game) {
+  const letterLower = (game.letter || '').toLowerCase();
+  // Primeiro agrupa, por categoria, as respostas validas (nao vazias e que
+  // comecam com a letra sorteada) por texto normalizado - pra saber quais
+  // sao unicas (10 pontos) e quais se repetiram entre jogadores (5 pontos).
+  const groupsByCategory = {};
+  for (const cat of STOP_CATEGORIES) {
+    const groups = new Map();
+    for (const [id, p] of game.players) {
+      const raw = (p.values[cat] || '').trim();
+      if (!raw || raw[0].toLowerCase() !== letterLower) continue;
+      const norm = raw.toLowerCase();
+      if (!groups.has(norm)) groups.set(norm, []);
+      groups.get(norm).push(id);
+    }
+    groupsByCategory[cat] = groups;
+  }
+
+  const perPlayer = [];
+  for (const [id, p] of game.players) {
+    let total = 0;
+    const categories = {};
+    for (const cat of STOP_CATEGORIES) {
+      const raw = (p.values[cat] || '').trim();
+      const valid = raw.length > 0 && raw[0].toLowerCase() === letterLower;
+      let points = 0;
+      let status = 'vazio';
+      if (valid) {
+        const group = groupsByCategory[cat].get(raw.toLowerCase());
+        if (group.length === 1) { points = 10; status = 'unica'; }
+        else { points = 5; status = 'repetida'; }
+      } else if (raw) {
+        status = 'invalida';
+      }
+      total += points;
+      categories[cat] = { value: raw, points, status };
+    }
+    perPlayer.push({ id, name: p.name, total, categories });
+  }
+  perPlayer.sort((a, b) => b.total - a.total);
+  return { letter: game.letter, categories: STOP_CATEGORIES, perPlayer };
+}
+
+function finalizeStopRound(roomId) {
+  const game = stopGames.get(roomId);
+  if (!game || game.status !== 'playing') return;
+  if (game.timer) { clearTimeout(game.timer); game.timer = null; }
+  game.status = 'reveal';
+  game.results = computeStopResults(game);
+  broadcastStopState(roomId);
+}
+
+function stopPublicState(roomId) {
+  const game = stopGames.get(roomId);
+  if (!game || game.status === 'idle') {
+    return {
+      status: 'idle', round: game ? game.round : 0, letter: null, categories: STOP_CATEGORIES,
+      startedAt: null, durationMs: STOP_ROUND_MS, players: [], results: null,
+    };
+  }
+  return {
+    status: game.status,
+    round: game.round,
+    letter: game.letter,
+    categories: STOP_CATEGORIES,
+    startedAt: game.startedAt,
+    durationMs: game.durationMs,
+    players: Array.from(game.players.entries()).map(([id, p]) => ({ id, name: p.name })),
+    results: game.status === 'reveal' ? game.results : null,
+  };
+}
+
+function broadcastStopState(roomId) {
+  io.to(roomId).emit('stop-state', stopPublicState(roomId));
+}
+
 // roomId -> Set<socketId> de admins espectando essa sala de forma invisivel
 // (nao entram no Map "rooms" acima - nao contam como participante, nao
 // aparecem pra ninguem, so recebem video/audio dos outros).
@@ -551,6 +671,60 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
+  // Minijogo "Stop / Adedonha" - sem equipes/papeis, todo mundo que estiver
+  // na sala quando a rodada comecar vira jogador dessa rodada.
+  socket.on('stop-get-state', (_data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    if (ack) ack({ ok: true, state: stopPublicState(currentRoom) });
+  });
+
+  socket.on('stop-start-round', (_data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = getOrCreateStopGame(currentRoom);
+    if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Já tem uma rodada em andamento' }); return; }
+    if (game.timer) { clearTimeout(game.timer); game.timer = null; }
+    const room = rooms.get(currentRoom);
+    game.players = new Map();
+    if (room) room.forEach((info, id) => game.players.set(id, { name: info.name || 'Jogador', values: {} }));
+    game.letter = STOP_LETTERS[Math.floor(Math.random() * STOP_LETTERS.length)];
+    game.startedAt = Date.now();
+    game.durationMs = STOP_ROUND_MS;
+    game.status = 'playing';
+    game.round += 1;
+    game.results = null;
+    game.timer = setTimeout(() => finalizeStopRound(currentRoom), game.durationMs);
+    broadcastStopState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
+  // Sincroniza em tempo real o que a pessoa ja digitou (sem isso, quando
+  // alguem aperta "Parar" o servidor nao teria como saber o que os OUTROS
+  // jogadores ja tinham escrito na hora de fechar a rodada pra todo mundo).
+  // Sem ack de proposito - e so uma atualizacao de rascunho, disparada a
+  // cada pausa de digitacao; nao precisa de confirmacao de ida e volta.
+  socket.on('stop-sync-answers', ({ values } = {}) => {
+    if (!currentRoom) return;
+    const game = stopGames.get(currentRoom);
+    if (!game || game.status !== 'playing') return;
+    const p = game.players.get(socket.id);
+    if (!p) return;
+    p.values = sanitizeStopValues(values);
+  });
+
+  socket.on('stop-call-stop', ({ values } = {}, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = stopGames.get(currentRoom);
+    if (!game || game.status !== 'playing') { if (ack) ack({ ok: false, error: 'Não tem rodada em andamento' }); return; }
+    const p = game.players.get(socket.id);
+    if (!p) { if (ack) ack({ ok: false, error: 'Você não está jogando essa rodada' }); return; }
+    const clean = sanitizeStopValues(values);
+    const missing = STOP_CATEGORIES.some((cat) => !clean[cat]);
+    if (missing) { if (ack) ack({ ok: false, error: 'Preencha todas as categorias antes de dar Stop' }); return; }
+    p.values = clean;
+    finalizeStopRound(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
   socket.on('disconnect', () => {
     adminSockets.delete(socket);
 
@@ -566,6 +740,9 @@ io.on('connection', (socket) => {
       if (rooms.get(currentRoom).size === 0) {
         rooms.delete(currentRoom);
         codenamesGames.delete(currentRoom);
+        const stopGame = stopGames.get(currentRoom);
+        if (stopGame && stopGame.timer) clearTimeout(stopGame.timer);
+        stopGames.delete(currentRoom);
       } else {
         socket.to(currentRoom).emit('peer-left', { id: socket.id });
         const game = codenamesGames.get(currentRoom);
