@@ -1,16 +1,16 @@
 // Coordena qual fundo animado esta ativo atras da tela de login (Particulas/
-// Feixe de luz/Buraco negro, escolhido em Aparencia > Fundo animado) - so
-// um roda por vez, reaproveitando o mesmo <canvas>. Trocar de estilo destroi
-// a instancia antiga (desliga o loop de animacao, libera o contexto WebGL)
-// e cria a nova do zero.
+// Feixe de luz/Web, escolhido em Aparencia > Fundo animado) - so um roda
+// por vez, reaproveitando o mesmo <canvas>. Trocar de estilo destroi a
+// instancia antiga (desliga o loop de animacao, libera o contexto
+// WebGL/2D) e cria a nova do zero.
 import { createParticlesBackground } from './particles.js';
 import { createLightBeamBackground } from './lightbeam.js';
-import { createBlackHoleBackground } from './blackhole.js';
+import { createWebBackground } from './web.js';
 
 const FACTORIES = {
   particulas: createParticlesBackground,
   lightbeam: createLightBeamBackground,
-  blackhole: createBlackHoleBackground,
+  web: createWebBackground,
 };
 const DEFAULT_STYLE = 'particulas';
 
