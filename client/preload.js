@@ -103,6 +103,60 @@ contextBridge.exposeInMainWorld('rtc', {
   },
 });
 
+// Minijogo "Codigo Secreto" (Codenames) - o estado de verdade (tabuleiro,
+// vez, mapa secreto) mora so no servidor (ver server/index.js), por sala;
+// aqui so repassamos os eventos. emitAck() centraliza o padrao de sempre
+// mandar (payload, callback) - mesmo pra eventos sem payload (manda null) -
+// pra nunca cair de novo no bug de ack que ja pegamos no painel de admin
+// (handler do servidor esperando so 1 argumento e o ack de verdade se
+// perdendo no 2o parametro nao capturado).
+function emitAck(event, payload) {
+  return new Promise((resolve, reject) => {
+    if (!socket) return reject(new Error('Não conectado'));
+    socket.emit(event, payload, (res) => {
+      if (res && res.ok) resolve(res);
+      else reject(new Error((res && res.error) || 'Falha na operação'));
+    });
+  });
+}
+
+contextBridge.exposeInMainWorld('game', {
+  getState() {
+    return emitAck('game-get-state', null).then((res) => res.state);
+  },
+  getSecretMap() {
+    return emitAck('game-get-secret-map', null);
+  },
+  setRole(team, role) {
+    return emitAck('game-set-role', { team, role });
+  },
+  leaveRole() {
+    return emitAck('game-leave-role', null);
+  },
+  start() {
+    return emitAck('game-start', null);
+  },
+  giveClue(word, number) {
+    return emitAck('game-give-clue', { word, number });
+  },
+  revealWord(index) {
+    return emitAck('game-reveal-word', { index });
+  },
+  endTurn() {
+    return emitAck('game-end-turn', null);
+  },
+  playAgain() {
+    return emitAck('game-play-again', null);
+  },
+  resetLobby() {
+    return emitAck('game-reset-lobby', null);
+  },
+  onState(cb) {
+    if (!socket) return;
+    socket.on('game-state', (state) => cb(state));
+  },
+});
+
 // Ponte com o helper nativo (TelinhaFixAudioHelper.exe), que captura o
 // audio do sistema excluindo o Discord. O main process cuida de ligar/
 // desligar o processo; aqui so repassamos os pedacos de audio crus (PCM

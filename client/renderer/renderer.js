@@ -1284,6 +1284,210 @@ function sendChatMessage(text) {
   }
 }
 
+// --- Minijogo "Codigo Secreto" (Codenames) --------------------------------
+// Estado de verdade mora no servidor, por sala (ver server/index.js) - os
+// jogadores sao sempre quem estiver na mesma sala/codigo. Aqui so renderiza
+// o que chega via window.game.onState() e manda as acoes do jogador.
+
+let gameState = null;
+let gameOverlayOpen = false;
+let mySecretMap = null;
+let mySecretMapRound = -1;
+
+const GAME_TEAM_LABEL = { red: 'Vermelha', blue: 'Azul' };
+
+function myGameRole() {
+  if (!gameState || !selfId) return null;
+  for (const team of ['red', 'blue']) {
+    const t = gameState.teams[team];
+    if (t.spymaster && t.spymaster.id === selfId) return { team, role: 'spymaster' };
+    if (t.agents.some((a) => a.id === selfId)) return { team, role: 'agent' };
+  }
+  return null;
+}
+
+function setGameError(msg) {
+  const el = document.getElementById('game-lobby-error');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('hidden', !msg);
+}
+
+async function refreshGameState() {
+  try {
+    gameState = await window.game.getState();
+    renderGame();
+  } catch (err) {
+    console.error('Falha ao buscar estado do minijogo:', err);
+  }
+}
+
+function openGameOverlay() {
+  gameOverlayOpen = true;
+  document.getElementById('game-overlay').classList.remove('hidden');
+  refreshGameState();
+}
+
+function closeGameOverlay() {
+  gameOverlayOpen = false;
+  document.getElementById('game-overlay').classList.add('hidden');
+}
+
+function ensureSecretMap() {
+  const role = myGameRole();
+  if (!role || role.role !== 'spymaster') return;
+  if (!gameState || (gameState.status !== 'playing' && gameState.status !== 'over')) return;
+  if (mySecretMapRound === gameState.round && mySecretMap) return;
+  window.game.getSecretMap().then((res) => {
+    mySecretMap = res.map;
+    mySecretMapRound = res.round;
+    renderGame();
+  }).catch((err) => console.error('Falha ao buscar mapa secreto:', err));
+}
+
+function renderGame() {
+  if (!gameState || !gameOverlayOpen) return;
+  const playing = gameState.status === 'playing' || gameState.status === 'over';
+  document.getElementById('game-lobby-view').classList.toggle('hidden', playing);
+  document.getElementById('game-board-view').classList.toggle('hidden', !playing);
+
+  if (!playing) {
+    renderGameLobby();
+  } else {
+    ensureSecretMap();
+    renderGameBoard();
+  }
+}
+
+function renderGameLobby() {
+  const role = myGameRole();
+
+  ['red', 'blue'].forEach((team) => {
+    const t = gameState.teams[team];
+    document.querySelector(`[data-slot="${team}-spymaster"]`).textContent = t.spymaster ? t.spymaster.name : '—';
+
+    const agentsEl = document.querySelector(`[data-slot="${team}-agents"]`);
+    agentsEl.innerHTML = '';
+    if (t.agents.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'game-agents-empty';
+      li.textContent = 'Ninguém ainda';
+      agentsEl.appendChild(li);
+    } else {
+      t.agents.forEach((a) => {
+        const li = document.createElement('li');
+        li.textContent = a.name;
+        agentsEl.appendChild(li);
+      });
+    }
+  });
+
+  document.querySelectorAll('.game-pick-btn').forEach((btn) => {
+    const team = btn.dataset.team;
+    const btnRole = btn.dataset.role;
+    const isMine = !!(role && role.team === team && role.role === btnRole);
+    const slotTaken = btnRole === 'spymaster' && gameState.teams[team].spymaster && !isMine;
+    btn.disabled = !!slotTaken;
+    btn.classList.toggle('selected', isMine);
+    if (btnRole === 'spymaster') {
+      btn.textContent = isMine ? 'Você é o Mestre-Espião' : 'Escolher';
+    } else {
+      btn.textContent = isMine ? 'Você está jogando' : 'Entrar como agente';
+    }
+  });
+
+  document.getElementById('btn-game-leave-role').classList.toggle('hidden', !role);
+
+  const bothReady = ['red', 'blue'].every((team) => gameState.teams[team].spymaster && gameState.teams[team].agents.length >= 1);
+  document.getElementById('btn-game-start').disabled = !bothReady;
+}
+
+function renderGameBoard() {
+  const role = myGameRole();
+  const boardEl = document.getElementById('game-board');
+  boardEl.innerHTML = '';
+
+  gameState.board.forEach((cell, i) => {
+    const div = document.createElement('div');
+    div.className = 'game-cell';
+    const label = document.createElement('span');
+    label.textContent = cell.word;
+    div.appendChild(label);
+
+    if (cell.revealed) {
+      div.classList.add('game-cell-revealed', `game-cell-${cell.team}`);
+    } else if (role && role.role === 'spymaster' && mySecretMap && mySecretMapRound === gameState.round) {
+      div.classList.add(`game-cell-spy-${mySecretMap[i]}`);
+    }
+
+    const clickable = gameState.status === 'playing' && gameState.phase === 'guess'
+      && role && role.role === 'agent' && role.team === gameState.currentTeam && !cell.revealed;
+    if (clickable) {
+      div.classList.add('game-cell-clickable');
+      div.addEventListener('click', () => {
+        window.game.revealWord(i).catch((err) => console.error('Falha ao revelar palavra:', err));
+      });
+    }
+    boardEl.appendChild(div);
+  });
+
+  const teamLabel = GAME_TEAM_LABEL[gameState.currentTeam] || '';
+  const turnEl = document.getElementById('game-turn-indicator');
+  if (gameState.status === 'over') {
+    turnEl.textContent = '';
+  } else if (gameState.phase === 'clue') {
+    turnEl.textContent = `Vez da equipe ${teamLabel} — aguardando pista do Mestre-Espião`;
+  } else {
+    turnEl.textContent = `Vez da equipe ${teamLabel} — escolham uma palavra`;
+  }
+
+  document.getElementById('game-remaining').textContent =
+    `Vermelha: ${gameState.remaining.red} restantes · Azul: ${gameState.remaining.blue} restantes`;
+
+  const clueActiveEl = document.getElementById('game-clue-active');
+  if (gameState.clue && gameState.status === 'playing') {
+    const allowedText = gameState.clue.guessesAllowed === null ? 'sem limite' : `${gameState.clue.guessesMade}/${gameState.clue.guessesAllowed}`;
+    clueActiveEl.textContent = `Pista: "${gameState.clue.word.toUpperCase()}" ${gameState.clue.number} (palpites: ${allowedText})`;
+    clueActiveEl.classList.remove('hidden');
+  } else {
+    clueActiveEl.classList.add('hidden');
+  }
+
+  const showClueForm = gameState.status === 'playing' && gameState.phase === 'clue'
+    && role && role.role === 'spymaster' && role.team === gameState.currentTeam;
+  document.getElementById('game-clue-form').classList.toggle('hidden', !showClueForm);
+
+  const showEndTurn = gameState.status === 'playing' && gameState.phase === 'guess'
+    && role && role.team === gameState.currentTeam;
+  document.getElementById('btn-game-end-turn').classList.toggle('hidden', !showEndTurn);
+
+  const logEl = document.getElementById('game-log');
+  logEl.innerHTML = '';
+  gameState.log.slice().reverse().forEach((entry) => {
+    const p = document.createElement('div');
+    p.className = 'game-log-entry';
+    p.textContent = entry;
+    logEl.appendChild(p);
+  });
+
+  const overBanner = document.getElementById('game-over-banner');
+  if (gameState.status === 'over') {
+    const winLabel = GAME_TEAM_LABEL[gameState.winner] || '';
+    const reasonText = gameState.winReason === 'assassin' ? 'a outra equipe revelou o assassino' : 'encontrou todas as suas palavras';
+    document.getElementById('game-over-text').textContent = `Equipe ${winLabel} venceu! (${reasonText})`;
+    overBanner.classList.remove('hidden');
+  } else {
+    overBanner.classList.add('hidden');
+  }
+}
+
+function resetGameUiState() {
+  gameState = null;
+  mySecretMap = null;
+  mySecretMapRound = -1;
+  closeGameOverlay();
+}
+
 function createPeerConnection(peerId) {
   const polite = selfId < peerId; // regra combinada dos dois lados
 
@@ -2153,6 +2357,7 @@ async function leaveRoom() {
   document.getElementById('chat-messages').innerHTML = '';
   chatUnreadCount = 0;
   updateChatUnreadBadge();
+  resetGameUiState();
 
   roomScreen.classList.add('hidden');
   loginScreen.classList.remove('hidden');
@@ -2177,6 +2382,55 @@ document.getElementById('chat-form').addEventListener('submit', (e) => {
   const input = document.getElementById('chat-input');
   sendChatMessage(input.value);
   input.value = '';
+});
+
+document.getElementById('btn-toggle-game').addEventListener('click', () => {
+  if (gameOverlayOpen) closeGameOverlay();
+  else openGameOverlay();
+});
+document.getElementById('btn-game-close').addEventListener('click', closeGameOverlay);
+
+document.querySelectorAll('.game-pick-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    setGameError('');
+    window.game.setRole(btn.dataset.team, btn.dataset.role).catch((err) => setGameError(err.message));
+  });
+});
+
+document.getElementById('btn-game-leave-role').addEventListener('click', () => {
+  setGameError('');
+  window.game.leaveRole().catch((err) => setGameError(err.message));
+});
+
+document.getElementById('btn-game-start').addEventListener('click', () => {
+  setGameError('');
+  window.game.start().catch((err) => setGameError(err.message));
+});
+
+document.getElementById('game-clue-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const wordInput = document.getElementById('game-clue-word');
+  const number = Number(document.getElementById('game-clue-number').value);
+  window.game.giveClue(wordInput.value, number)
+    .then(() => { wordInput.value = ''; })
+    .catch((err) => console.error('Falha ao dar a pista:', err));
+});
+
+document.getElementById('btn-game-end-turn').addEventListener('click', () => {
+  window.game.endTurn().catch((err) => console.error('Falha ao passar a vez:', err));
+});
+
+document.getElementById('btn-game-play-again').addEventListener('click', () => {
+  window.game.playAgain().catch((err) => console.error('Falha ao jogar de novo:', err));
+});
+
+document.getElementById('btn-game-reset-lobby').addEventListener('click', () => {
+  window.game.resetLobby().catch((err) => console.error('Falha ao voltar ao lobby:', err));
+});
+
+document.getElementById('btn-game-abort').addEventListener('click', () => {
+  if (gameState && gameState.status === 'playing' && !confirm('Isso encerra a partida atual pra todo mundo. Continuar?')) return;
+  window.game.resetLobby().catch((err) => console.error('Falha ao encerrar a partida:', err));
 });
 
 document.getElementById('credit-link').addEventListener('click', (e) => {
@@ -2235,6 +2489,11 @@ btnJoin.addEventListener('click', async () => {
 
     window.rtc.onDisconnected(() => {
       setLoginError('Conexão com o servidor perdida.');
+    });
+
+    window.game.onState((newState) => {
+      gameState = newState;
+      renderGame();
     });
 
     // Painel de admin: o dono do app pode entrar numa sala no modo

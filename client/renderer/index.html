@@ -101,6 +101,7 @@
         <button id="btn-toggle-camera" class="hidden">Ativar câmera</button>
         <button id="btn-stop-share" class="hidden">Parar compartilhamento</button>
         <button id="btn-mute-all" class="ghost" title="Mutar todos (Ctrl+Alt+M)">&#128266;</button>
+        <button id="btn-toggle-game" class="ghost" title="Minijogo: Código Secreto">&#127918;</button>
         <button id="btn-toggle-chat" class="ghost" title="Chat">
           &#128172;<span id="chat-unread-badge" class="chat-unread-badge hidden">0</span>
         </button>
@@ -263,6 +264,88 @@
             <button id="btn-quality-test-open" class="ghost" type="button">Testar agora (~40s)</button>
           </div>
         </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="game-overlay" class="settings-overlay hidden">
+    <div class="settings-modal game-modal">
+      <button id="btn-game-close" class="settings-modal-close" type="button" aria-label="Fechar">&times;</button>
+
+      <div class="game-content">
+        <h2 class="game-title">Código Secreto</h2>
+
+        <div id="game-lobby-view" class="game-lobby">
+          <p class="settings-hint">Escolham uma equipe e um papel. Cada equipe precisa de 1 Mestre-Espião e pelo menos 1 Agente pra começar. Quem não escolher fica só assistindo.</p>
+
+          <div class="game-teams-row">
+            <div class="game-team-card game-team-card-red">
+              <h3>Equipe Vermelha</h3>
+              <div class="game-team-slot">
+                <span class="game-slot-label">Mestre-Espião</span>
+                <span class="game-slot-value" data-slot="red-spymaster">—</span>
+              </div>
+              <button type="button" class="ghost game-pick-btn" data-team="red" data-role="spymaster">Escolher</button>
+              <div class="game-team-slot game-team-slot-agents">
+                <span class="game-slot-label">Agentes</span>
+                <ul class="game-agents-list" data-slot="red-agents"></ul>
+              </div>
+              <button type="button" class="ghost game-pick-btn" data-team="red" data-role="agent">Entrar como agente</button>
+            </div>
+
+            <div class="game-team-card game-team-card-blue">
+              <h3>Equipe Azul</h3>
+              <div class="game-team-slot">
+                <span class="game-slot-label">Mestre-Espião</span>
+                <span class="game-slot-value" data-slot="blue-spymaster">—</span>
+              </div>
+              <button type="button" class="ghost game-pick-btn" data-team="blue" data-role="spymaster">Escolher</button>
+              <div class="game-team-slot game-team-slot-agents">
+                <span class="game-slot-label">Agentes</span>
+                <ul class="game-agents-list" data-slot="blue-agents"></ul>
+              </div>
+              <button type="button" class="ghost game-pick-btn" data-team="blue" data-role="agent">Entrar como agente</button>
+            </div>
+          </div>
+
+          <div class="game-lobby-actions">
+            <button type="button" id="btn-game-leave-role" class="ghost hidden">Sair da equipe</button>
+            <button type="button" id="btn-game-start">Iniciar partida</button>
+          </div>
+          <p id="game-lobby-error" class="settings-hint game-error hidden"></p>
+        </div>
+
+        <div id="game-board-view" class="game-board-view hidden">
+          <div class="game-status-row">
+            <span id="game-turn-indicator" class="game-turn-indicator"></span>
+            <span id="game-remaining" class="game-remaining"></span>
+          </div>
+
+          <div id="game-board" class="game-board"></div>
+
+          <div id="game-clue-active" class="game-clue-active hidden"></div>
+
+          <form id="game-clue-form" class="game-clue-form hidden">
+            <input id="game-clue-word" type="text" maxlength="40" placeholder="Palavra-pista" autocomplete="off" />
+            <input id="game-clue-number" type="number" min="0" max="9" value="1" />
+            <button type="submit">Dar pista</button>
+          </form>
+
+          <div class="game-bottom-row">
+            <button type="button" id="btn-game-end-turn" class="ghost hidden">Passar a vez</button>
+            <button type="button" id="btn-game-abort" class="ghost">Encerrar partida</button>
+          </div>
+
+          <div id="game-log" class="game-log"></div>
+
+          <div id="game-over-banner" class="game-over-banner hidden">
+            <span id="game-over-text"></span>
+            <div class="game-over-actions">
+              <button type="button" id="btn-game-play-again">Jogar de novo</button>
+              <button type="button" id="btn-game-reset-lobby" class="ghost">Trocar equipes</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

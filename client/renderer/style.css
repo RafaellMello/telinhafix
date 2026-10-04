@@ -79,6 +79,14 @@
   --text: #f2f0ec;
   --text-muted: #9a9499;
   --input-radius: 3px;
+  /* Cores fixas das equipes do minijogo "Codigo Secreto" - de proposito
+     independentes da cor principal escolhida em Aparencia (que pode ser
+     qualquer cor): o jogo sempre fala em equipe "Vermelha" e "Azul", entao
+     essas cores nunca podem mudar com o tema. */
+  --game-red: #d9342b;
+  --game-red-rgb: 217, 52, 43;
+  --game-blue: #2f6fef;
+  --game-blue-rgb: 47, 111, 239;
 }
 
 * { box-sizing: border-box; }
@@ -1397,6 +1405,182 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .mode-serio #video-grid {
   background-image: none;
 }
+
+/* ========================================================================
+   Minijogo "Codigo Secreto" (Codenames) - modal reaproveitando a mesma
+   .settings-modal/.settings-overlay de sempre (ganha de graca o visual do
+   modo Serio e o cantos retos do modo Chama2k19), so que de coluna unica
+   (sem a barra lateral de abas - .game-content ocupa tudo).
+   ======================================================================== */
+.game-modal {
+  width: 880px;
+  max-width: 94vw;
+  height: auto;
+  max-height: 90vh;
+  flex-direction: column;
+}
+
+.game-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 36px;
+}
+
+.game-title {
+  margin: 0 0 4px;
+  font-size: calc(18px * var(--font-scale));
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.game-teams-row {
+  display: flex;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.game-team-card {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-team-card-red { border-top-color: var(--game-red); }
+.game-team-card-blue { border-top-color: var(--game-blue); }
+
+.game-team-card h3 {
+  margin: 0 0 4px;
+  font-size: calc(13px * var(--font-scale));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.game-team-card-red h3 { color: var(--game-red); }
+.game-team-card-blue h3 { color: var(--game-blue); }
+
+.game-team-slot { display: flex; flex-direction: column; gap: 4px; }
+.game-slot-label {
+  font-size: calc(11px * var(--font-scale));
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.game-slot-value { font-size: calc(14px * var(--font-scale)); font-weight: 700; }
+
+.game-agents-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.game-agents-list li { font-size: calc(13px * var(--font-scale)); }
+.game-agents-empty { color: var(--text-muted); font-style: italic; }
+
+.game-pick-btn { font-size: calc(11px * var(--font-scale)); padding: 8px 10px; }
+.game-pick-btn.selected { border-color: var(--red-bright); color: var(--red-bright); }
+
+.game-lobby-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
+.game-error { color: var(--red-bright); }
+
+.game-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: calc(13px * var(--font-scale));
+}
+.game-turn-indicator { font-weight: 700; }
+.game-remaining {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: calc(12px * var(--font-scale));
+}
+
+.game-board {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.game-cell {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 6px;
+  text-align: center;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  word-break: break-word;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.game-cell-clickable { cursor: pointer; }
+.game-cell-clickable:hover { filter: brightness(1.2); transform: translateY(-1px); border-color: var(--red-bright); }
+
+/* Visao do Mestre-Espiao: so um tom de fundo sutil pra palavra ainda nao
+   revelada - bem mais discreto que uma palavra ja revelada (essa fica
+   solida, ver .game-cell-revealed abaixo), pra nao virar "spoiler" visual
+   gritante mesmo so aparecendo pra quem pode ver mesmo. */
+.game-cell-spy-red { background: rgba(var(--game-red-rgb), 0.22); border-color: rgba(var(--game-red-rgb), 0.5); }
+.game-cell-spy-blue { background: rgba(var(--game-blue-rgb), 0.22); border-color: rgba(var(--game-blue-rgb), 0.5); }
+.game-cell-spy-neutral { background: rgba(255, 255, 255, 0.06); }
+.game-cell-spy-assassin { background: rgba(0, 0, 0, 0.5); border-color: #555; }
+
+.game-cell-revealed { cursor: default; opacity: 0.85; }
+.game-cell-revealed.game-cell-red { background: var(--game-red); border-color: var(--game-red); color: #fff; }
+.game-cell-revealed.game-cell-blue { background: var(--game-blue); border-color: var(--game-blue); color: #fff; }
+.game-cell-revealed.game-cell-neutral { background: #58544d; border-color: #58544d; color: #fff; }
+.game-cell-revealed.game-cell-assassin { background: #0a0a0a; border-color: #000; color: #fff; }
+
+.game-clue-active {
+  text-align: center;
+  font-size: calc(15px * var(--font-scale));
+  font-weight: 800;
+  color: var(--red-bright);
+  margin-bottom: 10px;
+}
+
+.game-clue-form { display: flex; gap: 8px; margin-bottom: 10px; }
+.game-clue-form input[type="text"] { flex: 1; }
+.game-clue-form input[type="number"] { width: 70px; }
+
+.game-bottom-row { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 10px; }
+
+.game-log {
+  max-height: 110px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.game-over-banner {
+  margin-top: 14px;
+  padding: 16px;
+  background: rgba(var(--red-rgb), 0.12);
+  border: 1px solid var(--red-dark);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 800;
+}
+
+.game-over-actions { display: flex; gap: 10px; }
 
 /* ========================================================================
    Modo de bordas "Chama2k19" - independente do modo de aparencia (Lata de
