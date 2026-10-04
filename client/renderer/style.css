@@ -63,13 +63,19 @@
   --font-scale: 1;
   --bg: #060607;
   --bg-elevated: #131315;
+  --bg-elevated-rgb: 19, 19, 21;
   --bg-card: #19191c;
+  --bg-card-rgb: 25, 25, 28;
   --red: #e2231a;
   --red-rgb: 226, 35, 26;
   --red-bright: #ff3b2f;
   --red-bright-rgb: 255, 59, 47;
   --red-dark: #3a0a08;
   --border: rgba(var(--red-rgb), 0.35);
+  /* transparencia ajustavel da tela de login (Aparencia > Transparencia) -
+     1 = opaco normal, 0 = totalmente transparente, deixando o fundo
+     animado aparecer por tras do cartao. */
+  --login-opacity: 1;
   --text: #f2f0ec;
   --text-muted: #9a9499;
   --input-radius: 3px;
@@ -105,7 +111,7 @@ body {
 
 /* Fundo animado (onda de particulas), fora do fluxo do flex pra nao
    empurrar o resto do layout - so decoracao atras de tudo. */
-#particle-wave-canvas {
+#login-background-canvas {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -116,9 +122,9 @@ body {
 
 
 .login-box {
-  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-card));
-  border: 1px solid var(--border);
-  box-shadow: 0 0 40px rgba(var(--red-rgb), 0.08), 0 20px 60px rgba(0, 0, 0, 0.6);
+  background: linear-gradient(180deg, rgba(var(--bg-elevated-rgb), var(--login-opacity)), rgba(var(--bg-card-rgb), var(--login-opacity)));
+  border: 1px solid rgba(var(--red-rgb), calc(0.35 * var(--login-opacity)));
+  box-shadow: 0 0 40px rgba(var(--red-rgb), calc(0.08 * var(--login-opacity))), 0 20px 60px rgba(0, 0, 0, calc(0.6 * var(--login-opacity)));
   padding: 36px;
   border-radius: 4px;
   width: 475px;
@@ -518,6 +524,45 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   text-transform: uppercase;
 }
 
+.opacity-control {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.opacity-slider {
+  flex: 1;
+  max-width: 280px;
+  height: 4px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 2px;
+  outline: none;
+  /* preenchido via JS (updateSliderFill), igual o slider de volume das
+     tiles - sem isso o track nativo fica cinza chapado do inicio ao fim. */
+  background: linear-gradient(to right, var(--red-bright) 0%, var(--red-bright) 100%, rgba(255, 255, 255, 0.25) 100%, rgba(255, 255, 255, 0.25) 100%);
+}
+.opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--red-bright);
+  cursor: pointer;
+}
+
+.opacity-value {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: calc(13px * var(--font-scale));
+  color: var(--text-muted);
+  min-width: 42px;
+  text-align: right;
+}
+
 .quality-row,
 .audio-row {
   display: flex;
@@ -672,14 +717,14 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .font-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
-.mode-options, .border-options, .sound-options, .hotkeys-options, .priority-options, .size-options {
+.mode-options, .border-options, .sound-options, .hotkeys-options, .priority-options, .size-options, .background-options {
   display: flex;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
 
-.mode-option, .border-option, .sound-option, .hotkeys-option, .priority-option {
+.mode-option, .border-option, .sound-option, .hotkeys-option, .priority-option, .background-option {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 8px;
@@ -690,7 +735,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 700;
 }
 
-.mode-option.selected, .border-option.selected, .sound-option.selected, .hotkeys-option.selected, .priority-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.mode-option.selected, .border-option.selected, .sound-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
 .settings-hint {
   margin: 8px 0 0;
@@ -1290,6 +1335,9 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
 }
 
+.mode-serio .login-box {
+  background: rgba(255, 255, 255, calc(0.025 * var(--login-opacity)));
+}
 .mode-serio .login-box,
 .mode-serio .quality-test-banner { border-radius: 20px; }
 .mode-serio .settings-panel,

@@ -1,15 +1,13 @@
-// Fundo animado (onda de particulas) atras do card de login. Adaptado de um
-// componente React/Three.js pro nosso HTML puro - sem bundler aqui, entao
-// usamos o build ES module do three.js vendorizado em renderer/vendor (igual
-// as fontes em renderer/assets/fonts) em vez de depender do node_modules,
-// que o electron-builder empacotaria inteiro (23MB, pacote completo) so por
+// Fundo animado "Particulas" (onda de particulas) - um dos estilos de fundo
+// escolhiveis em Aparencia. Adaptado de um componente React/Three.js pro
+// nosso HTML puro - sem bundler aqui, entao usamos o build ES module do
+// three.js vendorizado em renderer/vendor (igual as fontes em
+// renderer/assets/fonts) em vez de depender do node_modules, que o
+// electron-builder empacotaria inteiro (23MB, pacote completo) so por
 // "three" estar em "dependencies".
-import * as THREE from './vendor/three.module.js';
+import * as THREE from '../vendor/three.module.js';
 
-const canvas = document.getElementById('particle-wave-canvas');
-if (canvas) {
-  const loginScreen = document.getElementById('login-screen');
-
+export function createParticlesBackground(canvas) {
   const particleVertex = `
     attribute float scale;
     uniform float uTime;
@@ -95,34 +93,30 @@ if (canvas) {
     animationId = requestAnimationFrame(animate);
   }
 
-  function start() {
-    if (animationId !== null) return;
-    particleMaterial.uniforms.uColor.value = readAccentColor();
-    animate();
-  }
-
-  function stop() {
-    if (animationId === null) return;
-    cancelAnimationFrame(animationId);
-    animationId = null;
-  }
-
-  window.addEventListener('resize', () => {
+  function onResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
-  // So anima enquanto a tela de login esta de fato visivel - parar quando a
-  // pessoa entra numa sala evita gastar GPU/bateria a toa durante a chamada.
-  if (loginScreen) {
-    const observer = new MutationObserver(() => {
-      if (loginScreen.classList.contains('hidden')) stop();
-      else start();
-    });
-    observer.observe(loginScreen, { attributes: true, attributeFilter: ['class'] });
-    if (!loginScreen.classList.contains('hidden')) start();
-  } else {
-    start();
   }
+  window.addEventListener('resize', onResize);
+
+  return {
+    start() {
+      if (animationId !== null) return;
+      particleMaterial.uniforms.uColor.value = readAccentColor();
+      animate();
+    },
+    stop() {
+      if (animationId === null) return;
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    },
+    dispose() {
+      this.stop();
+      window.removeEventListener('resize', onResize);
+      particleGeometry.dispose();
+      particleMaterial.dispose();
+      renderer.dispose();
+    },
+  };
 }

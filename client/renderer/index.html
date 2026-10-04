@@ -7,7 +7,7 @@
 </head>
 <body>
   <div id="login-screen" class="screen">
-    <canvas id="particle-wave-canvas"></canvas>
+    <canvas id="login-background-canvas"></canvas>
     <button id="btn-settings" title="Aparencia">&#9881;</button>
     <div id="build-version"></div>
     <div id="members-left" class="members-col"></div>
@@ -196,6 +196,25 @@
               <span id="color-custom-hex" class="color-custom-hex">#E2231A</span>
             </div>
           </div>
+
+          <div class="settings-group">
+            <label>Fundo animado</label>
+            <div id="background-options" class="background-options">
+              <div class="background-option" data-background="particulas">Partículas</div>
+              <div class="background-option" data-background="lightbeam">Feixe de luz</div>
+              <div class="background-option" data-background="blackhole">Buraco negro</div>
+            </div>
+            <p class="settings-hint">O fundo animado atrás da tela de login.</p>
+          </div>
+
+          <div class="settings-group">
+            <label>Transparência da tela de login</label>
+            <div class="opacity-control">
+              <input type="range" id="login-opacity-slider" class="opacity-slider" min="0" max="100" value="100" />
+              <span id="login-opacity-value" class="opacity-value">100%</span>
+            </div>
+            <p class="settings-hint">Deixa o cartão de login mais transparente, pra aparecer mais do fundo animado por trás.</p>
+          </div>
         </section>
 
         <section class="settings-pane hidden" data-pane="atalhos">
@@ -306,6 +325,6 @@
 
   <script src="renderer.js"></script>
   <script src="quality-test.js"></script>
-  <script type="module" src="particle-wave.js"></script>
+  <script type="module" src="backgrounds/manager.js"></script>
 </body>
 </html>
