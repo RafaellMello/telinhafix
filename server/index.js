@@ -225,11 +225,14 @@ function broadcastGameState(roomId) {
 // classica do jogo). Sem equipes/papeis - todo mundo joga contra todo mundo.
 // ============================================================================
 
-const STOP_CATEGORIES = ['Nome', 'Animal', 'Fruta', 'Cor', 'País', 'Objeto'];
+const STOP_DEFAULT_CATEGORIES = ['Nome', 'Animal', 'Fruta', 'Cor', 'País', 'Objeto'];
 // Letras raras como inicial em portugues (K, W, X, Y, Z) ficam de fora pra
 // nao sortear uma rodada praticamente impossivel de preencher.
 const STOP_LETTERS = 'ABCDEFGHIJLMNOPQRSTUV'.split('');
 const STOP_ROUND_MS = 60000;
+const STOP_CATEGORY_MAX_LEN = 24;
+const STOP_MIN_CATEGORIES = 2;
+const STOP_MAX_CATEGORIES = 10;
 
 // roomId -> estado do Stop. So existe enquanto a sala existir.
 const stopGames = new Map();
@@ -239,6 +242,11 @@ function createStopGame() {
     status: 'idle', // idle | playing | reveal
     round: 0,
     letter: null,
+    // Categorias da ULTIMA rodada (ou o padrao, numa sala nova) - quem
+    // aperta "comecar" pode mandar uma lista nova pra substituir essa (ver
+    // sanitizeCategoryList/stop-start-round), e o que for usado fica salvo
+    // aqui pra ser o ponto de partida mostrado pra todo mundo na proxima.
+    categories: [...STOP_DEFAULT_CATEGORIES],
     startedAt: null,
     durationMs: STOP_ROUND_MS,
     players: new Map(), // socketId -> { name, values: { categoria: texto } }
@@ -252,9 +260,30 @@ function getOrCreateStopGame(roomId) {
   return stopGames.get(roomId);
 }
 
-function sanitizeStopValues(values) {
+// Valida/limpa a lista de categorias que quem vai comandar a rodada montou:
+// remove vazias/duplicadas (sem diferenciar maiusculas) e limita tamanho de
+// cada uma e quantidade total. Retorna null se sobrar categoria de menos
+// pra valer a pena jogar.
+function sanitizeCategoryList(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  const seen = new Set();
+  for (const raw of list) {
+    if (typeof raw !== 'string') continue;
+    const clean = raw.trim().slice(0, STOP_CATEGORY_MAX_LEN);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+    if (out.length >= STOP_MAX_CATEGORIES) break;
+  }
+  return out.length >= STOP_MIN_CATEGORIES ? out : null;
+}
+
+function sanitizeStopValues(values, categories) {
   const out = {};
-  for (const cat of STOP_CATEGORIES) {
+  for (const cat of categories) {
     const v = values && typeof values === 'object' ? values[cat] : '';
     out[cat] = typeof v === 'string' ? v.trim().slice(0, 40) : '';
   }
@@ -263,11 +292,12 @@ function sanitizeStopValues(values) {
 
 function computeStopResults(game) {
   const letterLower = (game.letter || '').toLowerCase();
+  const categories = game.categories;
   // Primeiro agrupa, por categoria, as respostas validas (nao vazias e que
   // comecam com a letra sorteada) por texto normalizado - pra saber quais
   // sao unicas (10 pontos) e quais se repetiram entre jogadores (5 pontos).
   const groupsByCategory = {};
-  for (const cat of STOP_CATEGORIES) {
+  for (const cat of categories) {
     const groups = new Map();
     for (const [id, p] of game.players) {
       const raw = (p.values[cat] || '').trim();
@@ -282,8 +312,8 @@ function computeStopResults(game) {
   const perPlayer = [];
   for (const [id, p] of game.players) {
     let total = 0;
-    const categories = {};
-    for (const cat of STOP_CATEGORIES) {
+    const catResults = {};
+    for (const cat of categories) {
       const raw = (p.values[cat] || '').trim();
       const valid = raw.length > 0 && raw[0].toLowerCase() === letterLower;
       let points = 0;
@@ -296,12 +326,12 @@ function computeStopResults(game) {
         status = 'invalida';
       }
       total += points;
-      categories[cat] = { value: raw, points, status };
+      catResults[cat] = { value: raw, points, status };
     }
-    perPlayer.push({ id, name: p.name, total, categories });
+    perPlayer.push({ id, name: p.name, total, categories: catResults });
   }
   perPlayer.sort((a, b) => b.total - a.total);
-  return { letter: game.letter, categories: STOP_CATEGORIES, perPlayer };
+  return { letter: game.letter, categories, perPlayer };
 }
 
 function finalizeStopRound(roomId) {
@@ -317,7 +347,7 @@ function stopPublicState(roomId) {
   const game = stopGames.get(roomId);
   if (!game || game.status === 'idle') {
     return {
-      status: 'idle', round: game ? game.round : 0, letter: null, categories: STOP_CATEGORIES,
+      status: 'idle', round: game ? game.round : 0, letter: null, categories: game ? game.categories : STOP_DEFAULT_CATEGORIES,
       startedAt: null, durationMs: STOP_ROUND_MS, players: [], results: null,
     };
   }
@@ -325,7 +355,7 @@ function stopPublicState(roomId) {
     status: game.status,
     round: game.round,
     letter: game.letter,
-    categories: STOP_CATEGORIES,
+    categories: game.categories,
     startedAt: game.startedAt,
     durationMs: game.durationMs,
     players: Array.from(game.players.entries()).map(([id, p]) => ({ id, name: p.name })),
@@ -483,7 +513,8 @@ io.on('connection', (socket) => {
   // Remove uma pessoa de uma sala direto (sem o admin precisar entrar nela)
   // - so desconecta o socket dela, o resto (avisar os outros, limpar a sala)
   // reaproveita exatamente a mesma logica do disconnect normal abaixo.
-  socket.on('admin-kick', ({ socketId }, ack) => {
+  socket.on('admin-kick', (data, ack) => {
+    const { socketId } = data || {};
     if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
     const target = io.sockets.sockets.get(socketId);
     if (target) target.disconnect(true);
@@ -492,7 +523,8 @@ io.on('connection', (socket) => {
 
   // Desconecta todo mundo de uma sala de uma vez (participantes E
   // espectadores admin que estiverem la).
-  socket.on('admin-close-room', ({ roomId }, ack) => {
+  socket.on('admin-close-room', (data, ack) => {
+    const { roomId } = data || {};
     if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
     const room = rooms.get(roomId);
     if (room) Array.from(room.keys()).forEach((id) => io.sockets.sockets.get(id)?.disconnect(true));
@@ -506,7 +538,8 @@ io.on('connection', (socket) => {
   // participante, nao aparece na lista de ninguem) - os participantes de
   // verdade so sabem que precisam mandar midia pra esse id via o evento
   // 'spectator-joined' (ver abaixo), nunca via o 'peer-joined' normal.
-  socket.on('admin-spectate-room', ({ roomId }, ack) => {
+  socket.on('admin-spectate-room', (data, ack) => {
+    const { roomId } = data || {};
     if (!socket.data.isAdmin) {
       if (ack) ack({ ok: false, error: 'nao autorizado' });
       return;
@@ -524,7 +557,8 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('spectator-joined', { id: socket.id });
   });
 
-  socket.on('join-room', ({ roomId, name }, ack) => {
+  socket.on('join-room', (data, ack) => {
+    const { roomId, name } = data || {};
     if (!roomId || typeof roomId !== 'string') {
       if (ack) ack({ ok: false, error: 'roomId invalido' });
       return;
@@ -549,7 +583,8 @@ io.on('connection', (socket) => {
     broadcastRoomsToAdmins();
   });
 
-  socket.on('signal', ({ to, data }) => {
+  socket.on('signal', (payload) => {
+    const { to, data } = payload || {};
     if (!to || (!currentRoom && !spectatingRoom)) return;
     io.to(to).emit('signal', { from: socket.id, data });
   });
@@ -580,7 +615,8 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true, round: game.round, map: game.board.map((c) => c.team) });
   });
 
-  socket.on('game-set-role', ({ team, role } = {}, ack) => {
+  socket.on('game-set-role', (data, ack) => {
+    const { team, role } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = getOrCreateGame(currentRoom);
     if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra trocar de equipe com a partida em andamento' }); return; }
@@ -640,7 +676,8 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
-  socket.on('game-give-clue', ({ word, number } = {}, ack) => {
+  socket.on('game-give-clue', (data, ack) => {
+    const { word, number } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = codenamesGames.get(currentRoom);
     if (!game || game.status !== 'playing' || game.phase !== 'clue') {
@@ -667,7 +704,8 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
-  socket.on('game-reveal-word', ({ index } = {}, ack) => {
+  socket.on('game-reveal-word', (data, ack) => {
+    const { index } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = codenamesGames.get(currentRoom);
     if (!game || game.status !== 'playing' || game.phase !== 'guess') {
@@ -737,10 +775,19 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true, state: stopPublicState(currentRoom) });
   });
 
-  socket.on('stop-start-round', (_data, ack) => {
+  socket.on('stop-start-round', (data, ack) => {
+    const { categories } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = getOrCreateStopGame(currentRoom);
     if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Já tem uma rodada em andamento' }); return; }
+    // Quem aperta "comecar" pode mandar a lista de categorias que montou
+    // (ver stop-view no renderer); se nao mandar nada valido, repete as da
+    // ultima rodada (ou o padrao, numa sala que nunca jogou).
+    if (categories !== undefined) {
+      const clean = sanitizeCategoryList(categories);
+      if (!clean) { if (ack) ack({ ok: false, error: `Escolha entre ${STOP_MIN_CATEGORIES} e ${STOP_MAX_CATEGORIES} categorias (sem repetir)` }); return; }
+      game.categories = clean;
+    }
     if (game.timer) { clearTimeout(game.timer); game.timer = null; }
     const room = rooms.get(currentRoom);
     game.players = new Map();
@@ -761,23 +808,25 @@ io.on('connection', (socket) => {
   // jogadores ja tinham escrito na hora de fechar a rodada pra todo mundo).
   // Sem ack de proposito - e so uma atualizacao de rascunho, disparada a
   // cada pausa de digitacao; nao precisa de confirmacao de ida e volta.
-  socket.on('stop-sync-answers', ({ values } = {}) => {
+  socket.on('stop-sync-answers', (data) => {
+    const { values } = data || {};
     if (!currentRoom) return;
     const game = stopGames.get(currentRoom);
     if (!game || game.status !== 'playing') return;
     const p = game.players.get(socket.id);
     if (!p) return;
-    p.values = sanitizeStopValues(values);
+    p.values = sanitizeStopValues(values, game.categories);
   });
 
-  socket.on('stop-call-stop', ({ values } = {}, ack) => {
+  socket.on('stop-call-stop', (data, ack) => {
+    const { values } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = stopGames.get(currentRoom);
     if (!game || game.status !== 'playing') { if (ack) ack({ ok: false, error: 'Não tem rodada em andamento' }); return; }
     const p = game.players.get(socket.id);
     if (!p) { if (ack) ack({ ok: false, error: 'Você não está jogando essa rodada' }); return; }
-    const clean = sanitizeStopValues(values);
-    const missing = STOP_CATEGORIES.some((cat) => !clean[cat]);
+    const clean = sanitizeStopValues(values, game.categories);
+    const missing = game.categories.some((cat) => !clean[cat]);
     if (missing) { if (ack) ack({ ok: false, error: 'Preencha todas as categorias antes de dar Stop' }); return; }
     p.values = clean;
     finalizeStopRound(currentRoom);
@@ -793,7 +842,8 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true, state: sketchPublicState(currentRoom) });
   });
 
-  socket.on('sketch-create', ({ optionA, optionB } = {}, ack) => {
+  socket.on('sketch-create', (data, ack) => {
+    const { optionA, optionB } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = getOrCreateSketchGame(currentRoom);
     if (game.status === 'voting') { if (ack) ack({ ok: false, error: 'Já tem uma votação em andamento' }); return; }
@@ -810,7 +860,8 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
-  socket.on('sketch-vote', ({ choice } = {}, ack) => {
+  socket.on('sketch-vote', (data, ack) => {
+    const { choice } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = sketchGames.get(currentRoom);
     if (!game || game.status !== 'voting') { if (ack) ack({ ok: false, error: 'Não tem votação em andamento' }); return; }
