@@ -1,6 +1,6 @@
 {
   "name": "telinhafix",
-  "version": "1.0.45",
+  "version": "1.0.46",
   "description": "App local para compartilhamento de tela entre amigos, estilo Discord",
   "main": "main.js",
   "scripts": {
