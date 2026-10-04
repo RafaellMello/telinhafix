@@ -13,8 +13,15 @@ const FONT_STACKS = {
 const THEME_STORAGE_KEY = 'telinhafix-theme';
 const DEFAULT_KEYBINDS = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M', quickShare: 'Control+Alt+Q' };
 const DEFAULT_THEME = {
-  font: 'inter', scale: 1, color: '#e2231a', mode: 'latadelixo', border: 'arredondada',
+  font: 'inter', scale: 1, color: '#e2231a', mode: 'serio', border: 'arredondada',
   sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS }, priority: 'nitidez',
+  background: 'particulas', loginOpacity: 1,
+  // false ate a pessoa clicar em Lata de lixo/Serio pela primeira vez (ver
+  // loadTheme e o clique de .mode-option abaixo) - diferencia "nunca
+  // escolheu um modo" (recebe o padrao mais novo sempre) de "escolheu de
+  // proposito" (fica travado nisso pra sempre, mesmo se o padrao mudar nos
+  // proximos updates).
+  modeExplicit: false,
 };
 
 function hexToRgbString(hex) {
@@ -88,6 +95,7 @@ function applyTheme(theme) {
   root.setProperty('--red-bright', bright);
   root.setProperty('--red-bright-rgb', hexToRgbString(bright));
   root.setProperty('--red-dark', dark);
+  root.setProperty('--login-opacity', theme.loginOpacity === undefined ? 1 : theme.loginOpacity);
   // Modo "serio": tira as fotos dos membros/participantes e troca os paineis
   // por um visual liquid glass limpo, em vez do visual "lata de lixo" normal
   // (default - identico ao app de sempre, zero mudanca pra quem nao mexe
@@ -107,6 +115,12 @@ function loadTheme() {
     // tiver outro customizado (ex: pessoa so trocou stopShare) - funde os
     // dois por dentro tambem.
     merged.keybinds = { ...DEFAULT_KEYBINDS, ...((saved && saved.keybinds) || {}) };
+    // Quem nunca escolheu um modo de proposito (nunca clicou em Lata de
+    // lixo/Serio) recebe sempre o padrao mais novo, mesmo que ja tivesse
+    // algum tema salvo de antes por ter mexido em outra coisa (ex: so
+    // trocou a fonte) - sem isso, o "latadelixo" de um default antigo
+    // ficaria congelado pra sempre no cache dessa pessoa.
+    if (!merged.modeExplicit) merged.mode = DEFAULT_THEME.mode;
     return merged;
   } catch (err) {
     return { ...DEFAULT_THEME, keybinds: { ...DEFAULT_KEYBINDS } };
@@ -154,6 +168,9 @@ function setupSettingsPanel() {
   const sizeOptions = document.querySelectorAll('.size-option');
   const colorCustom = document.getElementById('color-custom');
   const colorCustomHex = document.getElementById('color-custom-hex');
+  const backgroundOptions = document.querySelectorAll('.background-option');
+  const opacitySlider = document.getElementById('login-opacity-slider');
+  const opacityValue = document.getElementById('login-opacity-value');
   const tabButtons = document.querySelectorAll('.settings-tab-btn');
   const panes = document.querySelectorAll('.settings-pane');
   if (!overlay) return;
@@ -168,6 +185,13 @@ function setupSettingsPanel() {
     sizeOptions.forEach((el) => el.classList.toggle('selected', Number(el.dataset.scale) === currentTheme.scale));
     colorCustom.value = currentTheme.color;
     if (colorCustomHex) colorCustomHex.textContent = currentTheme.color.toUpperCase();
+    backgroundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.background === currentTheme.background));
+    if (opacitySlider) {
+      const pct = Math.round((currentTheme.loginOpacity === undefined ? 1 : currentTheme.loginOpacity) * 100);
+      opacitySlider.value = String(pct);
+      if (opacityValue) opacityValue.textContent = `${pct}%`;
+      updateSliderFill(opacitySlider);
+    }
   }
 
   function selectTab(tabName) {
@@ -183,6 +207,9 @@ function setupSettingsPanel() {
     if (patch.hotkeys !== undefined) syncHotkeysToMain();
     if (patch.priority !== undefined && window.__recomputeQualityRecommendation) {
       window.__recomputeQualityRecommendation(currentTheme.priority);
+    }
+    if (patch.background !== undefined && window.__setBackgroundStyle) {
+      window.__setBackgroundStyle(currentTheme.background);
     }
   }
 
@@ -204,7 +231,7 @@ function setupSettingsPanel() {
   });
 
   modeOptions.forEach((el) => {
-    el.addEventListener('click', () => updateTheme({ mode: el.dataset.mode }));
+    el.addEventListener('click', () => updateTheme({ mode: el.dataset.mode, modeExplicit: true }));
   });
   borderOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ border: el.dataset.border }));
@@ -225,6 +252,14 @@ function setupSettingsPanel() {
     el.addEventListener('click', () => updateTheme({ scale: Number(el.dataset.scale) }));
   });
   colorCustom.addEventListener('input', () => updateTheme({ color: colorCustom.value }));
+  backgroundOptions.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ background: el.dataset.background }));
+  });
+  if (opacitySlider) {
+    opacitySlider.addEventListener('input', () => {
+      updateTheme({ loginOpacity: Number(opacitySlider.value) / 100 });
+    });
+  }
 
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => selectTab(btn.dataset.tab));
