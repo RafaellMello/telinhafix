@@ -1488,20 +1488,54 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 /* --- Stop / Adedonha ----------------------------------------------------- */
 
-.stop-categories-preview {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 14px 0;
+.stop-categories-editor {
+  margin: 16px 0;
+  max-width: 420px;
 }
 
-.stop-cat-chip {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 6px 14px;
-  font-size: calc(12px * var(--font-scale));
+.stop-editor-label {
+  display: block;
+  font-size: calc(11px * var(--font-scale));
   color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.stop-categories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.stop-category-row {
+  display: flex;
+  gap: 8px;
+}
+
+.stop-category-input { flex: 1; }
+
+.stop-remove-category-btn {
+  flex-shrink: 0;
+  width: 38px;
+  padding: 0;
+  font-size: calc(16px * var(--font-scale));
+  line-height: 1;
+}
+
+.stop-add-category-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.stop-add-category-row input { flex: 1; }
+.stop-add-category-row button { flex-shrink: 0; }
+
+.stop-reset-categories-btn {
+  font-size: calc(11px * var(--font-scale));
+  padding: 8px 10px;
 }
 
 .stop-playing-header {

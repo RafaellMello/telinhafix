@@ -373,7 +373,18 @@
         <div id="stop-view" class="hidden">
           <div id="stop-idle-view">
             <p class="settings-hint">Sorteia uma letra; todo mundo digita uma palavra por categoria que comece com ela, correndo contra o tempo. Quem terminar primeiro aperta "PARAR" e encerra a rodada pra todo mundo na hora.</p>
-            <div id="stop-categories-preview" class="stop-categories-preview"></div>
+
+            <div class="stop-categories-editor">
+              <label class="stop-editor-label">Categorias (quem iniciar a rodada escolhe)</label>
+              <div id="stop-categories-list" class="stop-categories-list"></div>
+              <div class="stop-add-category-row">
+                <input type="text" id="stop-new-category" maxlength="24" placeholder="Nova categoria" autocomplete="off" />
+                <button type="button" id="btn-stop-add-category" class="ghost">+ Adicionar</button>
+              </div>
+              <button type="button" id="btn-stop-reset-categories" class="ghost stop-reset-categories-btn">Restaurar padrão</button>
+            </div>
+            <p id="stop-categories-error" class="settings-hint game-error hidden"></p>
+
             <button type="button" id="btn-stop-start">Sortear letra e começar</button>
           </div>
 
@@ -390,7 +401,7 @@
           <div id="stop-reveal-view" class="hidden">
             <h3 id="stop-reveal-letter" class="stop-reveal-letter"></h3>
             <div id="stop-results" class="stop-results"></div>
-            <button type="button" id="btn-stop-play-again">Jogar de novo (nova letra)</button>
+            <button type="button" id="btn-stop-play-again">Jogar de novo</button>
           </div>
         </div>
 
@@ -400,11 +411,11 @@
             <form id="sketch-create-form" class="sketch-create-form">
               <div class="sketch-create-row">
                 <label>Opção A</label>
-                <input type="text" id="sketch-option-a" maxlength="60" placeholder="Ex: Pizza" autocomplete="off" />
+                <input type="text" id="sketch-option-a" maxlength="60" placeholder="Ex: 1 milhão" autocomplete="off" />
               </div>
               <div class="sketch-create-row">
                 <label>Opção B</label>
-                <input type="text" id="sketch-option-b" maxlength="60" placeholder="Ex: Hambúrguer" autocomplete="off" />
+                <input type="text" id="sketch-option-b" maxlength="60" placeholder="Ex: cair de moto" autocomplete="off" />
               </div>
               <button type="submit">Criar votação</button>
             </form>

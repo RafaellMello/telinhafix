@@ -164,8 +164,8 @@ contextBridge.exposeInMainWorld('stopGame', {
   getState() {
     return emitAck('stop-get-state', null).then((res) => res.state);
   },
-  startRound() {
-    return emitAck('stop-start-round', null);
+  startRound(categories) {
+    return emitAck('stop-start-round', { categories });
   },
   syncAnswers(values) {
     if (socket) socket.emit('stop-sync-answers', { values });

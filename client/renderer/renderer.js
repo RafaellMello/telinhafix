@@ -1515,6 +1515,9 @@ function resetGameUiState() {
   stopState = null;
   stopFieldsBuilt = -1;
   clearTimeout(stopSyncDebounce);
+  editableStopCategories = [];
+  stopEditorSeededRound = -1;
+  stopShowingEditor = false;
   sketchState = null;
   mySketchVote = null;
   mySketchRound = -1;
@@ -1535,6 +1538,20 @@ let stopState = null;
 let stopFieldsBuilt = -1;
 let stopSyncDebounce = null;
 let stopTickInterval = null;
+
+// Lista padrao espelhando STOP_DEFAULT_CATEGORIES do servidor - so usada
+// como ponto de partida do editor local antes do servidor confirmar algo
+// (o servidor sempre revalida tudo de qualquer forma).
+const STOP_DEFAULT_CATEGORIES_CLIENT = ['Nome', 'Animal', 'Fruta', 'Cor', 'País', 'Objeto'];
+const STOP_MIN_CATEGORIES_CLIENT = 2;
+const STOP_MAX_CATEGORIES_CLIENT = 10;
+// Rascunho local das categorias sendo editadas (quem vai apertar "comecar"
+// decide, por isso isso vive so no client ate o momento de iniciar - ver
+// stop-start-round). "Jogar de novo" tambem passa por aqui, pra poder
+// trocar as categorias entre rodadas, nao so na primeira vez.
+let editableStopCategories = [];
+let stopEditorSeededRound = -1;
+let stopShowingEditor = false;
 
 async function refreshStopState() {
   try {
@@ -1599,15 +1616,70 @@ function clearStopTimerInterval() {
   if (stopTickInterval) { clearInterval(stopTickInterval); stopTickInterval = null; }
 }
 
-function renderStopCategoriesPreview() {
-  const el = document.getElementById('stop-categories-preview');
-  el.innerHTML = '';
-  (stopState.categories || []).forEach((cat) => {
-    const chip = document.createElement('span');
-    chip.className = 'stop-cat-chip';
-    chip.textContent = cat;
-    el.appendChild(chip);
+function setStopCategoriesError(msg) {
+  const el = document.getElementById('stop-categories-error');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('hidden', !msg);
+}
+
+function ensureStopEditorSeeded() {
+  if (stopEditorSeededRound !== stopState.round) {
+    editableStopCategories = [...(stopState.categories && stopState.categories.length ? stopState.categories : STOP_DEFAULT_CATEGORIES_CLIENT)];
+    stopEditorSeededRound = stopState.round;
+  }
+}
+
+// Mostra o editor de categorias - usado tanto na primeira vez (sala nova,
+// status 'idle') quanto quando alguem clica "Jogar de novo"/"Mudar
+// categorias" depois de uma rodada ja ter acontecido (status 'reveal').
+function openStopEditor() {
+  stopShowingEditor = true;
+  setStopCategoriesError('');
+  renderStop();
+}
+
+function renderStopCategoriesEditor() {
+  const listEl = document.getElementById('stop-categories-list');
+  listEl.innerHTML = '';
+  editableStopCategories.forEach((cat, i) => {
+    const row = document.createElement('div');
+    row.className = 'stop-category-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'stop-category-input';
+    input.maxLength = 24;
+    input.value = cat;
+    input.addEventListener('input', () => { editableStopCategories[i] = input.value; });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'ghost stop-remove-category-btn';
+    removeBtn.textContent = '×';
+    removeBtn.setAttribute('aria-label', 'Remover categoria');
+    removeBtn.disabled = editableStopCategories.length <= STOP_MIN_CATEGORIES_CLIENT;
+    removeBtn.addEventListener('click', () => {
+      editableStopCategories.splice(i, 1);
+      renderStopCategoriesEditor();
+    });
+
+    row.appendChild(input);
+    row.appendChild(removeBtn);
+    listEl.appendChild(row);
   });
+
+  const addBtn = document.getElementById('btn-stop-add-category');
+  addBtn.disabled = editableStopCategories.length >= STOP_MAX_CATEGORIES_CLIENT;
+}
+
+function addStopCategoryFromInput() {
+  const input = document.getElementById('stop-new-category');
+  const val = input.value.trim();
+  if (!val || editableStopCategories.length >= STOP_MAX_CATEGORIES_CLIENT) return;
+  editableStopCategories.push(val);
+  input.value = '';
+  renderStopCategoriesEditor();
 }
 
 function renderStopPlaying() {
@@ -1663,13 +1735,15 @@ function renderStopReveal() {
 
 function renderStop() {
   if (!stopState || !gameOverlayOpen || currentGameView !== 'stop') return;
-  document.getElementById('stop-idle-view').classList.toggle('hidden', stopState.status !== 'idle');
-  document.getElementById('stop-playing-view').classList.toggle('hidden', stopState.status !== 'playing');
-  document.getElementById('stop-reveal-view').classList.toggle('hidden', stopState.status !== 'reveal');
+  const showEditor = stopState.status === 'idle' || stopShowingEditor;
+  document.getElementById('stop-idle-view').classList.toggle('hidden', !showEditor);
+  document.getElementById('stop-playing-view').classList.toggle('hidden', !(stopState.status === 'playing' && !showEditor));
+  document.getElementById('stop-reveal-view').classList.toggle('hidden', !(stopState.status === 'reveal' && !showEditor));
 
-  if (stopState.status === 'idle') {
+  if (showEditor) {
     clearStopTimerInterval();
-    renderStopCategoriesPreview();
+    ensureStopEditorSeeded();
+    renderStopCategoriesEditor();
   } else if (stopState.status === 'playing') {
     renderStopPlaying();
   } else {
@@ -2659,10 +2733,21 @@ document.querySelectorAll('.game-picker-card').forEach((card) => {
 });
 
 document.getElementById('btn-stop-start').addEventListener('click', () => {
-  window.stopGame.startRound().catch((err) => console.error('Falha ao iniciar rodada do Stop:', err));
+  setStopCategoriesError('');
+  window.stopGame.startRound(editableStopCategories).then(() => {
+    stopShowingEditor = false;
+  }).catch((err) => setStopCategoriesError(err.message));
 });
 document.getElementById('btn-stop-play-again').addEventListener('click', () => {
-  window.stopGame.startRound().catch((err) => console.error('Falha ao iniciar rodada do Stop:', err));
+  openStopEditor();
+});
+document.getElementById('btn-stop-add-category').addEventListener('click', addStopCategoryFromInput);
+document.getElementById('stop-new-category').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); addStopCategoryFromInput(); }
+});
+document.getElementById('btn-stop-reset-categories').addEventListener('click', () => {
+  editableStopCategories = [...STOP_DEFAULT_CATEGORIES_CLIENT];
+  renderStopCategoriesEditor();
 });
 document.getElementById('btn-stop-call').addEventListener('click', () => {
   window.stopGame.callStop(collectStopFieldValues()).catch((err) => {
@@ -2799,6 +2884,7 @@ btnJoin.addEventListener('click', async () => {
 
     window.stopGame.onState((newState) => {
       stopState = newState;
+      if (newState.status === 'playing') stopShowingEditor = false;
       renderStop();
     });
 
