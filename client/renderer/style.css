@@ -1413,6 +1413,10 @@ button.ghost:hover { filter: none; border-color: var(--red); }
    (sem a barra lateral de abas - .game-content ocupa tudo).
    ======================================================================== */
 .game-modal {
+  /* .settings-modal-close e posicionado absolute - sem isso aqui, ele fica
+     relativo ao .settings-overlay (position:fixed, tela toda) em vez do
+     modal, e some no canto da janela em vez do canto do modal. */
+  position: relative;
   width: 880px;
   max-width: 94vw;
   height: auto;
