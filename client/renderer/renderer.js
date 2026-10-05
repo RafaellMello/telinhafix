@@ -611,6 +611,54 @@ function saveWorkingDisplayName(name) {
 
 restoreSavedDisplayName();
 
+// Lembra os ultimos codigos de sala usados de verdade (so depois de um
+// join que realmente funcionou, mesmo criterio de cima) - mostrados como
+// sugestao nativa do navegador (<datalist>) no campo, sem precisar
+// redigitar toda vez. O mais recente tambem vira o valor pre-preenchido
+// do campo, do mesmo jeito que nome/senha ja funcionavam.
+const ROOM_HISTORY_STORAGE_KEY = 'telinhafix-room-history';
+const MAX_ROOM_HISTORY = 8;
+
+function loadRoomHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ROOM_HISTORY_STORAGE_KEY));
+    return Array.isArray(saved) ? saved.filter((r) => typeof r === 'string' && r) : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function renderRoomHistoryDatalist() {
+  const datalist = document.getElementById('room-history-list');
+  if (!datalist) return;
+  datalist.innerHTML = '';
+  loadRoomHistory().forEach((roomId) => {
+    const option = document.createElement('option');
+    option.value = roomId;
+    datalist.appendChild(option);
+  });
+}
+
+function saveRoomToHistory(roomId) {
+  if (!roomId) return;
+  try {
+    const history = loadRoomHistory().filter((r) => r !== roomId);
+    history.unshift(roomId);
+    localStorage.setItem(ROOM_HISTORY_STORAGE_KEY, JSON.stringify(history.slice(0, MAX_ROOM_HISTORY)));
+  } catch (err) {
+    // localStorage indisponivel - segue sem lembrar o historico.
+  }
+  renderRoomHistoryDatalist();
+}
+
+function restoreSavedRoomId() {
+  const history = loadRoomHistory();
+  if (history.length > 0) document.getElementById('room-id').value = history[0];
+  renderRoomHistoryDatalist();
+}
+
+restoreSavedRoomId();
+
 const AVATAR_FILES = [
   'babini.jpg', 'babini2.jpg', 'coka.jpg', 'dani.jpg', 'rudeus.jpg',
   'fab.jpg', 'hent.jpg', 'img-20240330-wa0127_original.jpg', 'nathan.jpg',
@@ -3047,6 +3095,7 @@ btnJoin.addEventListener('click', async () => {
     saveWorkingDisplayName(rawName);
     const { selfId: id, peers: existingPeers } = await window.rtc.joinRoom(roomId, name);
     selfId = id;
+    saveRoomToHistory(roomId);
 
     window.rtc.onSignal(handleSignal);
 
