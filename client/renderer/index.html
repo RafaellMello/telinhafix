@@ -91,8 +91,9 @@
 
   <div id="room-screen" class="screen hidden">
     <div class="topbar">
-      <div>
+      <div class="topbar-left">
         Sala: <strong id="room-label"></strong>
+        <div id="game-activity-badge" class="game-activity-badge hidden"></div>
       </div>
       <div class="actions">
         <button id="btn-share">Compartilhar tela</button>
@@ -101,7 +102,7 @@
         <button id="btn-toggle-camera" class="hidden">Ativar câmera</button>
         <button id="btn-stop-share" class="hidden">Parar compartilhamento</button>
         <button id="btn-mute-all" class="ghost" title="Mutar todos (Ctrl+Alt+M)">&#128266;</button>
-        <button id="btn-toggle-game" class="ghost" title="Minijogo: Código Secreto">&#127918;</button>
+        <button id="btn-toggle-game" class="ghost" title="Minijogos">&#127918;</button>
         <button id="btn-toggle-chat" class="ghost" title="Chat">
           &#128172;<span id="chat-unread-badge" class="chat-unread-badge hidden">0</span>
         </button>
