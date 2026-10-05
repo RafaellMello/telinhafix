@@ -1322,6 +1322,48 @@ function selectGame(name) {
   else if (name === 'sketch') refreshSketchState();
 }
 
+// Abre o painel 🎮 direto num jogo especifico (usado pelo badge de
+// atividade na topbar - ver renderGameActivityBadge), pulando o seletor.
+function jumpToGame(name) {
+  gameOverlayOpen = true;
+  document.getElementById('game-overlay').classList.remove('hidden');
+  selectGame(name);
+}
+
+// Badge na topbar (do lado do nome da sala) avisando que algum minijogo
+// esta rolando AGORA, mesmo com o painel 🎮 fechado - cada jogo broadcasta
+// seu estado pra sala inteira independente do painel estar aberto (ver os
+// tres window.*.onState abaixo), entao so precisa reagir a esses estados
+// aqui tambem, sem depender de gameOverlayOpen/currentGameView.
+function renderGameActivityBadge() {
+  const container = document.getElementById('game-activity-badge');
+  if (!container) return;
+
+  const active = [];
+  if (gameState && gameState.status === 'playing') active.push('codenames');
+  if (stopState && stopState.status === 'playing') active.push('stop');
+  if (sketchState && sketchState.status === 'voting') active.push('sketch');
+
+  container.innerHTML = '';
+  container.classList.toggle('hidden', active.length === 0);
+  active.forEach((name) => {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'game-activity-pill';
+    pill.title = 'Abrir o minijogo';
+
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    const label = document.createElement('span');
+    label.textContent = `🎮 ${GAME_TITLES[name]}`;
+
+    pill.appendChild(dot);
+    pill.appendChild(label);
+    pill.addEventListener('click', () => jumpToGame(name));
+    container.appendChild(pill);
+  });
+}
+
 function myGameRole() {
   if (!gameState || !selfId) return null;
   for (const team of ['red', 'blue']) {
@@ -1522,6 +1564,7 @@ function resetGameUiState() {
   mySketchVote = null;
   mySketchRound = -1;
   closeGameOverlay();
+  renderGameActivityBadge();
 }
 
 // --- Minijogo "Stop / Adedonha" -------------------------------------------
@@ -2880,12 +2923,14 @@ btnJoin.addEventListener('click', async () => {
     window.game.onState((newState) => {
       gameState = newState;
       renderGame();
+      renderGameActivityBadge();
     });
 
     window.stopGame.onState((newState) => {
       stopState = newState;
       if (newState.status === 'playing') stopShowingEditor = false;
       renderStop();
+      renderGameActivityBadge();
     });
 
     window.sketchGame.onState((newState) => {
@@ -2893,7 +2938,18 @@ btnJoin.addEventListener('click', async () => {
       sketchState = newState;
       if (roundChanged) { mySketchVote = null; mySketchRound = newState.round; }
       renderSketch();
+      renderGameActivityBadge();
     });
+
+    // Busca o estado atual dos 3 minijogos uma vez ao entrar na sala, pra
+    // quem chegar DEPOIS de um jogo ja ter comecado tambem ver o badge de
+    // atividade na hora (sem isso, so apareceria na proxima acao de alguem
+    // dentro do jogo, que pode demorar).
+    Promise.all([
+      window.game.getState().then((s) => { gameState = s; }).catch(() => {}),
+      window.stopGame.getState().then((s) => { stopState = s; }).catch(() => {}),
+      window.sketchGame.getState().then((s) => { sketchState = s; }).catch(() => {}),
+    ]).then(renderGameActivityBadge);
 
     // Painel de admin: o dono do app pode entrar numa sala no modo
     // espectador invisivel. O servidor avisa por esses dois eventos em vez

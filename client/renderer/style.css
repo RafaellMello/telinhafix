@@ -898,6 +898,35 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .topbar strong { color: var(--red-bright); letter-spacing: 0.5px; }
 
+.topbar-left { display: flex; align-items: center; gap: 14px; }
+
+.game-activity-badge { display: flex; gap: 8px; }
+
+.game-activity-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(var(--red-rgb), 0.15);
+  border: 1px solid rgba(var(--red-rgb), 0.5);
+  border-radius: 20px;
+  padding: 5px 12px 5px 10px;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  box-shadow: none;
+}
+.game-activity-pill:hover { filter: none; border-color: var(--red-bright); }
+
+.game-activity-pill .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red-bright);
+  animation: reconnect-pulse 1s ease-in-out infinite;
+}
+
 .actions { display: flex; gap: 8px; }
 
 .body { display: flex; height: calc(100vh - 53px); }
