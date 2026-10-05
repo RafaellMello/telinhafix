@@ -532,6 +532,7 @@ const btnShare = document.getElementById('btn-share');
 const btnShareNative = document.getElementById('btn-share-native');
 const btnShareCamera = document.getElementById('btn-share-camera');
 const btnToggleCamera = document.getElementById('btn-toggle-camera');
+const btnShareExtra = document.getElementById('btn-share-extra');
 const btnStopShare = document.getElementById('btn-stop-share');
 const btnLeave = document.getElementById('btn-leave');
 const btnJoin = document.getElementById('btn-join');
@@ -992,7 +993,8 @@ function updateSliderFill(slider) {
   slider.style.background = `linear-gradient(to right, var(--red-bright) 0%, var(--red-bright) ${pct}%, rgba(255, 255, 255, 0.25) ${pct}%, rgba(255, 255, 255, 0.25) 100%)`;
 }
 
-function getOrCreateVideoTile(peerId, label, isSelf = false) {
+function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
+  const { hasAudio = true, onStopExtra = null } = opts;
   let tile = document.getElementById(`tile-${peerId}`);
   if (tile) return tile.querySelector('video');
 
@@ -1064,6 +1066,21 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
   actionsRow.appendChild(btnPip);
   actionsRow.appendChild(btnFocus);
 
+  // So nas SUAS proprias tiles de tela extra (ver startExtraShare) - um
+  // jeito de parar so aquela tela especifica, sem afastar o compartilhamento
+  // principal nem as outras extras.
+  if (onStopExtra) {
+    const btnStopExtra = document.createElement('button');
+    btnStopExtra.className = 'tile-action-btn';
+    btnStopExtra.textContent = '✕';
+    btnStopExtra.title = 'Parar de compartilhar essa tela';
+    btnStopExtra.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onStopExtra();
+    });
+    actionsRow.appendChild(btnStopExtra);
+  }
+
   tile.appendChild(video);
   tile.appendChild(labelEl);
   tile.appendChild(actionsRow);
@@ -1095,7 +1112,9 @@ function getOrCreateVideoTile(peerId, label, isSelf = false) {
   // wireRemoteAudioGain, chamada em pc.ontrack). Criar o node antes disso
   // fazia o audio sair sempre mudo (RMS 0), porque o Chromium prende o
   // source node no estado "sem stream" que existia no momento da criacao.
-  if (!isSelf) {
+  // Telas extras nunca tem audio (so a principal carrega som) - sem slider
+  // nelas, pra nao mostrar um controle que nao faz nada.
+  if (!isSelf && hasAudio) {
     const volumeRow = document.createElement('div');
     volumeRow.className = 'volume-control';
 
@@ -1151,6 +1170,20 @@ function removeVideoTile(peerId) {
     remoteGainNodes.delete(peerId);
   }
   hiddenPeers.delete(peerId);
+
+  // Rede de seguranca: se isso aqui for o peer "de verdade" (nao ja uma
+  // tile extra composta, tipo "peerId__streamId"), remove tambem qualquer
+  // tela extra dele que ainda esteja na tela - cobre o caso de alguem
+  // cair da sala de repente sem dar tempo dos sinais extraShareEnded
+  // chegarem um por um.
+  if (!peerId.includes('__')) {
+    document.querySelectorAll(`[id^="tile-${peerId}__"]`).forEach((extraTile) => {
+      const extraId = extraTile.id.replace('tile-', '');
+      extraTile.remove();
+      remoteGainNodes.delete(extraId);
+      hiddenPeers.delete(extraId);
+    });
+  }
 }
 
 // Mostra/esconde o aviso de "reconectando" numa tile - a pessoa continua
@@ -1877,6 +1910,15 @@ function createPeerConnection(peerId) {
     pc, polite, makingOffer: false, ignoreOffer: false,
     reconnecting: false, reconnectInterval: null,
     chatChannel: null,
+    // Telas extras (ver startExtraShare): a PRIMEIRA stream de video que
+    // chega desse peer vira a tile principal de sempre (mainStreamId fica
+    // travado nela); qualquer stream de video SEGUINTE do mesmo peer e
+    // automaticamente tratada como uma tela extra, com tile propria. Nao
+    // precisa de nenhuma sinalizacao especial pra isso - so a ordem de
+    // chegada ja diferencia uma coisa da outra.
+    mainStreamId: null,
+    extraTileStreamIds: new Map(), // streamId -> numero ("tela 2", "tela 3"...)
+    extraSenders: new Map(), // shareId -> RTCRtpSender (dos MEUS extras, pra essa conexao)
   };
   peers.set(peerId, state);
 
@@ -1912,14 +1954,38 @@ function createPeerConnection(peerId) {
   pc.ontrack = (event) => {
     if (spectatorPeerIds.has(peerId)) return;
     const name = peerNames.get(peerId) || 'Participante';
-    const video = getOrCreateVideoTile(peerId, name);
-    video.srcObject = event.streams[0];
-    // So conecta ao Web Audio quando a track de AUDIO especificamente
-    // chega - assim garante que o stream ja tem audio de verdade no
-    // momento da conexao (ver comentario em wireRemoteAudioGain).
-    if (event.track.kind === 'audio') {
-      wireRemoteAudioGain(peerId, video, event.track);
+    const stream = event.streams[0];
+    const streamId = stream ? stream.id : event.track.id;
+
+    // A primeira stream de video (ou a propria stream de audio, que sempre
+    // acompanha a principal) define qual e a tela "de sempre" desse peer -
+    // qualquer stream DIFERENTE que chegar depois e automaticamente uma
+    // tela extra, pra nao confundir com a principal.
+    if (!state.mainStreamId) state.mainStreamId = streamId;
+    const isExtra = streamId !== state.mainStreamId;
+
+    if (!isExtra) {
+      const video = getOrCreateVideoTile(peerId, name);
+      video.srcObject = stream;
+      // So conecta ao Web Audio quando a track de AUDIO especificamente
+      // chega - assim garante que o stream ja tem audio de verdade no
+      // momento da conexao (ver comentario em wireRemoteAudioGain).
+      if (event.track.kind === 'audio') {
+        wireRemoteAudioGain(peerId, video, event.track);
+      }
+      event.track.onended = () => {};
+      return;
     }
+
+    // Tela extra (2a, 3a...) desse mesmo peer - ganha uma tile PROPRIA,
+    // separada da principal (so video, sem audio - ver startExtraShare).
+    if (!state.extraTileStreamIds.has(streamId)) {
+      state.extraTileStreamIds.set(streamId, state.extraTileStreamIds.size + 2);
+    }
+    const n = state.extraTileStreamIds.get(streamId);
+    const extraTileId = `${peerId}__${streamId}`;
+    const video = getOrCreateVideoTile(extraTileId, `${name} — tela ${n}`, false, { hasAudio: false });
+    video.srcObject = stream;
 
     // Nao remove a tile aqui - esse evento e pouco confiavel (ja disparou
     // com a conexao ainda saudavel) e agora quem decide se a pessoa
@@ -1965,13 +2031,19 @@ function createPeerConnection(peerId) {
 
   // Se ja estamos compartilhando quando essa conexao e criada (ex: alguem
   // entrou na sala depois que voce comecou a compartilhar), manda o video
-  // atual pra essa pessoa tambem.
+  // atual pra essa pessoa tambem - inclusive qualquer tela extra que ja
+  // estiver no ar (ver startExtraShare).
   if (localStream) {
     localStream.getTracks().forEach((track) => {
       const sender = pc.addTrack(track, localStream);
       if (track.kind === 'video') applyBitrateToSender(sender, currentQuality);
     });
     preferVideoCodecs(pc);
+  }
+  for (const [shareId, entry] of extraShares) {
+    const sender = pc.addTrack(entry.track, entry.stream);
+    applyBitrateToSender(sender, currentQuality);
+    state.extraSenders.set(shareId, sender);
   }
 
   return state;
@@ -2006,7 +2078,10 @@ async function handleSignal({ from, data }) {
       // Sinal explicito de "parei de compartilhar" - mais confiavel que
       // esperar o evento 'ended' da track remota, que nem sempre dispara
       // quando o outro lado so remove a track (fica um frame congelado).
+      // removeVideoTile ja limpa qualquer tela extra desse peer tambem.
       removeVideoTile(from);
+    } else if (data.extraShareEnded) {
+      removeVideoTile(`${from}__${data.extraShareEnded.streamId}`);
     }
   } catch (err) {
     console.error('Erro ao tratar sinal de', from, err);
@@ -2151,6 +2226,16 @@ function teardownCapturedAudioTrack() {
 let localVideoStream = null;
 // 'screen' | 'camera' | null - o que esta sendo transmitido agora.
 let shareMode = null;
+
+// --- Telas extras (compartilhar mais de uma janela/monitor ao mesmo tempo) -
+// So pode comecar uma extra enquanto ja existe um compartilhamento
+// principal rolando (localStream) - cada uma vira uma track de video A
+// PARTE (sem audio - o audio que ja esta indo continua sendo so o da
+// transmissao principal), mandada igual pra todo mundo na sala como uma
+// tile independente, pra cada um escolher o que quer olhar.
+const extraShares = new Map(); // shareId -> { stream, track }
+let nextExtraShareId = 1;
+const MAX_EXTRA_SHARES = 3;
 
 // --- Camera (bolinha no canto, composta por cima da tela em um canvas) ---
 
@@ -2680,14 +2765,83 @@ async function finishStartingShare(selfLabel) {
   btnShare.classList.add('hidden');
   btnShareNative.classList.add('hidden');
   btnShareCamera.classList.add('hidden');
+  btnShareExtra.classList.remove('hidden');
   btnStopShare.classList.remove('hidden');
 
   localVideoStream.getVideoTracks()[0].addEventListener('ended', stopShare);
 }
 
+// Compartilha MAIS uma tela/janela, alem da que ja esta no ar - vira uma
+// tile a parte pra todo mundo (so video, sem audio: o audio que ja esta
+// indo continua sendo so o da transmissao principal). Pode ser chamada
+// varias vezes (ate MAX_EXTRA_SHARES) pra ir empilhando mais telas.
+async function startExtraShare() {
+  if (!localStream || extraShares.size >= MAX_EXTRA_SHARES) return;
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  } catch (err) {
+    // Usuario cancelou o seletor, ou deu erro de permissao - nao e um bug,
+    // so nao faz nada (igual o comportamento do compartilhamento principal).
+    console.error('Falha ao compartilhar tela extra:', err);
+    return;
+  }
+
+  const track = stream.getVideoTracks()[0];
+  const shareId = `extra-${nextExtraShareId++}`;
+  extraShares.set(shareId, { stream, track });
+
+  for (const [, state] of peers) {
+    const sender = state.pc.addTrack(track, stream);
+    applyBitrateToSender(sender, currentQuality);
+    state.extraSenders.set(shareId, sender);
+  }
+  for (const [, state] of peers) preferVideoCodecs(state.pc);
+
+  const n = extraShares.size + 1; // a principal ja e "tela 1" implicitamente
+  const selfExtraTileId = `self-${shareId}`;
+  const video = getOrCreateVideoTile(selfExtraTileId, `Você (compartilhando) — tela ${n}`, true, {
+    onStopExtra: () => stopExtraShare(shareId),
+  });
+  video.srcObject = stream;
+
+  track.addEventListener('ended', () => stopExtraShare(shareId));
+
+  if (extraShares.size >= MAX_EXTRA_SHARES) btnShareExtra.classList.add('hidden');
+}
+
+function stopExtraShare(shareId) {
+  const entry = extraShares.get(shareId);
+  if (!entry) return;
+
+  for (const [peerId, state] of peers) {
+    const sender = state.extraSenders.get(shareId);
+    if (sender) {
+      try { state.pc.removeTrack(sender); } catch (err) { console.error('Falha ao remover tela extra:', err); }
+      state.extraSenders.delete(shareId);
+    }
+    // Sinal explicito (mesmo motivo do {shareEnded} da tela principal: nao
+    // da pra confiar so no evento 'ended' do lado de quem recebe).
+    window.rtc.sendSignal(peerId, { extraShareEnded: { streamId: entry.stream.id } });
+  }
+
+  entry.track.stop();
+  entry.stream.getTracks().forEach((t) => t.stop());
+  extraShares.delete(shareId);
+  removeVideoTile(`self-${shareId}`);
+
+  if (localStream && extraShares.size < MAX_EXTRA_SHARES) btnShareExtra.classList.remove('hidden');
+}
+
+function stopAllExtraShares() {
+  for (const shareId of Array.from(extraShares.keys())) stopExtraShare(shareId);
+}
+
 async function stopShare() {
   if (!localStream) return;
 
+  stopAllExtraShares();
   if (cameraActive) await disableCamera();
 
   if (shareMode === 'screen-native') {
@@ -2720,6 +2874,7 @@ async function stopShare() {
   btnShareNative.classList.remove('hidden');
   btnShareCamera.classList.remove('hidden');
   btnToggleCamera.classList.add('hidden');
+  btnShareExtra.classList.add('hidden');
   btnStopShare.classList.add('hidden');
 }
 
@@ -2752,6 +2907,7 @@ btnToggleCamera.addEventListener('click', () => {
   if (cameraActive) disableCamera();
   else enableCamera();
 });
+btnShareExtra.addEventListener('click', startExtraShare);
 btnStopShare.addEventListener('click', stopShare);
 btnLeave.addEventListener('click', leaveRoom);
 
