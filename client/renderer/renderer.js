@@ -1297,7 +1297,7 @@ let mySecretMapRound = -1;
 let currentGameView = 'picker';
 
 const GAME_TEAM_LABEL = { red: 'Vermelha', blue: 'Azul' };
-const GAME_TITLES = { picker: 'Minijogos', codenames: 'Código Secreto', stop: 'Stop / Adedonha', sketch: 'Sketch do PC' };
+const GAME_TITLES = { picker: 'Minijogos', codenames: 'Codenames', stop: 'Stop / Adedonha', sketch: 'Sketch do PC' };
 
 function showGamePicker() {
   currentGameView = 'picker';
