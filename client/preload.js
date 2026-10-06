@@ -167,6 +167,15 @@ contextBridge.exposeInMainWorld('stopGame', {
   startRound(categories) {
     return emitAck('stop-start-round', { categories });
   },
+  toggleReady() {
+    return emitAck('stop-toggle-ready', null);
+  },
+  forceStart() {
+    return emitAck('stop-force-start', null);
+  },
+  cancelLobby() {
+    return emitAck('stop-cancel-lobby', null);
+  },
   syncAnswers(values) {
     if (socket) socket.emit('stop-sync-answers', { values });
   },
