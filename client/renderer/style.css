@@ -1620,6 +1620,64 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-size: calc(16px * var(--font-scale));
   padding: 16px;
 }
+.stop-call-btn:disabled { opacity: 0.5; cursor: default; }
+
+#stop-call-lock {
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* --- Lobby do Stop (todo mundo "Pronto" antes de comecar) --------------- */
+
+.stop-categories-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.stop-cat-chip {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--text-muted);
+}
+
+.stop-lobby-players {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 16px;
+}
+
+.stop-lobby-player {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 14px;
+  font-size: calc(13px * var(--font-scale));
+}
+
+.stop-lobby-player-status {
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.stop-lobby-player.ready {
+  border-color: var(--red-bright);
+  background: rgba(var(--red-rgb), 0.12);
+}
+.stop-lobby-player.ready .stop-lobby-player-status { color: var(--red-bright); }
+
+.stop-lobby-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .stop-reveal-letter {
   margin: 0 0 14px;

@@ -239,7 +239,7 @@ const stopGames = new Map();
 
 function createStopGame() {
   return {
-    status: 'idle', // idle | playing | reveal
+    status: 'idle', // idle | lobby | playing | reveal
     round: 0,
     letter: null,
     // Categorias da ULTIMA rodada (ou o padrao, numa sala nova) - quem
@@ -249,10 +249,25 @@ function createStopGame() {
     categories: [...STOP_DEFAULT_CATEGORIES],
     startedAt: null,
     durationMs: STOP_ROUND_MS,
+    // Quanto tempo (ms) precisa passar antes de alguem poder dar Stop
+    // nessa rodada - calculado a partir do numero de categorias quando a
+    // rodada comeca de verdade (ver computeStopMinStopMs/beginStopRound).
+    minStopMs: 0,
+    // Lobby: quem ja apertou "Pronto" pra essa rodada comecar (ver
+    // tryStartStopRoundFromLobby) - zerado a cada nova entrada no lobby.
+    readyPlayers: new Set(),
     players: new Map(), // socketId -> { name, values: { categoria: texto } }
     results: null,
     timer: null,
   };
+}
+
+// 3 categorias = 10s, 4 = 15s, +5s por categoria a mais (e o mesmo padrao
+// pra menos: 2 categorias = 5s) - quanto mais categoria, mais tempo justo
+// pra todo mundo pelo menos LER a letra e as categorias antes de alguem
+// conseguir fechar a rodada na cara dos outros.
+function computeStopMinStopMs(categoryCount) {
+  return Math.max(0, (categoryCount - 1) * 5000);
 }
 
 function getOrCreateStopGame(roomId) {
@@ -343,12 +358,60 @@ function finalizeStopRound(roomId) {
   broadcastStopState(roomId);
 }
 
+// Comeca a rodada de verdade (sorteia letra, zera o cronometro) - chamada
+// quando o lobby fecha, seja porque todo mundo apertou "Pronto" ou porque
+// alguem forcou o inicio (stop-force-start).
+function beginStopRound(roomId, game) {
+  if (game.timer) { clearTimeout(game.timer); game.timer = null; }
+  const room = rooms.get(roomId);
+  game.players = new Map();
+  if (room) room.forEach((info, id) => game.players.set(id, { name: info.name || 'Jogador', values: {} }));
+  game.letter = STOP_LETTERS[Math.floor(Math.random() * STOP_LETTERS.length)];
+  game.startedAt = Date.now();
+  game.durationMs = STOP_ROUND_MS;
+  game.minStopMs = computeStopMinStopMs(game.categories.length);
+  game.status = 'playing';
+  game.round += 1;
+  game.results = null;
+  game.readyPlayers = new Set();
+  game.timer = setTimeout(() => finalizeStopRound(roomId), game.durationMs);
+}
+
+// Se todo mundo que esta na sala agora ja apertou "Pronto", fecha o lobby
+// e comeca a rodada sozinho - e assim que o "todo mundo comeca junto"
+// funciona na pratica, sem precisar de um botao extra na maioria das vezes.
+function tryStartStopRoundFromLobby(roomId, game) {
+  if (game.status !== 'lobby') return;
+  const room = rooms.get(roomId);
+  const roomSize = room ? room.size : 0;
+  if (roomSize === 0 || game.readyPlayers.size < roomSize) return;
+  beginStopRound(roomId, game);
+}
+
 function stopPublicState(roomId) {
   const game = stopGames.get(roomId);
   if (!game || game.status === 'idle') {
     return {
       status: 'idle', round: game ? game.round : 0, letter: null, categories: game ? game.categories : STOP_DEFAULT_CATEGORIES,
-      startedAt: null, durationMs: STOP_ROUND_MS, players: [], results: null,
+      startedAt: null, durationMs: STOP_ROUND_MS, minStopMs: 0, players: [], lobbyPlayers: [], results: null,
+    };
+  }
+  if (game.status === 'lobby') {
+    const room = rooms.get(roomId);
+    const lobbyPlayers = room
+      ? Array.from(room.entries()).map(([id, info]) => ({ id, name: info.name || 'Jogador', ready: game.readyPlayers.has(id) }))
+      : [];
+    return {
+      status: 'lobby',
+      round: game.round,
+      letter: null,
+      categories: game.categories,
+      startedAt: null,
+      durationMs: game.durationMs,
+      minStopMs: computeStopMinStopMs(game.categories.length),
+      players: [],
+      lobbyPlayers,
+      results: null,
     };
   }
   return {
@@ -358,7 +421,9 @@ function stopPublicState(roomId) {
     categories: game.categories,
     startedAt: game.startedAt,
     durationMs: game.durationMs,
+    minStopMs: game.minStopMs || 0,
     players: Array.from(game.players.entries()).map(([id, p]) => ({ id, name: p.name })),
+    lobbyPlayers: [],
     results: game.status === 'reveal' ? game.results : null,
   };
 }
@@ -775,13 +840,16 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true, state: stopPublicState(currentRoom) });
   });
 
+  // Abre o LOBBY (nao comeca a rodada direto) - todo mundo precisa apertar
+  // "Pronto" (ver stop-toggle-ready) pra rodada comecar igual pra todo
+  // mundo ao mesmo tempo, em vez de quem clicou primeiro sair na frente.
   socket.on('stop-start-round', (data, ack) => {
     const { categories } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = getOrCreateStopGame(currentRoom);
-    if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Já tem uma rodada em andamento' }); return; }
-    // Quem aperta "comecar" pode mandar a lista de categorias que montou
-    // (ver stop-view no renderer); se nao mandar nada valido, repete as da
+    if (game.status === 'lobby' || game.status === 'playing') { if (ack) ack({ ok: false, error: 'Já tem uma rodada em andamento' }); return; }
+    // Quem abre o lobby pode mandar a lista de categorias que montou (ver
+    // stop-view no renderer); se nao mandar nada valido, repete as da
     // ultima rodada (ou o padrao, numa sala que nunca jogou).
     if (categories !== undefined) {
       const clean = sanitizeCategoryList(categories);
@@ -789,16 +857,44 @@ io.on('connection', (socket) => {
       game.categories = clean;
     }
     if (game.timer) { clearTimeout(game.timer); game.timer = null; }
-    const room = rooms.get(currentRoom);
-    game.players = new Map();
-    if (room) room.forEach((info, id) => game.players.set(id, { name: info.name || 'Jogador', values: {} }));
-    game.letter = STOP_LETTERS[Math.floor(Math.random() * STOP_LETTERS.length)];
-    game.startedAt = Date.now();
-    game.durationMs = STOP_ROUND_MS;
-    game.status = 'playing';
-    game.round += 1;
+    game.status = 'lobby';
+    game.readyPlayers = new Set();
     game.results = null;
-    game.timer = setTimeout(() => finalizeStopRound(currentRoom), game.durationMs);
+    broadcastStopState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
+  // Liga/desliga o "Pronto" de quem chamou. Quando todo mundo que esta na
+  // sala agora estiver pronto, a rodada comeca sozinha (tryStartStopRoundFromLobby).
+  socket.on('stop-toggle-ready', (_data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = stopGames.get(currentRoom);
+    if (!game || game.status !== 'lobby') { if (ack) ack({ ok: false, error: 'Não tem lobby aberto' }); return; }
+    if (game.readyPlayers.has(socket.id)) game.readyPlayers.delete(socket.id);
+    else game.readyPlayers.add(socket.id);
+    tryStartStopRoundFromLobby(currentRoom, game);
+    broadcastStopState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
+  // Escape hatch: comeca a rodada mesmo sem todo mundo pronto (ex: alguem
+  // ficou ausente/AFK e o resto nao quer esperar pra sempre).
+  socket.on('stop-force-start', (_data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = stopGames.get(currentRoom);
+    if (!game || game.status !== 'lobby') { if (ack) ack({ ok: false, error: 'Não tem lobby aberto' }); return; }
+    beginStopRound(currentRoom, game);
+    broadcastStopState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
+  // Fecha o lobby sem comecar (volta pro editor de categorias).
+  socket.on('stop-cancel-lobby', (_data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = stopGames.get(currentRoom);
+    if (!game || game.status !== 'lobby') { if (ack) ack({ ok: true }); return; }
+    game.status = 'idle';
+    game.readyPlayers = new Set();
     broadcastStopState(currentRoom);
     if (ack) ack({ ok: true });
   });
@@ -825,6 +921,12 @@ io.on('connection', (socket) => {
     if (!game || game.status !== 'playing') { if (ack) ack({ ok: false, error: 'Não tem rodada em andamento' }); return; }
     const p = game.players.get(socket.id);
     if (!p) { if (ack) ack({ ok: false, error: 'Você não está jogando essa rodada' }); return; }
+    const elapsed = Date.now() - game.startedAt;
+    if (elapsed < game.minStopMs) {
+      const remaining = Math.ceil((game.minStopMs - elapsed) / 1000);
+      if (ack) ack({ ok: false, error: `Espera mais ${remaining}s antes de dar Stop (${game.categories.length} categorias)` });
+      return;
+    }
     const clean = sanitizeStopValues(values, game.categories);
     const missing = game.categories.some((cat) => !clean[cat]);
     if (missing) { if (ack) ack({ ok: false, error: 'Preencha todas as categorias antes de dar Stop' }); return; }
@@ -925,6 +1027,14 @@ io.on('connection', (socket) => {
         if (sketchGame) {
           maybeAutoEndSketchVote(currentRoom, sketchGame);
           broadcastSketchState(currentRoom);
+        }
+        // Mesma logica pro lobby do Stop: quem saiu pode ter sido
+        // justamente quem faltava ficar pronto.
+        const stopGameState = stopGames.get(currentRoom);
+        if (stopGameState && stopGameState.status === 'lobby') {
+          stopGameState.readyPlayers.delete(socket.id);
+          tryStartStopRoundFromLobby(currentRoom, stopGameState);
+          broadcastStopState(currentRoom);
         }
       }
       // Mesma logica do join: espectadores recebem o peer-left direto.

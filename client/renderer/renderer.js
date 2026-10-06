@@ -1434,7 +1434,7 @@ function renderGameActivityBadge() {
 
   const active = [];
   if (gameState && gameState.status === 'playing') active.push('codenames');
-  if (stopState && stopState.status === 'playing') active.push('stop');
+  if (stopState && (stopState.status === 'lobby' || stopState.status === 'playing')) active.push('stop');
   if (sketchState && sketchState.status === 'voting') active.push('sketch');
 
   container.innerHTML = '';
@@ -1740,6 +1740,25 @@ function updateStopTimerDisplay() {
   const seconds = Math.ceil(remainingMs / 1000);
   el.textContent = `${seconds}s`;
   el.classList.toggle('stop-timer-urgent', seconds <= 10);
+  updateStopCallLockDisplay();
+}
+
+// "PARAR!" fica travado por um tempo minimo no comeco da rodada (mais
+// categorias = mais tempo - ver computeStopMinStopMs no servidor), pra
+// ninguem conseguir fechar a rodada injustamente cedo antes de todo mundo
+// sequer ter lido as categorias. O servidor ja recusa a chamada de qualquer
+// forma (defesa de verdade) - isso aqui e so a UI refletindo o mesmo prazo.
+function updateStopCallLockDisplay() {
+  const btn = document.getElementById('btn-stop-call');
+  const lockEl = document.getElementById('stop-call-lock');
+  if (!btn || !lockEl || !stopState || stopState.status !== 'playing' || !stopState.startedAt) return;
+  const elapsed = Date.now() - stopState.startedAt;
+  const minMs = stopState.minStopMs || 0;
+  const locked = elapsed < minMs;
+  btn.disabled = locked;
+  lockEl.textContent = locked
+    ? `Disponível em ${Math.ceil((minMs - elapsed) / 1000)}s (${stopState.categories.length} categorias)`
+    : '';
 }
 
 function startStopTimerInterval() {
@@ -1823,6 +1842,46 @@ function renderStopPlaying() {
   if (stopFieldsBuilt !== stopState.round) buildStopFields();
   document.getElementById('stop-call-error').classList.add('hidden');
   startStopTimerInterval();
+  updateStopCallLockDisplay();
+}
+
+function renderStopLobby() {
+  const catsEl = document.getElementById('stop-lobby-categories');
+  catsEl.innerHTML = '';
+  (stopState.categories || []).forEach((cat) => {
+    const chip = document.createElement('span');
+    chip.className = 'stop-cat-chip';
+    chip.textContent = cat;
+    catsEl.appendChild(chip);
+  });
+
+  const players = stopState.lobbyPlayers || [];
+  const playersEl = document.getElementById('stop-lobby-players');
+  playersEl.innerHTML = '';
+  players.forEach((p) => {
+    const row = document.createElement('div');
+    row.className = 'stop-lobby-player' + (p.ready ? ' ready' : '');
+
+    const name = document.createElement('span');
+    name.textContent = p.name + (p.id === selfId ? ' (você)' : '');
+
+    const status = document.createElement('span');
+    status.className = 'stop-lobby-player-status';
+    status.textContent = p.ready ? 'Pronto' : 'Aguardando';
+
+    row.appendChild(name);
+    row.appendChild(status);
+    playersEl.appendChild(row);
+  });
+
+  const readyCount = players.filter((p) => p.ready).length;
+  document.getElementById('stop-lobby-count').textContent = `${readyCount} de ${players.length} prontos`;
+
+  const me = players.find((p) => p.id === selfId);
+  const toggleBtn = document.getElementById('btn-stop-toggle-ready');
+  const amReady = !!(me && me.ready);
+  toggleBtn.textContent = amReady ? 'Cancelar' : 'Pronto!';
+  toggleBtn.classList.toggle('ghost', amReady);
 }
 
 function renderStopReveal() {
@@ -1872,15 +1931,23 @@ function renderStopReveal() {
 function renderStop() {
   if (!stopState || !gameOverlayOpen || currentGameView !== 'stop') return;
   const showEditor = stopState.status === 'idle' || stopShowingEditor;
+  const showLobby = stopState.status === 'lobby' && !showEditor;
+  const showPlaying = stopState.status === 'playing' && !showEditor;
+  const showReveal = stopState.status === 'reveal' && !showEditor;
+
   document.getElementById('stop-idle-view').classList.toggle('hidden', !showEditor);
-  document.getElementById('stop-playing-view').classList.toggle('hidden', !(stopState.status === 'playing' && !showEditor));
-  document.getElementById('stop-reveal-view').classList.toggle('hidden', !(stopState.status === 'reveal' && !showEditor));
+  document.getElementById('stop-lobby-view').classList.toggle('hidden', !showLobby);
+  document.getElementById('stop-playing-view').classList.toggle('hidden', !showPlaying);
+  document.getElementById('stop-reveal-view').classList.toggle('hidden', !showReveal);
 
   if (showEditor) {
     clearStopTimerInterval();
     ensureStopEditorSeeded();
     renderStopCategoriesEditor();
-  } else if (stopState.status === 'playing') {
+  } else if (showLobby) {
+    clearStopTimerInterval();
+    renderStopLobby();
+  } else if (showPlaying) {
     renderStopPlaying();
   } else {
     renderStopReveal();
@@ -3036,6 +3103,15 @@ document.getElementById('btn-stop-call').addEventListener('click', () => {
     el.classList.remove('hidden');
   });
 });
+document.getElementById('btn-stop-toggle-ready').addEventListener('click', () => {
+  window.stopGame.toggleReady().catch((err) => console.error('Falha ao marcar pronto no Stop:', err));
+});
+document.getElementById('btn-stop-force-start').addEventListener('click', () => {
+  window.stopGame.forceStart().catch((err) => console.error('Falha ao forçar início do Stop:', err));
+});
+document.getElementById('btn-stop-cancel-lobby').addEventListener('click', () => {
+  window.stopGame.cancelLobby().catch((err) => console.error('Falha ao sair do lobby do Stop:', err));
+});
 
 document.getElementById('sketch-create-form').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -3166,7 +3242,7 @@ btnJoin.addEventListener('click', async () => {
 
     window.stopGame.onState((newState) => {
       stopState = newState;
-      if (newState.status === 'playing') stopShowingEditor = false;
+      if (newState.status === 'lobby' || newState.status === 'playing') stopShowingEditor = false;
       renderStop();
       renderGameActivityBadge();
     });

@@ -389,7 +389,19 @@
             </div>
             <p id="stop-categories-error" class="settings-hint game-error hidden"></p>
 
-            <button type="button" id="btn-stop-start">Sortear letra e começar</button>
+            <button type="button" id="btn-stop-start">Ir para o lobby</button>
+          </div>
+
+          <div id="stop-lobby-view" class="hidden">
+            <p class="settings-hint">Todo mundo precisa apertar "Pronto" pra rodada começar igual pra todo mundo ao mesmo tempo.</p>
+            <div id="stop-lobby-categories" class="stop-categories-preview"></div>
+            <div id="stop-lobby-players" class="stop-lobby-players"></div>
+            <p id="stop-lobby-count" class="settings-hint"></p>
+            <div class="stop-lobby-actions">
+              <button type="button" id="btn-stop-toggle-ready">Pronto!</button>
+              <button type="button" id="btn-stop-force-start" class="ghost">Forçar início</button>
+              <button type="button" id="btn-stop-cancel-lobby" class="ghost">Mudar categorias</button>
+            </div>
           </div>
 
           <div id="stop-playing-view" class="hidden">
@@ -399,6 +411,7 @@
             </div>
             <div id="stop-fields" class="stop-fields"></div>
             <button type="button" id="btn-stop-call" class="stop-call-btn">PARAR!</button>
+            <p id="stop-call-lock" class="settings-hint"></p>
             <p id="stop-call-error" class="settings-hint game-error hidden"></p>
           </div>
 
