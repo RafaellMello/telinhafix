@@ -12,10 +12,11 @@ const FONT_STACKS = {
 
 const THEME_STORAGE_KEY = 'telinhafix-theme';
 const DEFAULT_KEYBINDS = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M', quickShare: 'Control+Alt+Q' };
+const DEFAULT_VOLUMES = { join: 1, leave: 1, chat: 1, connection: 1, buttons: 1 };
 const DEFAULT_THEME = {
   font: 'inter', scale: 1, color: '#e2231a', mode: 'serio', border: 'arredondada',
   sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS }, priority: 'nitidez',
-  background: 'particulas', loginOpacity: 0.25,
+  background: 'particulas', loginOpacity: 0.25, volumes: { ...DEFAULT_VOLUMES },
   // false ate a pessoa mexer de proposito (clicar num modo, arrastar o
   // slider de transparencia) - diferencia "nunca escolheu" (recebe o
   // padrao mais novo sempre, mesmo em quem ja tinha outro tema salvo por
@@ -24,6 +25,21 @@ const DEFAULT_THEME = {
   // loadTheme e os cliques de .mode-option/#login-opacity-slider abaixo.
   modeExplicit: false,
   loginOpacityExplicit: false,
+};
+
+// --- Icones SVG (substituem os emojis antigos, mesmo estilo outline fino
+// em todo o app - herdam a cor do texto do botao via currentColor) --------
+const ICON_SVG_ATTRS = 'class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const ICONS = {
+  link: `<svg ${ICON_SVG_ATTRS}><path d="M10 13a5 5 0 0 0 7.07 0l2.5-2.5a5 5 0 0 0-7.07-7.07L11 4.91"></path><path d="M14 11a5 5 0 0 0-7.07 0l-2.5 2.5a5 5 0 0 0 7.07 7.07L13 19.09"></path></svg>`,
+  speakerOn: `<svg ${ICON_SVG_ATTRS}><path d="M4 9h4l5-5v16l-5-5H4V9Z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 6a8 8 0 0 1 0 12"></path></svg>`,
+  speakerOff: `<svg ${ICON_SVG_ATTRS}><path d="M4 9h4l5-5v16l-5-5H4V9Z"></path><path d="M16 9l5 6M21 9l-5 6"></path></svg>`,
+  gamepad: `<svg ${ICON_SVG_ATTRS}><rect x="2" y="7" width="20" height="10" rx="5"></rect><path d="M6 10v4M4 12h4"></path><circle cx="15" cy="10.5" r="1"></circle><circle cx="18" cy="13.5" r="1"></circle></svg>`,
+  fullscreen: `<svg ${ICON_SVG_ATTRS}><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>`,
+  close: `<svg ${ICON_SVG_ATTRS}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
+  check: `<svg ${ICON_SVG_ATTRS}><polyline points="20 6 9 17 4 12"></polyline></svg>`,
+  pip: `<svg ${ICON_SVG_ATTRS}><rect x="2" y="4" width="20" height="14" rx="2"></rect><rect x="12" y="11" width="8" height="6" rx="1"></rect></svg>`,
+  focus: `<svg ${ICON_SVG_ATTRS}><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="21" y1="21" x2="15.5" y2="15.5"></line></svg>`,
 };
 
 function hexToRgbString(hex) {
@@ -117,6 +133,7 @@ function loadTheme() {
     // tiver outro customizado (ex: pessoa so trocou stopShare) - funde os
     // dois por dentro tambem.
     merged.keybinds = { ...DEFAULT_KEYBINDS, ...((saved && saved.keybinds) || {}) };
+    merged.volumes = { ...DEFAULT_VOLUMES, ...((saved && saved.volumes) || {}) };
     // Quem nunca escolheu um modo de proposito (nunca clicou em Lata de
     // lixo/Serio) recebe sempre o padrao mais novo, mesmo que ja tivesse
     // algum tema salvo de antes por ter mexido em outra coisa (ex: so
@@ -126,7 +143,7 @@ function loadTheme() {
     if (!merged.loginOpacityExplicit) merged.loginOpacity = DEFAULT_THEME.loginOpacity;
     return merged;
   } catch (err) {
-    return { ...DEFAULT_THEME, keybinds: { ...DEFAULT_KEYBINDS } };
+    return { ...DEFAULT_THEME, keybinds: { ...DEFAULT_KEYBINDS }, volumes: { ...DEFAULT_VOLUMES } };
   }
 }
 
@@ -176,6 +193,14 @@ function setupSettingsPanel() {
   const opacityValue = document.getElementById('login-opacity-value');
   const tabButtons = document.querySelectorAll('.settings-tab-btn');
   const panes = document.querySelectorAll('.settings-pane');
+  const volumeKeys = ['join', 'leave', 'chat', 'connection', 'buttons'];
+  const volumeSliders = {};
+  volumeKeys.forEach((key) => {
+    volumeSliders[key] = {
+      slider: document.getElementById(`sound-volume-${key}`),
+      value: document.getElementById(`sound-volume-${key}-value`),
+    };
+  });
   if (!overlay) return;
 
   function refreshUI() {
@@ -195,6 +220,16 @@ function setupSettingsPanel() {
       if (opacityValue) opacityValue.textContent = `${pct}%`;
       updateSliderFill(opacitySlider);
     }
+    const volumesDisabled = currentTheme.sound === 'desligado';
+    volumeKeys.forEach((key) => {
+      const { slider, value } = volumeSliders[key];
+      if (!slider) return;
+      const pct = Math.round((currentTheme.volumes?.[key] ?? 1) * 100);
+      slider.value = String(pct);
+      slider.disabled = volumesDisabled;
+      if (value) value.textContent = `${pct}%`;
+      updateSliderFill(slider);
+    });
   }
 
   function selectTab(tabName) {
@@ -263,6 +298,13 @@ function setupSettingsPanel() {
       updateTheme({ loginOpacity: Number(opacitySlider.value) / 100, loginOpacityExplicit: true });
     });
   }
+  volumeKeys.forEach((key) => {
+    const { slider } = volumeSliders[key];
+    if (!slider) return;
+    slider.addEventListener('input', () => {
+      updateTheme({ volumes: { ...currentTheme.volumes, [key]: Number(slider.value) / 100 } });
+    });
+  });
 
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => selectTab(btn.dataset.tab));
@@ -441,9 +483,13 @@ function getNotifyAudioCtx() {
 }
 
 // notes: lista de { freq, start, duration, type, gain } tocadas em paralelo/
-// sequencia (start em segundos, relativo ao disparo).
-function playTones(notes) {
+// sequencia (start em segundos, relativo ao disparo). categoria: chave em
+// currentTheme.volumes (ver aba "Sons" nas configuracoes) - escala o gain
+// de cada nota, alem do liga/desliga geral em soundsEnabled().
+function playTones(notes, categoria) {
   if (!soundsEnabled()) return;
+  const volumeMult = categoria ? (currentTheme.volumes?.[categoria] ?? 1) : 1;
+  if (volumeMult <= 0) return;
   try {
     const ctx = getNotifyAudioCtx();
     const now = ctx.currentTime;
@@ -456,7 +502,7 @@ function playTones(notes) {
       const t1 = t0 + duration;
       // ataque/decaimento rapidos (poucos ms) pra nao estalar no inicio/fim.
       gainNode.gain.setValueAtTime(0, t0);
-      gainNode.gain.linearRampToValueAtTime(gain, t0 + 0.012);
+      gainNode.gain.linearRampToValueAtTime(gain * volumeMult, t0 + 0.012);
       gainNode.gain.linearRampToValueAtTime(0, t1);
       osc.connect(gainNode);
       gainNode.connect(ctx.destination);
@@ -468,11 +514,36 @@ function playTones(notes) {
   }
 }
 
-function playJoinSound() { playTones([{ freq: 523.25, duration: 0.09 }, { freq: 659.25, start: 0.08, duration: 0.14 }]); }
-function playLeaveSound() { playTones([{ freq: 523.25, duration: 0.09 }, { freq: 392.0, start: 0.08, duration: 0.16 }]); }
-function playChatSound() { playTones([{ freq: 880, duration: 0.07, gain: 0.09 }]); }
-function playDisconnectSound() { playTones([{ freq: 220, duration: 0.22, type: 'sawtooth', gain: 0.08 }]); }
-function playReconnectedSound() { playTones([{ freq: 440, duration: 0.08 }, { freq: 880, start: 0.07, duration: 0.12 }]); }
+function playJoinSound() { playTones([{ freq: 523.25, duration: 0.09 }, { freq: 659.25, start: 0.08, duration: 0.14 }], 'join'); }
+function playLeaveSound() { playTones([{ freq: 523.25, duration: 0.09 }, { freq: 392.0, start: 0.08, duration: 0.16 }], 'leave'); }
+function playChatSound() { playTones([{ freq: 880, duration: 0.07, gain: 0.09 }], 'chat'); }
+function playDisconnectSound() { playTones([{ freq: 220, duration: 0.22, type: 'sawtooth', gain: 0.08 }], 'connection'); }
+function playReconnectedSound() { playTones([{ freq: 440, duration: 0.08 }, { freq: 880, start: 0.07, duration: 0.12 }], 'connection'); }
+
+// --- Som de clique em botao (arquivos reais, nao sintetizado) ------------
+// Toca em qualquer <button> clicado no app inteiro (delegado no document,
+// sem precisar mexer em cada botao um por um). Botoes de fechar modal
+// (.settings-modal-close) usam um som diferente do resto, pra dar uma
+// distincao sutil entre "abrir/confirmar" e "fechar/cancelar".
+const CLICK_SOUND_PRIMARY = new Audio('assets/sounds/click1.wav');
+const CLICK_SOUND_CLOSE = new Audio('assets/sounds/click2.wav');
+const CLICK_SOUND_BASE_VOLUME = 0.35;
+
+function playButtonClickSound(isCloseAction) {
+  if (!soundsEnabled()) return;
+  const volumeMult = currentTheme.volumes?.buttons ?? 1;
+  if (volumeMult <= 0) return;
+  const base = isCloseAction ? CLICK_SOUND_CLOSE : CLICK_SOUND_PRIMARY;
+  const node = base.cloneNode();
+  node.volume = CLICK_SOUND_BASE_VOLUME * volumeMult;
+  node.play().catch(() => {});
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn || btn.disabled) return;
+  playButtonClickSound(btn.classList.contains('settings-modal-close'));
+}, true);
 
 // --- Animacoes da tela de login (entrada em cascata + brilho nos inputs) ---
 
@@ -944,7 +1015,7 @@ let masterMuted = false;
 function updateMuteAllButton() {
   const btn = document.getElementById('btn-mute-all');
   if (!btn) return;
-  btn.textContent = masterMuted ? '🔇' : '🔊';
+  btn.innerHTML = masterMuted ? ICONS.speakerOff : ICONS.speakerOn;
   btn.classList.toggle('active-mute', masterMuted);
   btn.title = masterMuted ? 'Desmutar todos (Ctrl+Alt+M)' : 'Mutar todos (Ctrl+Alt+M)';
 }
@@ -1089,7 +1160,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
 
   const btnFullscreen = document.createElement('button');
   btnFullscreen.className = 'tile-action-btn';
-  btnFullscreen.textContent = '⛶';
+  btnFullscreen.innerHTML = ICONS.fullscreen;
   btnFullscreen.title = 'Tela cheia (ou 2 cliques no video)';
   btnFullscreen.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1098,7 +1169,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
 
   const btnPip = document.createElement('button');
   btnPip.className = 'tile-action-btn';
-  btnPip.textContent = '\u{1F5D7}';
+  btnPip.innerHTML = ICONS.pip;
   btnPip.title = 'Destacar em janela flutuante';
   btnPip.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -1115,7 +1186,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
 
   const btnFocus = document.createElement('button');
   btnFocus.className = 'tile-action-btn';
-  btnFocus.textContent = '\u{1F50D}';
+  btnFocus.innerHTML = ICONS.focus;
   btnFocus.title = 'Focar (encolher os outros)';
   btnFocus.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1132,7 +1203,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
   if (onStopExtra) {
     const btnStopExtra = document.createElement('button');
     btnStopExtra.className = 'tile-action-btn';
-    btnStopExtra.textContent = '✕';
+    btnStopExtra.innerHTML = ICONS.close;
     btnStopExtra.title = 'Parar de compartilhar essa tela';
     btnStopExtra.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1180,7 +1251,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
 
     const icon = document.createElement('span');
     icon.className = 'volume-icon';
-    icon.textContent = '\u{1F50A}';
+    icon.innerHTML = ICONS.speakerOn;
 
     const slider = document.createElement('input');
     slider.type = 'range';
@@ -1197,7 +1268,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
         entry.sliderValue = pct;
         applyGain(peerId);
       }
-      icon.textContent = pct === 0 ? '\u{1F507}' : '\u{1F50A}';
+      icon.innerHTML = pct === 0 ? ICONS.speakerOff : ICONS.speakerOn;
       updateSliderFill(slider);
     });
     slider.addEventListener('click', (e) => e.stopPropagation());
@@ -1448,7 +1519,7 @@ function renderGameActivityBadge() {
     const dot = document.createElement('span');
     dot.className = 'dot';
     const label = document.createElement('span');
-    label.textContent = `🎮 ${GAME_TITLES[name]}`;
+    label.innerHTML = `${ICONS.gamepad} ${GAME_TITLES[name]}`;
 
     pill.appendChild(dot);
     pill.appendChild(label);
@@ -3078,7 +3149,7 @@ btnShareExtra.addEventListener('click', startExtraShare);
 btnStopShare.addEventListener('click', stopShare);
 btnLeave.addEventListener('click', leaveRoom);
 
-const INVITE_BTN_DEFAULT_TEXT = '\u{1F517} Convidar';
+const INVITE_BTN_DEFAULT_TEXT = `${ICONS.link} Convidar`;
 document.getElementById('btn-copy-invite').addEventListener('click', async () => {
   const btn = document.getElementById('btn-copy-invite');
   const roomId = roomLabel.textContent;
@@ -3090,11 +3161,11 @@ document.getElementById('btn-copy-invite').addEventListener('click', async () =>
     console.error('Falha ao copiar link de convite:', err);
     return;
   }
-  btn.textContent = '✅ Link copiado!';
+  btn.innerHTML = `${ICONS.check} Link copiado!`;
   btn.classList.add('copied');
   clearTimeout(btn._copyResetTimer);
   btn._copyResetTimer = setTimeout(() => {
-    btn.textContent = INVITE_BTN_DEFAULT_TEXT;
+    btn.innerHTML = INVITE_BTN_DEFAULT_TEXT;
     btn.classList.remove('copied');
   }, 2000);
 });

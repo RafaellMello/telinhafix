@@ -79,14 +79,22 @@
   --text: #f2f0ec;
   --text-muted: #9a9499;
   --input-radius: 3px;
-  /* Cores fixas das equipes do minijogo "Codigo Secreto" - de proposito
+  /* Cores fixas das equipes do minijogo Codenames - de proposito
      independentes da cor principal escolhida em Aparencia (que pode ser
      qualquer cor): o jogo sempre fala em equipe "Vermelha" e "Azul", entao
-     essas cores nunca podem mudar com o tema. */
-  --game-red: #d9342b;
-  --game-red-rgb: 217, 52, 43;
-  --game-blue: #2f6fef;
-  --game-blue-rgb: 47, 111, 239;
+     essas cores nunca podem mudar com o tema. Paleta inspirada nas cartas
+     fisicas originais do jogo (laranja queimado + teal sobre fundo
+     texturizado), ver .game-board/.game-cell mais abaixo. */
+  --game-red: #d9742f;
+  --game-red-rgb: 217, 116, 47;
+  --game-blue: #2f9aa6;
+  --game-blue-rgb: 47, 154, 166;
+  --game-cream: #efe0c4;
+  --game-cream-rgb: 239, 224, 196;
+  --game-cream-border: #d9bd8e;
+  --game-assassin: #2b2b2b;
+  --game-assassin-rgb: 43, 43, 43;
+  --game-board-bg: #c97a44;
 }
 
 * { box-sizing: border-box; }
@@ -298,6 +306,8 @@ input:focus {
 .input-eye-toggle:active { transform: translateY(-50%); }
 .input-eye-toggle .eye-icon { width: 17px; height: 17px; }
 .input-eye-toggle .eye-icon.hidden { display: none; }
+
+.icon-svg { width: 1.1em; height: 1.1em; display: inline-block; vertical-align: -0.17em; flex-shrink: 0; }
 
 button {
   cursor: pointer;
@@ -530,6 +540,14 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-size: calc(13px * var(--font-scale));
   color: var(--text-muted);
   text-transform: uppercase;
+}
+
+.volume-row { margin-top: 12px; }
+.volume-row:first-child { margin-top: 2px; }
+.volume-row-label {
+  display: block;
+  font-size: calc(12.5px * var(--font-scale));
+  color: var(--text-muted);
 }
 
 .opacity-control {
@@ -1915,47 +1933,86 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-size: calc(12px * var(--font-scale));
 }
 
+/* Tabuleiro ao estilo das cartas fisicas originais do Codenames: fundo
+   laranja queimado com textura de pontinhos, cartas com borda grossa na
+   cor do time e uma etiqueta branca pra palavra em vez do fundo inteiro
+   colorido (ver referencia que o Rafael mandou). */
 .game-board {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 14px;
+  background-color: var(--game-board-bg);
+  background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1.4px, transparent 1.4px);
+  background-size: 13px 13px;
+  border-radius: 12px;
+  padding: 16px;
 }
 
 .game-cell {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 14px 6px;
+  position: relative;
+  background: var(--game-cream);
+  border: 3px solid var(--game-cream-border);
+  border-radius: 10px;
+  padding: 0;
   text-align: center;
-  font-size: calc(12px * var(--font-scale));
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  min-height: 48px;
+  min-height: 92px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   word-break: break-word;
   transition: filter 0.15s, transform 0.1s;
+  overflow: hidden;
+}
+
+/* O "selo" circular no canto superior direito de cada carta, igual a
+   referencia - decorativo, so reforca a sensacao de carta fisica. */
+.game-cell::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+}
+
+.game-cell span {
+  display: block;
+  width: calc(100% - 14px);
+  margin: 0 7px 7px;
+  background: #fff;
+  color: #221c12;
+  padding: 7px 3px;
+  border-radius: 6px;
+  font-family: 'Poppins', 'Nunito', var(--font-ui);
+  font-size: calc(11.5px * var(--font-scale));
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .game-cell-clickable { cursor: pointer; }
-.game-cell-clickable:hover { filter: brightness(1.2); transform: translateY(-1px); border-color: var(--red-bright); }
+.game-cell-clickable:hover { filter: brightness(1.08); transform: translateY(-2px); }
 
-/* Visao do Mestre-Espiao: so um tom de fundo sutil pra palavra ainda nao
-   revelada - bem mais discreto que uma palavra ja revelada (essa fica
-   solida, ver .game-cell-revealed abaixo), pra nao virar "spoiler" visual
+/* Visao do Mestre-Espiao: a MESMA cor do time, so que mais clara/leve -
+   bem mais discreta que uma palavra ja revelada (essa fica com a cor
+   cheia, ver .game-cell-revealed abaixo), pra nao virar "spoiler" visual
    gritante mesmo so aparecendo pra quem pode ver mesmo. */
-.game-cell-spy-red { background: rgba(var(--game-red-rgb), 0.22); border-color: rgba(var(--game-red-rgb), 0.5); }
-.game-cell-spy-blue { background: rgba(var(--game-blue-rgb), 0.22); border-color: rgba(var(--game-blue-rgb), 0.5); }
-.game-cell-spy-neutral { background: rgba(255, 255, 255, 0.06); }
-.game-cell-spy-assassin { background: rgba(0, 0, 0, 0.5); border-color: #555; }
+.game-cell-spy-red { background: rgba(var(--game-red-rgb), 0.38); border-color: var(--game-red); }
+.game-cell-spy-blue { background: rgba(var(--game-blue-rgb), 0.38); border-color: var(--game-blue); }
+.game-cell-spy-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
+.game-cell-spy-assassin { background: rgba(var(--game-assassin-rgb), 0.6); border-color: var(--game-assassin); }
 
-.game-cell-revealed { cursor: default; opacity: 0.85; }
-.game-cell-revealed.game-cell-red { background: var(--game-red); border-color: var(--game-red); color: #fff; }
-.game-cell-revealed.game-cell-blue { background: var(--game-blue); border-color: var(--game-blue); color: #fff; }
-.game-cell-revealed.game-cell-neutral { background: #58544d; border-color: #58544d; color: #fff; }
-.game-cell-revealed.game-cell-assassin { background: #0a0a0a; border-color: #000; color: #fff; }
+.game-cell-revealed { cursor: default; }
+.game-cell-revealed.game-cell-red { background: var(--game-red); border-color: #a85420; }
+.game-cell-revealed.game-cell-blue { background: var(--game-blue); border-color: #1f6b73; }
+.game-cell-revealed.game-cell-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
+.game-cell-revealed.game-cell-assassin { background: var(--game-assassin); border-color: #000; }
+.game-cell-revealed.game-cell-assassin::before { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.25); }
 
 .game-clue-active {
   text-align: center;
