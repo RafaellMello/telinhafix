@@ -266,6 +266,18 @@ contextBridge.exposeInMainWorld('appLinks', {
   openCredit() {
     return ipcRenderer.invoke('open-credit-link');
   },
+  // Link de convite (telinhafix://join?room=X) - clicar num link assim
+  // (app ja aberto ou nao) manda esse evento com o codigo da sala. Ver
+  // main.js (extractInviteRoomFromArgv/sendInviteRoomToRenderer).
+  onInviteRoom(cb) {
+    ipcRenderer.on('invite-room', (event, { roomId }) => cb(roomId));
+  },
+  // navigator.clipboard.writeText() do renderer e negado pelo
+  // setPermissionRequestHandler (so libera 'media') - copia via o modulo
+  // nativo do Electron no processo principal em vez disso.
+  copyText(text) {
+    return ipcRenderer.invoke('copy-to-clipboard', text);
+  },
 });
 
 contextBridge.exposeInMainWorld('appInfo', {

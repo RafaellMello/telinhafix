@@ -1,6 +1,6 @@
 {
   "name": "telinhafix",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "App local para compartilhamento de tela entre amigos, estilo Discord",
   "main": "main.js",
   "scripts": {
@@ -36,6 +36,12 @@
       {
         "from": "native/TelinhaFixScreenHelper.exe",
         "to": "native/TelinhaFixScreenHelper.exe"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "TelinhaFix Invite",
+        "schemes": ["telinhafix"]
       }
     ],
     "win": {

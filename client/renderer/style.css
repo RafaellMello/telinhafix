@@ -900,6 +900,12 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .topbar-left { display: flex; align-items: center; gap: 14px; }
 
+.invite-link-btn {
+  padding: 6px 12px;
+  font-size: calc(11px * var(--font-scale));
+}
+.invite-link-btn.copied { border-color: var(--red-bright); color: var(--red-bright); }
+
 .game-activity-badge { display: flex; gap: 8px; }
 
 .game-activity-pill {

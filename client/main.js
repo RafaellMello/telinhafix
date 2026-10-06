@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, globalShortcut, screen } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, globalShortcut, screen, clipboard } = require('electron');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const { autoUpdater } = require('electron-updater');
@@ -323,6 +323,53 @@ async function getPrimaryScreenSource() {
   return sources.find((s) => s.display_id === primaryId) || sources[0];
 }
 
+let mainWindow = null;
+
+// --- Link de convite (telinhafix://join?room=X) ---------------------------
+// Protocolo customizado registrado no Windows na instalacao (ver "protocols"
+// no package.json) - clicar num link assim abre o app (ou foca o que ja
+// esta aberto, via single-instance lock abaixo) e preenche o codigo da sala
+// sozinho, sem precisar copiar/colar ou ditar o codigo por audio.
+const INVITE_PROTOCOL = 'telinhafix';
+
+function extractInviteRoomFromArgv(argv) {
+  const urlArg = argv.find((arg) => arg.startsWith(`${INVITE_PROTOCOL}://`));
+  if (!urlArg) return null;
+  try {
+    return new URL(urlArg).searchParams.get('room') || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function focusMainWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+}
+
+function sendInviteRoomToRenderer(roomId) {
+  if (!roomId || !mainWindow) return;
+  focusMainWindow();
+  mainWindow.webContents.send('invite-room', { roomId });
+}
+
+app.setAsDefaultProtocolClient(INVITE_PROTOCOL);
+
+// So uma janela do TelinhaFix por vez - clicar num link de convite com o
+// app ja aberto deve focar a janela existente (e preencher a sala nela),
+// nunca abrir uma segunda instancia do zero.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const roomId = extractInviteRoomFromArgv(argv);
+    if (roomId) sendInviteRoomToRenderer(roomId);
+    else focusMainWindow();
+  });
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1100,
@@ -347,6 +394,9 @@ function createWindow() {
       backgroundThrottling: false,
     },
   });
+
+  mainWindow = win;
+  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
 
   win.once('ready-to-show', () => {
     win.maximize();
@@ -450,6 +500,16 @@ function createWindow() {
     shell.openExternal('https://rafaelmello.site');
   });
 
+  // Copiar pra area de transferencia (botao "Convidar") via o modulo nativo
+  // do Electron, e nao navigator.clipboard.writeText() do renderer - o
+  // setPermissionRequestHandler acima so libera 'media', entao a API web
+  // de clipboard seria negada (testado: "NotAllowedError: Write permission
+  // denied"). O modulo nativo nao passa pelo modelo de permissoes da web,
+  // entao funciona direto.
+  ipcMain.handle('copy-to-clipboard', (_event, text) => {
+    clipboard.writeText(String(text || ''));
+  });
+
   // Atalhos globais (funcionam mesmo com o TelinhaFix em segundo plano, tipo
   // enquanto a pessoa ta num jogo) - a pessoa escolhe a combinacao de cada
   // um e pode desligar tudo nas configuracoes de aparencia; esse estado
@@ -549,6 +609,15 @@ function setupAutoUpdater() {
 app.whenReady().then(() => {
   createWindow();
   setupAutoUpdater();
+
+  // Abertura "a frio" (app nao estava rodando) clicando num link de convite -
+  // o Windows passa a URL como argumento de linha de comando na primeira
+  // abertura. Espera a pagina carregar antes de mandar o IPC, senao o
+  // listener do renderer ainda nao existe pra receber.
+  const coldStartRoomId = extractInviteRoomFromArgv(process.argv);
+  if (coldStartRoomId) {
+    mainWindow.webContents.once('did-finish-load', () => sendInviteRoomToRenderer(coldStartRoomId));
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
