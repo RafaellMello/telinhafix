@@ -491,6 +491,16 @@ function maybeAutoEndSketchVote(roomId, game) {
   if (roomSize > 0 && game.votes.size >= roomSize) game.status = 'ended';
 }
 
+// Convite de minijogo: quando alguem abre o lobby / comeca um minijogo,
+// avisa todo mundo da sala (menos quem iniciou) pra aparecer o pop-up
+// "Fulano iniciou um jogo de X - Entrar / Agora nao" no app de cada um.
+const MINIGAME_NAMES = { codenames: 'Codenames', stop: 'Stop / Adedonha', sketch: 'Sketch do PC' };
+
+function notifyMinigameStarted(socket, roomId, gameId) {
+  const byName = (rooms.get(roomId)?.get(socket.id)?.name) || 'Alguém';
+  socket.to(roomId).emit('minigame-invite', { gameId, gameName: MINIGAME_NAMES[gameId], byName });
+}
+
 // roomId -> Set<socketId> de admins espectando essa sala de forma invisivel
 // (nao entram no Map "rooms" acima - nao contam como participante, nao
 // aparecem pra ninguem, so recebem video/audio dos outros).
@@ -691,10 +701,14 @@ io.on('connection', (socket) => {
       if (ack) ack({ ok: false, error: 'Essa equipe já tem um Mestre-Espião' });
       return;
     }
+    const lobbyWasEmpty = ['red', 'blue'].every((t) => !game.teams[t].spymaster && game.teams[t].agents.length === 0);
     removeFromGameTeams(game, socket.id);
     if (role === 'spymaster') game.teams[team].spymaster = socket.id;
     else game.teams[team].agents.push(socket.id);
     broadcastGameState(currentRoom);
+    // Codenames nao tem um "abrir lobby" explicito - o primeiro a escolher
+    // equipe num lobby vazio e quem "iniciou" o jogo.
+    if (lobbyWasEmpty) notifyMinigameStarted(socket, currentRoom, 'codenames');
     if (ack) ack({ ok: true });
   });
 
@@ -861,6 +875,7 @@ io.on('connection', (socket) => {
     game.readyPlayers = new Set();
     game.results = null;
     broadcastStopState(currentRoom);
+    notifyMinigameStarted(socket, currentRoom, 'stop');
     if (ack) ack({ ok: true });
   });
 
@@ -959,6 +974,7 @@ io.on('connection', (socket) => {
     game.status = 'voting';
     game.round += 1;
     broadcastSketchState(currentRoom);
+    notifyMinigameStarted(socket, currentRoom, 'sketch');
     if (ack) ack({ ok: true });
   });
 
