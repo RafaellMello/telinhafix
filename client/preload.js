@@ -212,6 +212,15 @@ contextBridge.exposeInMainWorld('sketchGame', {
   },
 });
 
+// Convite de minijogo: o servidor avisa quando alguem da sala abre o lobby /
+// comeca um minijogo (ver notifyMinigameStarted em server/index.js).
+contextBridge.exposeInMainWorld('minigames', {
+  onInvite(cb) {
+    if (!socket) return;
+    socket.on('minigame-invite', (invite) => cb(invite));
+  },
+});
+
 // Ponte com o helper nativo (TelinhaFixAudioHelper.exe), que captura o
 // audio do sistema excluindo o Discord. O main process cuida de ligar/
 // desligar o processo; aqui so repassamos os pedacos de audio crus (PCM

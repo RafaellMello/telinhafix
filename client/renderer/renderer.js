@@ -1643,6 +1643,45 @@ function renderGameBoard() {
   }
 }
 
+// --- Convite de minijogo ----------------------------------------------------
+// Quando alguem da sala abre o lobby / comeca um minijogo, o servidor manda
+// 'minigame-invite' pra todo mundo (menos quem iniciou) e aparece o pop-up
+// com "Entrar" (abre direto o jogo) ou "Agora não" (so fecha).
+const MINIGAME_INVITE_TIMEOUT_MS = 30000;
+let minigameInviteGameId = null;
+let minigameInviteTimer = null;
+
+function showMinigameInvite({ gameId, gameName, byName }) {
+  if (!GAME_TITLES[gameId]) return;
+  // Ja ta com esse jogo aberto - nao precisa convidar.
+  if (gameOverlayOpen && currentGameView === gameId) return;
+  minigameInviteGameId = gameId;
+  const textEl = document.getElementById('minigame-invite-text');
+  textEl.textContent = '';
+  const who = document.createElement('strong');
+  who.textContent = byName || 'Alguém';
+  const game = document.createElement('strong');
+  game.textContent = gameName || GAME_TITLES[gameId];
+  textEl.append(who, ' iniciou um jogo de ', game);
+  document.getElementById('minigame-invite').classList.remove('hidden');
+  clearTimeout(minigameInviteTimer);
+  minigameInviteTimer = setTimeout(hideMinigameInvite, MINIGAME_INVITE_TIMEOUT_MS);
+}
+
+function hideMinigameInvite() {
+  clearTimeout(minigameInviteTimer);
+  minigameInviteTimer = null;
+  minigameInviteGameId = null;
+  document.getElementById('minigame-invite').classList.add('hidden');
+}
+
+document.getElementById('btn-minigame-invite-join').addEventListener('click', () => {
+  const gameId = minigameInviteGameId;
+  hideMinigameInvite();
+  if (gameId) jumpToGame(gameId);
+});
+document.getElementById('btn-minigame-invite-dismiss').addEventListener('click', hideMinigameInvite);
+
 function resetGameUiState() {
   gameState = null;
   mySecretMap = null;
@@ -1657,6 +1696,7 @@ function resetGameUiState() {
   mySketchVote = null;
   mySketchRound = -1;
   closeGameOverlay();
+  hideMinigameInvite();
   renderGameActivityBadge();
 }
 
@@ -3245,6 +3285,11 @@ btnJoin.addEventListener('click', async () => {
       if (newState.status === 'lobby' || newState.status === 'playing') stopShowingEditor = false;
       renderStop();
       renderGameActivityBadge();
+    });
+
+    window.minigames.onInvite((invite) => {
+      showMinigameInvite(invite);
+      playJoinSound();
     });
 
     window.sketchGame.onState((newState) => {
