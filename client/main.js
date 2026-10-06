@@ -597,7 +597,17 @@ function setupAutoUpdater() {
         noLink: true,
       })
       .then((result) => {
-        if (result.response === 0) autoUpdater.quitAndInstall();
+        // quitAndInstall() sem argumentos usa isSilent=false por padrao
+        // (biblioteca electron-updater) - isso abre o instalador NSIS
+        // completo (tela de boas-vindas, escolher pasta, botao Instalar,
+        // Concluir), que fica esperando clique e pode passar despercebido
+        // (minimizado/atras de outra janela) - a pessoa acha que "o update
+        // sumiu" quando na verdade ele ta parado esperando ela mesma clicar
+        // em "Instalar". isSilent=true reaproveita o MESMO instalador ja
+        // baixado, so que com a flag /S do NSIS (instala sem mostrar nada),
+        // e isForceRunAfter=true reabre o app sozinho no final - do jeito
+        // que o texto do dialogo ("Reiniciar agora") promete.
+        if (result.response === 0) autoUpdater.quitAndInstall(true, true);
       });
   });
 
