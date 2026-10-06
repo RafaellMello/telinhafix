@@ -659,6 +659,18 @@ function restoreSavedRoomId() {
 
 restoreSavedRoomId();
 
+// Link de convite (telinhafix://join?room=X, ver btn-copy-invite mais
+// abaixo e main.js) - so preenche o codigo da sala se a pessoa ainda
+// estiver na tela de login; clicar num link de convite enquanto ja esta
+// numa call nao faz nada sozinho (nao da pra trocar de sala no meio de
+// uma chamada sem avisar - mais seguro so ignorar que interromper algo).
+window.appLinks.onInviteRoom((roomId) => {
+  if (!roomId || !roomScreen.classList.contains('hidden')) return; // ja esta numa sala - ignora
+  const input = document.getElementById('room-id');
+  input.value = roomId;
+  input.focus();
+});
+
 const AVATAR_FILES = [
   'babini.jpg', 'babini2.jpg', 'coka.jpg', 'dani.jpg', 'rudeus.jpg',
   'fab.jpg', 'hent.jpg', 'img-20240330-wa0127_original.jpg', 'nathan.jpg',
@@ -2958,6 +2970,27 @@ btnToggleCamera.addEventListener('click', () => {
 btnShareExtra.addEventListener('click', startExtraShare);
 btnStopShare.addEventListener('click', stopShare);
 btnLeave.addEventListener('click', leaveRoom);
+
+const INVITE_BTN_DEFAULT_TEXT = '\u{1F517} Convidar';
+document.getElementById('btn-copy-invite').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-copy-invite');
+  const roomId = roomLabel.textContent;
+  if (!roomId) return;
+  const link = `telinhafix://join?room=${encodeURIComponent(roomId)}`;
+  try {
+    await window.appLinks.copyText(link);
+  } catch (err) {
+    console.error('Falha ao copiar link de convite:', err);
+    return;
+  }
+  btn.textContent = '✅ Link copiado!';
+  btn.classList.add('copied');
+  clearTimeout(btn._copyResetTimer);
+  btn._copyResetTimer = setTimeout(() => {
+    btn.textContent = INVITE_BTN_DEFAULT_TEXT;
+    btn.classList.remove('copied');
+  }, 2000);
+});
 
 document.getElementById('btn-mute-all').addEventListener('click', toggleMasterMute);
 
