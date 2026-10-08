@@ -1276,7 +1276,21 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   pointer-events: auto;
 }
 
-.volume-icon { font-size: 12px; }
+.volume-icon {
+  font-size: 12px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 2px;
+  margin: 0;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.volume-icon:hover { filter: none; opacity: 0.8; }
+.volume-icon:active { transform: none; }
 
 .volume-slider {
   width: 80px;

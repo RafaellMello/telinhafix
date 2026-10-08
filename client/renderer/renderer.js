@@ -34,6 +34,11 @@ const ICONS = {
   link: `<svg ${ICON_SVG_ATTRS}><path d="M10 13a5 5 0 0 0 7.07 0l2.5-2.5a5 5 0 0 0-7.07-7.07L11 4.91"></path><path d="M14 11a5 5 0 0 0-7.07 0l-2.5 2.5a5 5 0 0 0 7.07 7.07L13 19.09"></path></svg>`,
   speakerOn: `<svg ${ICON_SVG_ATTRS}><path d="M4 9h4l5-5v16l-5-5H4V9Z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 6a8 8 0 0 1 0 12"></path></svg>`,
   speakerOff: `<svg ${ICON_SVG_ATTRS}><path d="M4 9h4l5-5v16l-5-5H4V9Z"></path><path d="M16 9l5 6M21 9l-5 6"></path></svg>`,
+  // Icone do mudo por participante (tile de video): fica em cima do icone
+  // "ligado" (currentColor) com uma linha diagonal VERMELHA fixa por cima -
+  // nao usa currentColor nessa linha de proposito, pra continuar vermelha
+  // mesmo se a pessoa trocar a cor de destaque do app em Aparencia.
+  speakerMuted: `<svg ${ICON_SVG_ATTRS}><path d="M4 9h4l5-5v16l-5-5H4V9Z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 6a8 8 0 0 1 0 12"></path><line x1="2.5" y1="2.5" x2="21.5" y2="21.5" stroke="var(--red-bright)"></line></svg>`,
   gamepad: `<svg ${ICON_SVG_ATTRS}><rect x="2" y="7" width="20" height="10" rx="5"></rect><path d="M6 10v4M4 12h4"></path><circle cx="15" cy="10.5" r="1"></circle><circle cx="18" cy="13.5" r="1"></circle></svg>`,
   fullscreen: `<svg ${ICON_SVG_ATTRS}><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>`,
   close: `<svg ${ICON_SVG_ATTRS}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
@@ -1249,9 +1254,11 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
     const volumeRow = document.createElement('div');
     volumeRow.className = 'volume-control';
 
-    const icon = document.createElement('span');
+    const icon = document.createElement('button');
+    icon.type = 'button';
     icon.className = 'volume-icon';
     icon.innerHTML = ICONS.speakerOn;
+    icon.title = 'Mutar';
 
     const slider = document.createElement('input');
     slider.type = 'range';
@@ -1261,17 +1268,36 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
     slider.title = 'Ate 200% - passar de 100% amplifica alem do volume original';
     slider.className = 'volume-slider';
     updateSliderFill(slider);
-    slider.addEventListener('input', () => {
-      const pct = Number(slider.value);
+
+    // Volume lembrado de antes de mutar pelo icone, pra restaurar o mesmo
+    // nivel ao desmutar (em vez de sempre voltar pra 100%).
+    let lastVolume = 100;
+
+    function setVolume(pct) {
+      slider.value = String(pct);
       const entry = remoteGainNodes.get(peerId);
       if (entry) {
         entry.sliderValue = pct;
         applyGain(peerId);
       }
-      icon.innerHTML = pct === 0 ? ICONS.speakerOff : ICONS.speakerOn;
+      const muted = pct === 0;
+      icon.innerHTML = muted ? ICONS.speakerMuted : ICONS.speakerOn;
+      icon.title = muted ? 'Desmutar' : 'Mutar';
       updateSliderFill(slider);
+    }
+
+    slider.addEventListener('input', () => {
+      const pct = Number(slider.value);
+      if (pct > 0) lastVolume = pct;
+      setVolume(pct);
     });
     slider.addEventListener('click', (e) => e.stopPropagation());
+
+    icon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isMuted = Number(slider.value) === 0;
+      setVolume(isMuted ? (lastVolume || 100) : 0);
+    });
 
     volumeRow.appendChild(icon);
     volumeRow.appendChild(slider);
