@@ -356,7 +356,19 @@
 
         <div id="codenames-view" class="hidden">
         <div id="game-lobby-view" class="game-lobby">
+          <p class="game-whats-new">Codenames chegou com tudo: agora dá pra jogar Livre, 2x2, 3x3 ou 3x3 Todos contra todos (3 equipes na mesma partida)!</p>
           <p class="settings-hint">Escolham uma equipe e um papel. Cada equipe precisa de 1 Mestre-Espião e pelo menos 1 Agente pra começar. Quem não escolher fica só assistindo.</p>
+
+          <div class="settings-group">
+            <label>Modo</label>
+            <div id="game-mode-options" class="game-mode-options">
+              <button type="button" class="game-mode-option" data-mode="livre">Livre</button>
+              <button type="button" class="game-mode-option" data-mode="2x2">2x2</button>
+              <button type="button" class="game-mode-option" data-mode="3x3">3x3</button>
+              <button type="button" class="game-mode-option" data-mode="ffa3">3x3 Todos contra todos</button>
+            </div>
+            <p class="settings-hint">Trocar o modo reinicia as equipes escolhidas até agora.</p>
+          </div>
 
           <div class="game-teams-row">
             <div class="game-team-card game-team-card-red">
@@ -385,6 +397,20 @@
                 <ul class="game-agents-list" data-slot="blue-agents"></ul>
               </div>
               <button type="button" class="ghost game-pick-btn" data-team="blue" data-role="agent">Entrar como agente</button>
+            </div>
+
+            <div class="game-team-card game-team-card-green hidden" data-team-card="green">
+              <h3>Equipe Verde</h3>
+              <div class="game-team-slot">
+                <span class="game-slot-label">Mestre-Espião</span>
+                <span class="game-slot-value" data-slot="green-spymaster">—</span>
+              </div>
+              <button type="button" class="ghost game-pick-btn" data-team="green" data-role="spymaster">Escolher</button>
+              <div class="game-team-slot game-team-slot-agents">
+                <span class="game-slot-label">Agentes</span>
+                <ul class="game-agents-list" data-slot="green-agents"></ul>
+              </div>
+              <button type="button" class="ghost game-pick-btn" data-team="green" data-role="agent">Entrar como agente</button>
             </div>
           </div>
 

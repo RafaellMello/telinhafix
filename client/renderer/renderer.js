@@ -1486,7 +1486,8 @@ let mySecretMapRound = -1;
 // 'picker' | 'codenames' | 'stop' - qual tela o painel 🎮 ta mostrando.
 let currentGameView = 'picker';
 
-const GAME_TEAM_LABEL = { red: 'Vermelha', blue: 'Azul' };
+const GAME_TEAM_LABEL = { red: 'Vermelha', blue: 'Azul', green: 'Verde' };
+const GAME_MODE_LABEL = { livre: 'Livre', '2x2': '2x2', '3x3': '3x3', ffa3: '3x3 Todos contra todos' };
 const GAME_TITLES = { picker: 'Minijogos', codenames: 'Codenames', stop: 'Stop / Adedonha', sketch: 'Sketch do PC' };
 
 function showGamePicker() {
@@ -1556,7 +1557,7 @@ function renderGameActivityBadge() {
 
 function myGameRole() {
   if (!gameState || !selfId) return null;
-  for (const team of ['red', 'blue']) {
+  for (const team of Object.keys(gameState.teams)) {
     const t = gameState.teams[team];
     if (t.spymaster && t.spymaster.id === selfId) return { team, role: 'spymaster' };
     if (t.agents.some((a) => a.id === selfId)) return { team, role: 'agent' };
@@ -1618,10 +1619,23 @@ function renderGame() {
   }
 }
 
+const GAME_MODE_MAX_AGENTS = { livre: Infinity, '2x2': 1, '3x3': 2, ffa3: 1 };
+
 function renderGameLobby() {
   const role = myGameRole();
+  const activeTeams = Object.keys(gameState.teams);
+  const maxAgents = GAME_MODE_MAX_AGENTS[gameState.mode] ?? Infinity;
 
-  ['red', 'blue'].forEach((team) => {
+  document.querySelectorAll('.game-mode-option').forEach((btn) => {
+    btn.classList.toggle('selected', btn.dataset.mode === gameState.mode);
+  });
+
+  // Carta da equipe Verde so existe no modo ffa3 - as outras duas (vermelha/
+  // azul) aparecem em todo modo, entao nao precisam de toggle.
+  const greenCard = document.querySelector('[data-team-card="green"]');
+  if (greenCard) greenCard.classList.toggle('hidden', !activeTeams.includes('green'));
+
+  activeTeams.forEach((team) => {
     const t = gameState.teams[team];
     document.querySelector(`[data-slot="${team}-spymaster"]`).textContent = t.spymaster ? t.spymaster.name : '—';
 
@@ -1643,9 +1657,12 @@ function renderGameLobby() {
 
   document.querySelectorAll('.game-pick-btn').forEach((btn) => {
     const team = btn.dataset.team;
+    if (!activeTeams.includes(team)) return; // time nao existe nesse modo (ex: verde fora do ffa3)
     const btnRole = btn.dataset.role;
     const isMine = !!(role && role.team === team && role.role === btnRole);
-    const slotTaken = btnRole === 'spymaster' && gameState.teams[team].spymaster && !isMine;
+    const slotTaken = btnRole === 'spymaster'
+      ? gameState.teams[team].spymaster && !isMine
+      : gameState.teams[team].agents.length >= maxAgents && !isMine;
     btn.disabled = !!slotTaken;
     btn.classList.toggle('selected', isMine);
     if (btnRole === 'spymaster') {
@@ -1657,7 +1674,7 @@ function renderGameLobby() {
 
   document.getElementById('btn-game-leave-role').classList.toggle('hidden', !role);
 
-  const bothReady = ['red', 'blue'].every((team) => gameState.teams[team].spymaster && gameState.teams[team].agents.length >= 1);
+  const bothReady = activeTeams.every((team) => gameState.teams[team].spymaster && gameState.teams[team].agents.length >= 1);
   document.getElementById('btn-game-start').disabled = !bothReady;
 }
 
@@ -1700,8 +1717,12 @@ function renderGameBoard() {
     turnEl.textContent = `Vez da equipe ${teamLabel} — escolham uma palavra`;
   }
 
-  document.getElementById('game-remaining').textContent =
-    `Vermelha: ${gameState.remaining.red} restantes · Azul: ${gameState.remaining.blue} restantes`;
+  document.getElementById('game-remaining').textContent = Object.keys(gameState.teams)
+    .map((team) => {
+      const eliminatedTag = gameState.eliminated?.includes(team) ? ' (eliminada)' : '';
+      return `${GAME_TEAM_LABEL[team]}: ${gameState.remaining[team]} restantes${eliminatedTag}`;
+    })
+    .join(' · ');
 
   const clueActiveEl = document.getElementById('game-clue-active');
   if (gameState.clue && gameState.status === 'playing') {
@@ -1732,7 +1753,9 @@ function renderGameBoard() {
   const overBanner = document.getElementById('game-over-banner');
   if (gameState.status === 'over') {
     const winLabel = GAME_TEAM_LABEL[gameState.winner] || '';
-    const reasonText = gameState.winReason === 'assassin' ? 'a outra equipe revelou o assassino' : 'encontrou todas as suas palavras';
+    let reasonText = 'encontrou todas as suas palavras';
+    if (gameState.winReason === 'assassin') reasonText = 'a outra equipe revelou o assassino';
+    else if (gameState.winReason === 'last-standing') reasonText = 'foi a última equipe que sobrou depois dos assassinos';
     document.getElementById('game-over-text').textContent = `Equipe ${winLabel} venceu! (${reasonText})`;
     overBanner.classList.remove('hidden');
   } else {
@@ -3267,6 +3290,15 @@ document.getElementById('btn-sketch-end').addEventListener('click', () => {
 });
 document.getElementById('btn-sketch-new').addEventListener('click', () => {
   window.sketchGame.reset().catch((err) => console.error('Falha ao criar nova pergunta:', err));
+});
+
+document.querySelectorAll('.game-mode-option').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    // Clicar no modo que ja esta selecionado so zeraria as equipes a toa.
+    if (gameState && gameState.mode === btn.dataset.mode) return;
+    setGameError('');
+    window.game.setMode(btn.dataset.mode).catch((err) => setGameError(err.message));
+  });
 });
 
 document.querySelectorAll('.game-pick-btn').forEach((btn) => {
