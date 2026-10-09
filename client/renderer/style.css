@@ -1296,6 +1296,18 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   pointer-events: auto;
 }
 
+/* Enquanto voce compartilha com audio do sistema, o ganho de todo mundo
+   fica forcado em 0 pra nao vazar eco (ver suppressForEcho em applyGain,
+   no renderer.js) - sem isso o slider continuava "mexivel" mas sem efeito
+   nenhum no som, parecendo quebrado. Ainda aparece ao passar o mouse
+   (pra dar pra ler o titulo explicando o motivo), so que sem reagir. */
+.volume-control.volume-control-suppressed .volume-icon,
+.volume-control.volume-control-suppressed .volume-slider {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
 .volume-icon {
   font-size: 12px;
   background: none;
