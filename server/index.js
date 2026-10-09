@@ -91,20 +91,39 @@ function shuffle(arr) {
   return a;
 }
 
+// Modos de equipe do Codenames - "livre" e o padrao de sempre (sem limite
+// de agentes, so 2 equipes). 2x2/3x3 sao a mesma coisa de 2 equipes so que
+// com um teto de agentes por equipe. "ffa3" e o modo "Todos contra todos":
+// 3 equipes em vez de 2, cada uma com no maximo 1 agente.
+const GAME_MODES = {
+  livre: { teams: ['red', 'blue'], maxAgents: Infinity },
+  '2x2': { teams: ['red', 'blue'], maxAgents: 1 },
+  '3x3': { teams: ['red', 'blue'], maxAgents: 2 },
+  ffa3: { teams: ['red', 'blue', 'green'], maxAgents: 1 },
+};
+const DEFAULT_GAME_MODE = 'livre';
+const TEAM_LABEL = { red: 'Vermelho', blue: 'Azul', green: 'Verde' };
+const TEAM_LABEL_FEM = { red: 'Vermelha', blue: 'Azul', green: 'Verde' };
+
+function emptyTeams(mode) {
+  const teams = {};
+  GAME_MODES[mode].teams.forEach((t) => { teams[t] = { spymaster: null, agents: [] }; });
+  return teams;
+}
+
 function createCodenamesGame() {
   return {
     status: 'lobby', // lobby | playing | over
     round: 0,
-    board: [], // [{ word, team: 'red'|'blue'|'neutral'|'assassin', revealed }]
-    currentTeam: null, // 'red' | 'blue'
+    mode: DEFAULT_GAME_MODE,
+    board: [], // [{ word, team: 'red'|'blue'|'green'|'neutral'|'assassin', revealed }]
+    currentTeam: null,
+    eliminated: [], // times que caíram num assassino no modo ffa3 - fora da rodada, mas o jogo continua pros outros
     phase: null, // 'clue' | 'guess'
     clue: null, // { word, number, guessesMade, guessesAllowed }
-    teams: {
-      red: { spymaster: null, agents: [] },
-      blue: { spymaster: null, agents: [] },
-    },
+    teams: emptyTeams(DEFAULT_GAME_MODE),
     winner: null,
-    winReason: null, // 'words' | 'assassin'
+    winReason: null, // 'words' | 'assassin' | 'last-standing'
     log: [],
   };
 }
@@ -115,7 +134,7 @@ function getOrCreateGame(roomId) {
 }
 
 function playerGameRole(game, socketId) {
-  for (const team of ['red', 'blue']) {
+  for (const team of GAME_MODES[game.mode].teams) {
     if (game.teams[team].spymaster === socketId) return { team, role: 'spymaster' };
     if (game.teams[team].agents.includes(socketId)) return { team, role: 'agent' };
   }
@@ -123,16 +142,21 @@ function playerGameRole(game, socketId) {
 }
 
 function removeFromGameTeams(game, socketId) {
-  for (const team of ['red', 'blue']) {
+  for (const team of GAME_MODES[game.mode].teams) {
     if (game.teams[team].spymaster === socketId) game.teams[team].spymaster = null;
     game.teams[team].agents = game.teams[team].agents.filter((id) => id !== socketId);
   }
 }
 
-function generateBoard(startingTeam) {
-  const otherTeam = startingTeam === 'red' ? 'blue' : 'red';
+function generateBoard(mode, startingTeam) {
   const words = shuffle(CODENAMES_WORDS).slice(0, 25);
-  const counts = { [startingTeam]: 9, [otherTeam]: 8, neutral: 7, assassin: 1 };
+  let counts;
+  if (mode === 'ffa3') {
+    counts = { red: 6, blue: 6, green: 6, neutral: 5, assassin: 2 };
+  } else {
+    const otherTeam = GAME_MODES[mode].teams.find((t) => t !== startingTeam);
+    counts = { [startingTeam]: 9, [otherTeam]: 8, neutral: 7, assassin: 1 };
+  }
   const teamsArr = [];
   Object.entries(counts).forEach(([team, count]) => {
     for (let i = 0; i < count; i++) teamsArr.push(team);
@@ -147,31 +171,47 @@ function countRemaining(game, team) {
 
 function checkGameWinConditions(game) {
   if (game.status !== 'playing') return;
-  if (countRemaining(game, 'red') === 0) { game.status = 'over'; game.winner = 'red'; game.winReason = 'words'; game.phase = null; }
-  else if (countRemaining(game, 'blue') === 0) { game.status = 'over'; game.winner = 'blue'; game.winReason = 'words'; game.phase = null; }
+  for (const team of GAME_MODES[game.mode].teams) {
+    if (game.eliminated.includes(team)) continue;
+    if (countRemaining(game, team) === 0) {
+      game.status = 'over'; game.winner = team; game.winReason = 'words'; game.phase = null;
+      return;
+    }
+  }
 }
 
+// Passa a vez pro PROXIMO time ainda vivo na ordem do modo, a partir da
+// posicao do time atual - funciona mesmo se o time atual acabou de ser
+// eliminado (ver game-reveal-word), porque usa a ordem fixa do modo em vez
+// de so alternar entre dois.
 function endGameTurn(game) {
-  game.currentTeam = game.currentTeam === 'red' ? 'blue' : 'red';
+  const order = GAME_MODES[game.mode].teams;
+  const idx = order.indexOf(game.currentTeam);
+  for (let step = 1; step <= order.length; step++) {
+    const candidate = order[(idx + step) % order.length];
+    if (!game.eliminated.includes(candidate)) { game.currentTeam = candidate; break; }
+  }
   game.phase = 'clue';
   game.clue = null;
 }
 
 function startNewGameRound(game) {
-  const startingTeam = Math.random() < 0.5 ? 'red' : 'blue';
-  game.board = generateBoard(startingTeam);
+  const teams = GAME_MODES[game.mode].teams;
+  const startingTeam = teams[Math.floor(Math.random() * teams.length)];
+  game.board = generateBoard(game.mode, startingTeam);
   game.round += 1;
   game.status = 'playing';
   game.currentTeam = startingTeam;
+  game.eliminated = [];
   game.phase = 'clue';
   game.clue = null;
   game.winner = null;
   game.winReason = null;
-  game.log = [`Nova partida! Equipe ${startingTeam === 'red' ? 'Vermelha' : 'Azul'} comeca.`];
+  game.log = [`Nova partida! Equipe ${TEAM_LABEL_FEM[startingTeam]} comeca.`];
 }
 
 function gameTeamsBothReady(game) {
-  return ['red', 'blue'].every((team) => game.teams[team].spymaster && game.teams[team].agents.length >= 1);
+  return GAME_MODES[game.mode].teams.every((team) => game.teams[team].spymaster && game.teams[team].agents.length >= 1);
 }
 
 function gameTeamView(game, roomId, team) {
@@ -188,16 +228,23 @@ function publicGameState(roomId) {
   const game = codenamesGames.get(roomId);
   if (!game) {
     return {
-      status: 'lobby', round: 0, board: [], currentTeam: null, phase: null, clue: null,
-      teams: { red: { spymaster: null, agents: [] }, blue: { spymaster: null, agents: [] } },
+      status: 'lobby', round: 0, mode: DEFAULT_GAME_MODE, board: [], currentTeam: null, eliminated: [], phase: null, clue: null,
+      teams: emptyTeams(DEFAULT_GAME_MODE),
       winner: null, winReason: null, remaining: { red: 0, blue: 0 }, log: [],
     };
   }
+  const teams = GAME_MODES[game.mode].teams;
+  const remaining = {};
+  teams.forEach((t) => { remaining[t] = countRemaining(game, t); });
+  const teamsView = {};
+  teams.forEach((t) => { teamsView[t] = gameTeamView(game, roomId, t); });
   return {
     status: game.status,
     round: game.round,
+    mode: game.mode,
     board: game.board.map((c) => ({ word: c.word, revealed: c.revealed, team: c.revealed ? c.team : null })),
     currentTeam: game.currentTeam,
+    eliminated: game.eliminated,
     phase: game.phase,
     clue: game.clue ? {
       word: game.clue.word,
@@ -205,10 +252,10 @@ function publicGameState(roomId) {
       guessesMade: game.clue.guessesMade,
       guessesAllowed: game.clue.guessesAllowed === Infinity ? null : game.clue.guessesAllowed,
     } : null,
-    teams: { red: gameTeamView(game, roomId, 'red'), blue: gameTeamView(game, roomId, 'blue') },
+    teams: teamsView,
     winner: game.winner,
     winReason: game.winReason,
-    remaining: { red: countRemaining(game, 'red'), blue: countRemaining(game, 'blue') },
+    remaining,
     log: game.log.slice(-30),
   };
 }
@@ -690,18 +737,39 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true, round: game.round, map: game.board.map((c) => c.team) });
   });
 
+  // So pode trocar o modo (livre/2x2/3x3/ffa3) com a partida parada - troca
+  // zera as equipes escolhidas ate agora, porque os times disponiveis (e o
+  // teto de agentes) podem mudar inteiramente (ex: ffa3 tem uma 3a equipe).
+  socket.on('game-set-mode', (data, ack) => {
+    const { mode } = data || {};
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = getOrCreateGame(currentRoom);
+    if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra trocar o modo com a partida em andamento' }); return; }
+    if (!GAME_MODES[mode]) { if (ack) ack({ ok: false, error: 'Modo inválido' }); return; }
+    game.mode = mode;
+    game.teams = emptyTeams(mode);
+    broadcastGameState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
   socket.on('game-set-role', (data, ack) => {
     const { team, role } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = getOrCreateGame(currentRoom);
     if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra trocar de equipe com a partida em andamento' }); return; }
-    if (team !== 'red' && team !== 'blue') { if (ack) ack({ ok: false, error: 'Equipe inválida' }); return; }
+    const validTeams = GAME_MODES[game.mode].teams;
+    if (!validTeams.includes(team)) { if (ack) ack({ ok: false, error: 'Equipe inválida' }); return; }
     if (role !== 'spymaster' && role !== 'agent') { if (ack) ack({ ok: false, error: 'Papel inválido' }); return; }
     if (role === 'spymaster' && game.teams[team].spymaster && game.teams[team].spymaster !== socket.id) {
       if (ack) ack({ ok: false, error: 'Essa equipe já tem um Mestre-Espião' });
       return;
     }
-    const lobbyWasEmpty = ['red', 'blue'].every((t) => !game.teams[t].spymaster && game.teams[t].agents.length === 0);
+    const maxAgents = GAME_MODES[game.mode].maxAgents;
+    if (role === 'agent' && game.teams[team].agents.length >= maxAgents && !game.teams[team].agents.includes(socket.id)) {
+      if (ack) ack({ ok: false, error: 'Essa equipe já está cheia nesse modo' });
+      return;
+    }
+    const lobbyWasEmpty = validTeams.every((t) => !game.teams[t].spymaster && game.teams[t].agents.length === 0);
     removeFromGameTeams(game, socket.id);
     if (role === 'spymaster') game.teams[team].spymaster = socket.id;
     else game.teams[team].agents.push(socket.id);
@@ -775,7 +843,7 @@ io.on('connection', (socket) => {
     if (n > 9) n = 9;
     const remaining = countRemaining(game, game.currentTeam);
     game.clue = { word: cleanWord, number: n, guessesMade: 0, guessesAllowed: n === 0 ? Infinity : Math.min(n + 1, remaining) };
-    const teamLabel = game.currentTeam === 'red' ? 'Vermelho' : 'Azul';
+    const teamLabel = TEAM_LABEL[game.currentTeam];
     const name = (rooms.get(currentRoom)?.get(socket.id)?.name) || 'Alguém';
     game.log.push(`${name} (Mestre-Espião ${teamLabel}) deu a pista "${cleanWord.toUpperCase()}" ${n}`);
     game.phase = 'guess';
@@ -805,14 +873,31 @@ io.on('connection', (socket) => {
     const cell = game.board[i];
     cell.revealed = true;
     const name = (rooms.get(currentRoom)?.get(socket.id)?.name) || 'Alguém';
-    const teamLabel = game.currentTeam === 'red' ? 'Vermelho' : 'Azul';
+    const teamLabel = TEAM_LABEL[game.currentTeam];
 
     if (cell.team === 'assassin') {
       game.log.push(`${name} (${teamLabel}) revelou o ASSASSINO: "${cell.word}"!`);
-      game.status = 'over';
-      game.winner = game.currentTeam === 'red' ? 'blue' : 'red';
-      game.winReason = 'assassin';
-      game.phase = null;
+      if (game.mode === 'ffa3') {
+        // No modo "Todos contra todos" quem cai num assassino e eliminado
+        // (nao perde a partida inteira) - o jogo continua pros outros times
+        // ainda vivos, a nao ser que so sobre 1, que ja vence na hora.
+        game.eliminated.push(game.currentTeam);
+        const survivors = GAME_MODES[game.mode].teams.filter((t) => !game.eliminated.includes(t));
+        if (survivors.length <= 1) {
+          game.status = 'over';
+          game.winner = survivors[0] || null;
+          game.winReason = 'last-standing';
+          game.phase = null;
+        } else {
+          endGameTurn(game);
+        }
+      } else {
+        const otherTeam = GAME_MODES[game.mode].teams.find((t) => t !== game.currentTeam);
+        game.status = 'over';
+        game.winner = otherTeam;
+        game.winReason = 'assassin';
+        game.phase = null;
+      }
     } else if (cell.team === game.currentTeam) {
       game.log.push(`${name} (${teamLabel}) acertou "${cell.word}"`);
       game.clue.guessesMade += 1;
@@ -821,7 +906,7 @@ io.on('connection', (socket) => {
         endGameTurn(game);
       }
     } else {
-      const otherLabel = cell.team === 'neutral' ? 'uma palavra neutra' : `uma palavra do time ${cell.team === 'red' ? 'Vermelho' : 'Azul'}`;
+      const otherLabel = cell.team === 'neutral' ? 'uma palavra neutra' : `uma palavra do time ${TEAM_LABEL[cell.team]}`;
       game.log.push(`${name} (${teamLabel}) revelou ${otherLabel}: "${cell.word}"`);
       checkGameWinConditions(game);
       if (game.status === 'playing') endGameTurn(game);
@@ -840,7 +925,7 @@ io.on('connection', (socket) => {
     }
     const role = playerGameRole(game, socket.id);
     if (!role || role.team !== game.currentTeam) { if (ack) ack({ ok: false, error: 'Você não está na equipe da vez' }); return; }
-    const teamLabel = game.currentTeam === 'red' ? 'Vermelho' : 'Azul';
+    const teamLabel = TEAM_LABEL[game.currentTeam];
     game.log.push(`Equipe ${teamLabel} passou a vez`);
     endGameTurn(game);
     broadcastGameState(currentRoom);

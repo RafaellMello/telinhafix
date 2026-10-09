@@ -89,6 +89,10 @@
   --game-red-rgb: 217, 116, 47;
   --game-blue: #2f9aa6;
   --game-blue-rgb: 47, 154, 166;
+  /* 3o time (modo "3x3 Todos contra todos") - verde oliva pra combinar com
+     o resto da paleta terrosa em vez de um verde neon. */
+  --game-green: #5a8c3a;
+  --game-green-rgb: 90, 140, 58;
   --game-cream: #efe0c4;
   --game-cream-rgb: 239, 224, 196;
   --game-cream-border: #d9bd8e;
@@ -743,14 +747,14 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .font-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
-.mode-options, .border-options, .sound-options, .hotkeys-options, .priority-options, .size-options, .background-options {
+.mode-options, .border-options, .sound-options, .hotkeys-options, .priority-options, .size-options, .background-options, .game-mode-options {
   display: flex;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
 
-.mode-option, .border-option, .sound-option, .hotkeys-option, .priority-option, .background-option {
+.mode-option, .border-option, .sound-option, .hotkeys-option, .priority-option, .background-option, .game-mode-option {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 8px;
@@ -761,13 +765,29 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 700;
 }
 
-.mode-option.selected, .border-option.selected, .sound-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.mode-option.selected, .border-option.selected, .sound-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected, .game-mode-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.game-mode-option:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .settings-hint {
   margin: 8px 0 0;
   font-size: calc(11px * var(--font-scale));
   color: var(--text-muted);
   line-height: 1.5;
+}
+
+/* Aviso festivo de novidade - usado no lobby do Codenames pra comemorar o
+   lancamento dos modos de equipe. Generico o bastante pra reaproveitar em
+   outros anuncios de "saiu feature nova" no futuro, se quiser. */
+.game-whats-new {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  background: rgba(var(--red-rgb), 0.14);
+  border: 1px solid rgba(var(--red-rgb), 0.5);
+  border-left: 3px solid var(--red-bright);
+  border-radius: 6px;
+  font-size: calc(12.5px * var(--font-scale));
+  font-weight: 700;
+  color: var(--text);
 }
 
 .keybind-row {
@@ -1904,6 +1924,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .game-team-card-red { border-top-color: var(--game-red); }
 .game-team-card-blue { border-top-color: var(--game-blue); }
+.game-team-card-green { border-top-color: var(--game-green); }
 
 .game-team-card h3 {
   margin: 0 0 4px;
@@ -1913,6 +1934,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 }
 .game-team-card-red h3 { color: var(--game-red); }
 .game-team-card-blue h3 { color: var(--game-blue); }
+.game-team-card-green h3 { color: var(--game-green); }
 
 .game-team-slot { display: flex; flex-direction: column; gap: 4px; }
 .game-slot-label {
@@ -2018,12 +2040,14 @@ button.ghost:hover { filter: none; border-color: var(--red); }
    gritante mesmo so aparecendo pra quem pode ver mesmo. */
 .game-cell-spy-red { background: rgba(var(--game-red-rgb), 0.38); border-color: var(--game-red); }
 .game-cell-spy-blue { background: rgba(var(--game-blue-rgb), 0.38); border-color: var(--game-blue); }
+.game-cell-spy-green { background: rgba(var(--game-green-rgb), 0.38); border-color: var(--game-green); }
 .game-cell-spy-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
 .game-cell-spy-assassin { background: rgba(var(--game-assassin-rgb), 0.6); border-color: var(--game-assassin); }
 
 .game-cell-revealed { cursor: default; }
 .game-cell-revealed.game-cell-red { background: var(--game-red); border-color: #a85420; }
 .game-cell-revealed.game-cell-blue { background: var(--game-blue); border-color: #1f6b73; }
+.game-cell-revealed.game-cell-green { background: var(--game-green); border-color: #355423; }
 .game-cell-revealed.game-cell-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
 .game-cell-revealed.game-cell-assassin { background: var(--game-assassin); border-color: #000; }
 .game-cell-revealed.game-cell-assassin::before { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.25); }

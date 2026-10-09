@@ -127,6 +127,9 @@ contextBridge.exposeInMainWorld('game', {
   getSecretMap() {
     return emitAck('game-get-secret-map', null);
   },
+  setMode(mode) {
+    return emitAck('game-set-mode', { mode });
+  },
   setRole(team, role) {
     return emitAck('game-set-role', { team, role });
   },
