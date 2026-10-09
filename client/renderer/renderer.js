@@ -47,6 +47,17 @@ const ICONS = {
   focus: `<svg ${ICON_SVG_ATTRS}><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="21" y1="21" x2="15.5" y2="15.5"></line></svg>`,
 };
 
+// Silhuetas grandes (preenchidas, nao outline) usadas como marca d'agua no
+// verso das cartas do Codenames depois de reveladas - espiao pros times,
+// civil pra neutra, caveira pro assassino (ver .game-cell-watermark).
+const CARD_WATERMARKS = {
+  red: `<svg viewBox="0 0 64 64" fill="currentColor"><ellipse cx="32" cy="17" rx="15" ry="3.5"/><path d="M19 17c1-7 7-12 13-12s12 5 13 12c-3-2-8-3-13-3s-10 1-13 3Z"/><circle cx="32" cy="25" r="8.5"/><path d="M13 58c0-13 8-21 19-21s19 8 19 21Z"/></svg>`,
+  blue: `<svg viewBox="0 0 64 64" fill="currentColor"><ellipse cx="32" cy="17" rx="15" ry="3.5"/><path d="M19 17c1-7 7-12 13-12s12 5 13 12c-3-2-8-3-13-3s-10 1-13 3Z"/><circle cx="32" cy="25" r="8.5"/><path d="M13 58c0-13 8-21 19-21s19 8 19 21Z"/></svg>`,
+  green: `<svg viewBox="0 0 64 64" fill="currentColor"><ellipse cx="32" cy="17" rx="15" ry="3.5"/><path d="M19 17c1-7 7-12 13-12s12 5 13 12c-3-2-8-3-13-3s-10 1-13 3Z"/><circle cx="32" cy="25" r="8.5"/><path d="M13 58c0-13 8-21 19-21s19 8 19 21Z"/></svg>`,
+  neutral: `<svg viewBox="0 0 64 64" fill="currentColor"><circle cx="32" cy="21" r="10.5"/><path d="M12 58c0-14 9-22 20-22s20 8 20 22Z"/></svg>`,
+  assassin: `<svg viewBox="0 0 64 64"><path fill="currentColor" fill-rule="evenodd" d="M32 5C18 5 8 15 8 27c0 8 4 14 9 18v8a4 4 0 0 0 4 4h4v6h4v-6h6v6h4v-6h4a4 4 0 0 0 4-4v-8c5-4 9-10 9-18C56 15 46 5 32 5Z M22 21a6 6 0 1 0 0 12 6 6 0 0 0 0-12Z M42 21a6 6 0 1 0 0 12 6 6 0 0 0 0-12Z M32 31l-6 9h12Z"/></svg>`,
+};
+
 function hexToRgbString(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -1483,6 +1494,12 @@ let gameState = null;
 let gameOverlayOpen = false;
 let mySecretMap = null;
 let mySecretMapRound = -1;
+// Elementos das 25 cartas, mantidos entre renders (ver renderGameBoard) -
+// reaproveitar o mesmo DOM em vez de recriar tudo a cada estado novo e o
+// que permite a transicao CSS do flip tocar de verdade quando uma carta
+// passa de "escondida" pra "revelada".
+let boardCellEls = [];
+let boardCellRound = -1;
 // 'picker' | 'codenames' | 'stop' - qual tela o painel 🎮 ta mostrando.
 let currentGameView = 'picker';
 
@@ -1678,33 +1695,77 @@ function renderGameLobby() {
   document.getElementById('btn-game-start').disabled = !bothReady;
 }
 
+// Monta as 25 cartas do zero (fundo + verso, ver CSS .game-cell-inner) -
+// chamado so quando comeca uma partida/rodada nova, nunca a cada
+// atualizacao de estado (isso destruiria o DOM e quebraria a animacao do
+// flip - ver renderGameBoard).
+function buildBoardCells(boardEl) {
+  boardEl.innerHTML = '';
+  boardCellEls = gameState.board.map((cell, i) => {
+    const div = document.createElement('div');
+    div.className = 'game-cell';
+
+    const inner = document.createElement('div');
+    inner.className = 'game-cell-inner';
+
+    const front = document.createElement('div');
+    front.className = 'game-cell-face game-cell-front';
+    const frontWord = document.createElement('span');
+    frontWord.className = 'game-cell-word';
+    frontWord.textContent = cell.word;
+    front.appendChild(frontWord);
+
+    const back = document.createElement('div');
+    back.className = 'game-cell-face game-cell-back';
+    const watermark = document.createElement('div');
+    watermark.className = 'game-cell-watermark';
+    back.appendChild(watermark);
+    const backWord = document.createElement('span');
+    backWord.className = 'game-cell-word';
+    backWord.textContent = cell.word;
+    back.appendChild(backWord);
+
+    inner.appendChild(front);
+    inner.appendChild(back);
+    div.appendChild(inner);
+    boardEl.appendChild(div);
+
+    div.addEventListener('click', () => {
+      if (!div.classList.contains('game-cell-clickable')) return;
+      window.game.revealWord(i).catch((err) => console.error('Falha ao revelar palavra:', err));
+    });
+
+    return { root: div, inner, front, back, watermark };
+  });
+}
+
 function renderGameBoard() {
   const role = myGameRole();
   const boardEl = document.getElementById('game-board');
-  boardEl.innerHTML = '';
+
+  if (gameState.round !== boardCellRound || boardCellEls.length !== gameState.board.length) {
+    buildBoardCells(boardEl);
+    boardCellRound = gameState.round;
+  }
 
   gameState.board.forEach((cell, i) => {
-    const div = document.createElement('div');
-    div.className = 'game-cell';
-    const label = document.createElement('span');
-    label.textContent = cell.word;
-    div.appendChild(label);
+    const { root, inner, front, back, watermark } = boardCellEls[i];
+
+    inner.classList.toggle('flipped', cell.revealed);
+
+    front.className = 'game-cell-face game-cell-front';
+    if (!cell.revealed && role && role.role === 'spymaster' && mySecretMap && mySecretMapRound === gameState.round) {
+      front.classList.add(`game-cell-spy-${mySecretMap[i]}`);
+    }
 
     if (cell.revealed) {
-      div.classList.add('game-cell-revealed', `game-cell-${cell.team}`);
-    } else if (role && role.role === 'spymaster' && mySecretMap && mySecretMapRound === gameState.round) {
-      div.classList.add(`game-cell-spy-${mySecretMap[i]}`);
+      back.className = `game-cell-face game-cell-back game-cell-back-${cell.team}`;
+      watermark.innerHTML = CARD_WATERMARKS[cell.team] || '';
     }
 
     const clickable = gameState.status === 'playing' && gameState.phase === 'guess'
       && role && role.role === 'agent' && role.team === gameState.currentTeam && !cell.revealed;
-    if (clickable) {
-      div.classList.add('game-cell-clickable');
-      div.addEventListener('click', () => {
-        window.game.revealWord(i).catch((err) => console.error('Falha ao revelar palavra:', err));
-      });
-    }
-    boardEl.appendChild(div);
+    root.classList.toggle('game-cell-clickable', !!clickable);
   });
 
   const teamLabel = GAME_TEAM_LABEL[gameState.currentTeam] || '';
@@ -1757,6 +1818,21 @@ function renderGameBoard() {
     if (gameState.winReason === 'assassin') reasonText = 'a outra equipe revelou o assassino';
     else if (gameState.winReason === 'last-standing') reasonText = 'foi a última equipe que sobrou depois dos assassinos';
     document.getElementById('game-over-text').textContent = `Equipe ${winLabel} venceu! (${reasonText})`;
+
+    // Resumo da partida, na ordem em que aconteceu (do inicio pro fim, ao
+    // contrario do #game-log acima que mostra o mais recente primeiro) -
+    // reaproveita o mesmo historico que o servidor ja manda pra sala
+    // inteira, so muda a ordem/apresentacao. O ultimo passo (o lance que
+    // decidiu o jogo) fica em destaque.
+    const recapEl = document.getElementById('game-over-recap');
+    recapEl.innerHTML = '';
+    gameState.log.forEach((entry, i) => {
+      const li = document.createElement('li');
+      li.textContent = entry;
+      if (i === gameState.log.length - 1) li.classList.add('game-over-recap-fatal');
+      recapEl.appendChild(li);
+    });
+
     overBanner.classList.remove('hidden');
   } else {
     overBanner.classList.add('hidden');
@@ -1806,6 +1882,8 @@ function resetGameUiState() {
   gameState = null;
   mySecretMap = null;
   mySecretMapRound = -1;
+  boardCellEls = [];
+  boardCellRound = -1;
   stopState = null;
   stopFieldsBuilt = -1;
   clearTimeout(stopSyncDebounce);

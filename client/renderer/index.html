@@ -445,11 +445,15 @@
           <div id="game-log" class="game-log"></div>
 
           <div id="game-over-banner" class="game-over-banner hidden">
-            <span id="game-over-text"></span>
-            <div class="game-over-actions">
-              <button type="button" id="btn-game-play-again">Jogar de novo</button>
-              <button type="button" id="btn-game-reset-lobby" class="ghost">Trocar equipes</button>
+            <div class="game-over-header">
+              <span id="game-over-text"></span>
+              <div class="game-over-actions">
+                <button type="button" id="btn-game-play-again">Jogar de novo</button>
+                <button type="button" id="btn-game-reset-lobby" class="ghost">Trocar equipes</button>
+              </div>
             </div>
+            <p class="game-over-recap-title">Como foi a partida</p>
+            <ol id="game-over-recap" class="game-over-recap"></ol>
           </div>
         </div>
         </div>

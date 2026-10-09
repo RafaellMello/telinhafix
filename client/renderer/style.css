@@ -1985,25 +1985,48 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   padding: 16px;
 }
 
+/* Carta com flip 3D de verdade: .game-cell e so o slot (tamanho +
+   perspectiva), .game-cell-inner e quem gira, e front/back sao as duas
+   faces (so uma visivel de cada vez via backface-visibility). Revelar uma
+   palavra = a carta vira fisicamente e mostra o verso, igual o jogo
+   original - nao e so trocar a cor na hora. */
 .game-cell {
   position: relative;
-  background: var(--game-cream);
-  border: 3px solid var(--game-cream-border);
-  border-radius: 10px;
-  padding: 0;
-  text-align: center;
   min-height: 92px;
+  border-radius: 10px;
+  perspective: 700px;
+}
+
+.game-cell-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.45, 0.05, 0.15, 1);
+}
+.game-cell-inner.flipped { transform: rotateY(180deg); }
+
+.game-cell-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  border: 3px solid;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   word-break: break-word;
-  transition: filter 0.15s, transform 0.1s;
   overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-/* O "selo" circular no canto superior direito de cada carta, igual a
-   referencia - decorativo, so reforca a sensacao de carta fisica. */
-.game-cell::before {
+.game-cell-front { background: var(--game-cream); border-color: var(--game-cream-border); }
+
+/* O "selo" circular no canto superior direito, igual a referencia -
+   decorativo, so reforca a sensacao de carta fisica. Fica so na face da
+   frente (virada pra baixo o resto do tempo, como no verso de uma carta). */
+.game-cell-front::before {
   content: '';
   position: absolute;
   top: 7px;
@@ -2015,7 +2038,29 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   border: 1px solid rgba(255, 255, 255, 0.55);
 }
 
-.game-cell span {
+.game-cell-back { transform: rotateY(180deg); }
+
+/* Silhueta grande meio apagada atras da palavra na face revelada - espiao
+   pros times, civil pra neutra, caveira pro assassino (ver CARD_WATERMARKS
+   no renderer.js). So decorativo, nunca recebe clique. */
+.game-cell-watermark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.25;
+  pointer-events: none;
+}
+.game-cell-watermark svg { width: 58%; height: 58%; }
+.game-cell-back-neutral .game-cell-watermark { color: var(--game-cream-border); opacity: 0.45; }
+.game-cell-back-red .game-cell-watermark,
+.game-cell-back-blue .game-cell-watermark,
+.game-cell-back-green .game-cell-watermark,
+.game-cell-back-assassin .game-cell-watermark { color: #fff; }
+
+.game-cell-word {
+  position: relative;
   display: block;
   width: calc(100% - 14px);
   margin: 0 7px 7px;
@@ -2032,25 +2077,36 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 }
 
 .game-cell-clickable { cursor: pointer; }
-.game-cell-clickable:hover { filter: brightness(1.08); transform: translateY(-2px); }
+.game-cell-clickable:hover .game-cell-inner { filter: brightness(1.08); transform: translateY(-2px); }
+.game-cell-clickable:hover .game-cell-inner.flipped { transform: translateY(-2px) rotateY(180deg); }
 
 /* Visao do Mestre-Espiao: a MESMA cor do time, so que mais clara/leve -
    bem mais discreta que uma palavra ja revelada (essa fica com a cor
-   cheia, ver .game-cell-revealed abaixo), pra nao virar "spoiler" visual
-   gritante mesmo so aparecendo pra quem pode ver mesmo. */
-.game-cell-spy-red { background: rgba(var(--game-red-rgb), 0.38); border-color: var(--game-red); }
-.game-cell-spy-blue { background: rgba(var(--game-blue-rgb), 0.38); border-color: var(--game-blue); }
-.game-cell-spy-green { background: rgba(var(--game-green-rgb), 0.38); border-color: var(--game-green); }
-.game-cell-spy-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
-.game-cell-spy-assassin { background: rgba(var(--game-assassin-rgb), 0.6); border-color: var(--game-assassin); }
+   cheia, ver .game-cell-back-* abaixo), pra nao virar "spoiler" visual
+   gritante mesmo so aparecendo pra quem pode ver mesmo. Fica na face da
+   FRENTE (a carta ainda nao virou de verdade - so o Mestre-Espiao sabe). */
+.game-cell-front.game-cell-spy-red { background: rgba(var(--game-red-rgb), 0.38); border-color: var(--game-red); }
+.game-cell-front.game-cell-spy-blue { background: rgba(var(--game-blue-rgb), 0.38); border-color: var(--game-blue); }
+.game-cell-front.game-cell-spy-green { background: rgba(var(--game-green-rgb), 0.38); border-color: var(--game-green); }
+.game-cell-front.game-cell-spy-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
+.game-cell-front.game-cell-spy-assassin { background: rgba(var(--game-assassin-rgb), 0.6); border-color: var(--game-assassin); }
 
-.game-cell-revealed { cursor: default; }
-.game-cell-revealed.game-cell-red { background: var(--game-red); border-color: #a85420; }
-.game-cell-revealed.game-cell-blue { background: var(--game-blue); border-color: #1f6b73; }
-.game-cell-revealed.game-cell-green { background: var(--game-green); border-color: #355423; }
-.game-cell-revealed.game-cell-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
-.game-cell-revealed.game-cell-assassin { background: var(--game-assassin); border-color: #000; }
-.game-cell-revealed.game-cell-assassin::before { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.25); }
+.game-cell-back-red { background: var(--game-red); border-color: #a85420; }
+.game-cell-back-blue { background: var(--game-blue); border-color: #1f6b73; }
+.game-cell-back-green { background: var(--game-green); border-color: #355423; }
+.game-cell-back-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
+.game-cell-back-assassin { background: var(--game-assassin); border-color: #000; }
+.game-cell-back-assassin::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
 
 .game-clue-active {
   text-align: center;
@@ -2086,14 +2142,46 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   background: rgba(var(--red-rgb), 0.12);
   border: 1px solid var(--red-dark);
   border-radius: 8px;
+  font-weight: 800;
+}
+
+.game-over-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-weight: 800;
 }
 
 .game-over-actions { display: flex; gap: 10px; }
+
+/* Resumo cronologico da partida (pistas dadas, palavras reveladas, quem fez
+   o que) dentro do proprio banner de fim de jogo - ver renderGameBoard. */
+.game-over-recap-title {
+  margin: 14px 0 6px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(var(--red-rgb), 0.3);
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.game-over-recap {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-weight: 400;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--text-muted);
+}
+
+.game-over-recap li::marker { color: var(--red-bright); font-weight: 700; }
+.game-over-recap li.game-over-recap-fatal { color: var(--text); font-weight: 700; }
 
 /* ========================================================================
    Modo de bordas "Chama2k19" - independente do modo de aparencia (Lata de
