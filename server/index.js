@@ -105,6 +105,12 @@ const DEFAULT_GAME_MODE = 'livre';
 const TEAM_LABEL = { red: 'Vermelho', blue: 'Azul', green: 'Verde' };
 const TEAM_LABEL_FEM = { red: 'Vermelha', blue: 'Azul', green: 'Verde' };
 
+// Tempo que o time da vez tem pra escolher uma palavra depois que o
+// Mestre-Espiao da a pista - "null" (Iniciante) = sem limite, igual sempre
+// foi. Quem abre a sala escolhe, junto com o modo de equipes.
+const ANSWER_TIME_MODES = { especialista: 20000, sargento: 40000, novato: 60000, iniciante: null };
+const DEFAULT_ANSWER_TIME_MODE = 'iniciante';
+
 function emptyTeams(mode) {
   const teams = {};
   GAME_MODES[mode].teams.forEach((t) => { teams[t] = { spymaster: null, agents: [] }; });
@@ -125,7 +131,20 @@ function createCodenamesGame() {
     winner: null,
     winReason: null, // 'words' | 'assassin' | 'last-standing'
     log: [],
+    answerTimeMode: DEFAULT_ANSWER_TIME_MODE,
+    clueGivenAt: null,
+    answerTimer: null,
   };
+}
+
+// Limpa o cronometro de resposta pendente, se tiver - chamado sempre que o
+// turno muda de qualquer jeito (passou a vez, acertou, errou, caiu num
+// assassino) pra nao sobrar um setTimeout velho disparando depois da hora.
+function clearAnswerTimer(game) {
+  if (game.answerTimer) {
+    clearTimeout(game.answerTimer);
+    game.answerTimer = null;
+  }
 }
 
 function getOrCreateGame(roomId) {
@@ -185,6 +204,8 @@ function checkGameWinConditions(game) {
 // eliminado (ver game-reveal-word), porque usa a ordem fixa do modo em vez
 // de so alternar entre dois.
 function endGameTurn(game) {
+  clearAnswerTimer(game);
+  game.clueGivenAt = null;
   const order = GAME_MODES[game.mode].teams;
   const idx = order.indexOf(game.currentTeam);
   for (let step = 1; step <= order.length; step++) {
@@ -196,6 +217,7 @@ function endGameTurn(game) {
 }
 
 function startNewGameRound(game) {
+  clearAnswerTimer(game);
   const teams = GAME_MODES[game.mode].teams;
   const startingTeam = teams[Math.floor(Math.random() * teams.length)];
   game.board = generateBoard(game.mode, startingTeam);
@@ -205,6 +227,7 @@ function startNewGameRound(game) {
   game.eliminated = [];
   game.phase = 'clue';
   game.clue = null;
+  game.clueGivenAt = null;
   game.winner = null;
   game.winReason = null;
   game.log = [`Nova partida! Equipe ${TEAM_LABEL_FEM[startingTeam]} comeca.`];
@@ -231,6 +254,7 @@ function publicGameState(roomId) {
       status: 'lobby', round: 0, mode: DEFAULT_GAME_MODE, board: [], currentTeam: null, eliminated: [], phase: null, clue: null,
       teams: emptyTeams(DEFAULT_GAME_MODE),
       winner: null, winReason: null, remaining: { red: 0, blue: 0 }, log: [],
+      answerTimeMode: DEFAULT_ANSWER_TIME_MODE, clueGivenAt: null, answerTimeMs: null,
     };
   }
   const teams = GAME_MODES[game.mode].teams;
@@ -257,6 +281,9 @@ function publicGameState(roomId) {
     winReason: game.winReason,
     remaining,
     log: game.log.slice(-30),
+    answerTimeMode: game.answerTimeMode,
+    clueGivenAt: game.clueGivenAt,
+    answerTimeMs: ANSWER_TIME_MODES[game.answerTimeMode],
   };
 }
 
@@ -752,6 +779,20 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
+  socket.on('game-set-answer-time', (data, ack) => {
+    const { answerTimeMode } = data || {};
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = getOrCreateGame(currentRoom);
+    if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra trocar com a partida em andamento' }); return; }
+    if (!Object.prototype.hasOwnProperty.call(ANSWER_TIME_MODES, answerTimeMode)) {
+      if (ack) ack({ ok: false, error: 'Modo inválido' });
+      return;
+    }
+    game.answerTimeMode = answerTimeMode;
+    broadcastGameState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
   socket.on('game-set-role', (data, ack) => {
     const { team, role } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
@@ -818,6 +859,8 @@ io.on('connection', (socket) => {
 
   socket.on('game-reset-lobby', (_data, ack) => {
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const oldGame = codenamesGames.get(currentRoom);
+    if (oldGame) clearAnswerTimer(oldGame);
     codenamesGames.set(currentRoom, createCodenamesGame());
     broadcastGameState(currentRoom);
     if (ack) ack({ ok: true });
@@ -847,6 +890,21 @@ io.on('connection', (socket) => {
     const name = (rooms.get(currentRoom)?.get(socket.id)?.name) || 'Alguém';
     game.log.push(`${name} (Mestre-Espião ${teamLabel}) deu a pista "${cleanWord.toUpperCase()}" ${n}`);
     game.phase = 'guess';
+
+    clearAnswerTimer(game);
+    game.clueGivenAt = Date.now();
+    const limitMs = ANSWER_TIME_MODES[game.answerTimeMode];
+    if (limitMs) {
+      const roomIdForTimer = currentRoom; // nao usar currentRoom direto dentro do timeout - e um "let" por socket, pode mudar antes do timer disparar
+      const teamAtClueTime = game.currentTeam;
+      game.answerTimer = setTimeout(() => {
+        if (game.status !== 'playing' || game.phase !== 'guess' || game.currentTeam !== teamAtClueTime) return;
+        game.log.push(`Tempo esgotado - Equipe ${TEAM_LABEL[teamAtClueTime]} perdeu a vez`);
+        endGameTurn(game);
+        broadcastGameState(roomIdForTimer);
+      }, limitMs);
+    }
+
     broadcastGameState(currentRoom);
     if (ack) ack({ ok: true });
   });

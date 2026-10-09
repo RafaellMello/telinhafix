@@ -1963,6 +1963,12 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-size: calc(13px * var(--font-scale));
 }
 .game-turn-indicator { font-weight: 700; }
+.game-answer-timer {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+.game-answer-timer.game-answer-timer-urgent { color: var(--red-bright); }
 .game-remaining {
   color: var(--text-muted);
   font-family: 'JetBrains Mono', Consolas, monospace;
