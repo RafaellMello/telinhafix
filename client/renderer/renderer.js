@@ -1500,6 +1500,7 @@ let mySecretMapRound = -1;
 // passa de "escondida" pra "revelada".
 let boardCellEls = [];
 let boardCellRound = -1;
+let gameTickInterval = null;
 // 'picker' | 'codenames' | 'stop' - qual tela o painel 🎮 ta mostrando.
 let currentGameView = 'picker';
 
@@ -1608,6 +1609,7 @@ function closeGameOverlay() {
   gameOverlayOpen = false;
   document.getElementById('game-overlay').classList.add('hidden');
   clearStopTimerInterval();
+  clearGameTimerInterval();
 }
 
 function ensureSecretMap() {
@@ -1643,8 +1645,11 @@ function renderGameLobby() {
   const activeTeams = Object.keys(gameState.teams);
   const maxAgents = GAME_MODE_MAX_AGENTS[gameState.mode] ?? Infinity;
 
-  document.querySelectorAll('.game-mode-option').forEach((btn) => {
+  document.querySelectorAll('.game-mode-option[data-mode]').forEach((btn) => {
     btn.classList.toggle('selected', btn.dataset.mode === gameState.mode);
+  });
+  document.querySelectorAll('.game-mode-option[data-answer-time]').forEach((btn) => {
+    btn.classList.toggle('selected', btn.dataset.answerTime === gameState.answerTimeMode);
   });
 
   // Carta da equipe Verde so existe no modo ffa3 - as outras duas (vermelha/
@@ -1739,6 +1744,33 @@ function buildBoardCells(boardEl) {
   });
 }
 
+// Contagem regressiva do "tempo de resposta" (ver seletor Especialista/
+// Sargento/Novato/Iniciante no lobby) - so decorativo no cliente, quem
+// realmente derruba a vez quando estoura e o servidor (ver game-give-clue).
+function updateGameAnswerTimerDisplay() {
+  const el = document.getElementById('game-answer-timer');
+  if (!el || !gameState) return;
+  if (gameState.status !== 'playing' || gameState.phase !== 'guess' || !gameState.answerTimeMs || !gameState.clueGivenAt) {
+    el.classList.add('hidden');
+    return;
+  }
+  const remainingMs = Math.max(0, gameState.answerTimeMs - (Date.now() - gameState.clueGivenAt));
+  const seconds = Math.ceil(remainingMs / 1000);
+  el.textContent = `${seconds}s pra responder`;
+  el.classList.toggle('game-answer-timer-urgent', seconds <= 5);
+  el.classList.remove('hidden');
+}
+
+function startGameTimerInterval() {
+  if (gameTickInterval) return;
+  updateGameAnswerTimerDisplay();
+  gameTickInterval = setInterval(updateGameAnswerTimerDisplay, 250);
+}
+
+function clearGameTimerInterval() {
+  if (gameTickInterval) { clearInterval(gameTickInterval); gameTickInterval = null; }
+}
+
 function renderGameBoard() {
   const role = myGameRole();
   const boardEl = document.getElementById('game-board');
@@ -1767,6 +1799,13 @@ function renderGameBoard() {
       && role && role.role === 'agent' && role.team === gameState.currentTeam && !cell.revealed;
     root.classList.toggle('game-cell-clickable', !!clickable);
   });
+
+  if (gameState.status === 'playing' && gameState.phase === 'guess' && gameState.answerTimeMs) {
+    startGameTimerInterval();
+  } else {
+    clearGameTimerInterval();
+    updateGameAnswerTimerDisplay();
+  }
 
   const teamLabel = GAME_TEAM_LABEL[gameState.currentTeam] || '';
   const turnEl = document.getElementById('game-turn-indicator');
@@ -3370,12 +3409,20 @@ document.getElementById('btn-sketch-new').addEventListener('click', () => {
   window.sketchGame.reset().catch((err) => console.error('Falha ao criar nova pergunta:', err));
 });
 
-document.querySelectorAll('.game-mode-option').forEach((btn) => {
+document.querySelectorAll('.game-mode-option[data-mode]').forEach((btn) => {
   btn.addEventListener('click', () => {
     // Clicar no modo que ja esta selecionado so zeraria as equipes a toa.
     if (gameState && gameState.mode === btn.dataset.mode) return;
     setGameError('');
     window.game.setMode(btn.dataset.mode).catch((err) => setGameError(err.message));
+  });
+});
+
+document.querySelectorAll('.game-mode-option[data-answer-time]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (gameState && gameState.answerTimeMode === btn.dataset.answerTime) return;
+    setGameError('');
+    window.game.setAnswerTime(btn.dataset.answerTime).catch((err) => setGameError(err.message));
   });
 });
 

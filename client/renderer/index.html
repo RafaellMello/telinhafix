@@ -370,6 +370,17 @@
             <p class="settings-hint">Trocar o modo reinicia as equipes escolhidas até agora.</p>
           </div>
 
+          <div class="settings-group">
+            <label>Tempo de resposta</label>
+            <div id="game-answer-time-options" class="game-mode-options">
+              <button type="button" class="game-mode-option" data-answer-time="especialista">Especialista (20s)</button>
+              <button type="button" class="game-mode-option" data-answer-time="sargento">Sargento (40s)</button>
+              <button type="button" class="game-mode-option" data-answer-time="novato">Novato (60s)</button>
+              <button type="button" class="game-mode-option" data-answer-time="iniciante">Iniciante (sem limite)</button>
+            </div>
+            <p class="settings-hint">Tempo pro time da vez escolher uma palavra depois que o Mestre-Espião dá a pista. Se esgotar, a vez passa sozinha.</p>
+          </div>
+
           <div class="game-teams-row">
             <div class="game-team-card game-team-card-red">
               <h3>Equipe Vermelha</h3>
@@ -424,6 +435,7 @@
         <div id="game-board-view" class="game-board-view hidden">
           <div class="game-status-row">
             <span id="game-turn-indicator" class="game-turn-indicator"></span>
+            <span id="game-answer-timer" class="game-answer-timer hidden"></span>
             <span id="game-remaining" class="game-remaining"></span>
           </div>
 

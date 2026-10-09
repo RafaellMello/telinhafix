@@ -130,6 +130,9 @@ contextBridge.exposeInMainWorld('game', {
   setMode(mode) {
     return emitAck('game-set-mode', { mode });
   },
+  setAnswerTime(answerTimeMode) {
+    return emitAck('game-set-answer-time', { answerTimeMode });
+  },
   setRole(team, role) {
     return emitAck('game-set-role', { team, role });
   },
