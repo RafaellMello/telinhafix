@@ -6,6 +6,7 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="app-update-toast" class="app-update-toast hidden" role="status"></div>
   <div id="login-screen" class="screen">
     <canvas id="login-background-canvas"></canvas>
     <button id="btn-settings" title="Aparencia"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle><circle cx="12" cy="12" r="8.2" stroke-dasharray="2 2.15"></circle></svg></button>
@@ -356,7 +357,7 @@
 
         <div id="codenames-view" class="hidden">
         <div id="game-lobby-view" class="game-lobby">
-          <p class="game-whats-new">Codenames chegou com tudo: agora dá pra jogar Livre, 2x2, 3x3 ou 3x3 Todos contra todos (3 equipes na mesma partida)!</p>
+          <p class="game-whats-new">Codenames chegou com tudo: agora dá pra jogar Livre, 2x2, 3x3 ou 2x2x2 Todos contra todos (3 equipes na mesma partida)!</p>
           <p class="settings-hint">Escolham uma equipe e um papel. Cada equipe precisa de 1 Mestre-Espião e pelo menos 1 Agente pra começar. Quem não escolher fica só assistindo.</p>
 
           <div class="settings-group">
@@ -433,9 +434,17 @@
 
         <div id="game-board-view" class="game-board-view hidden">
           <div id="game-turn-banner" class="game-turn-banner"></div>
+          <div id="game-timeout-notice" class="game-timeout-notice hidden" role="alert"></div>
 
           <div class="game-table">
-            <div id="game-panels-left" class="game-team-panels"></div>
+            <div class="game-side-col">
+              <div id="game-panels-left" class="game-team-panels"></div>
+              <div class="game-board-bg-toggle">
+                <span>Fundo</span>
+                <button type="button" class="game-bg-swatch game-bg-swatch-dark" data-game-theme="dark" title="Fundo preto" aria-label="Fundo preto"></button>
+                <button type="button" class="game-bg-swatch game-bg-swatch-light" data-game-theme="light" title="Fundo branco" aria-label="Fundo branco"></button>
+              </div>
+            </div>
 
             <div class="game-center-col">
               <div id="game-board" class="game-board"></div>

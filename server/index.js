@@ -173,6 +173,8 @@ const CODENAMES_WORDS = [
   'FILTRO-SOLAR', 'PROTETOR', 'CURATIVO', 'GESSO', 'MULETA', 'CADEIRA-DE-RODAS', 'BENGALA', 'ANDADOR', 'SERINGA',
   'RAIO-X', 'POLEGAR', 'ASA', 'GRÃO', 'MARFIM', 'SECRETÁRIA',
   'FRENTE', 'CASCA', 'BERMUDA', 'NOÉ', 'DOENÇA', 'BEBIDA', 'ELÉTRICO', 'SINAL', 'JORNADA',
+  'MOLHO', 'PERUCA', 'ATLÂNTIDA', 'NAVE', 'CONTRATO', 'ERVA', 'DEPÓSITO', 'ESTÁBULO', 'CELA',
+  'MILIONÁRIO', 'CAPITÃO', 'PARAQUEDAS', 'LATA', 'JULGAMENTO', 'GARRA', 'BACON',
 ];
 
 // roomId -> estado do minijogo "Codigo Secreto" (ver mais abaixo). So existe
@@ -204,7 +206,7 @@ const TEAM_LABEL_FEM = { red: 'Vermelha', blue: 'Azul', green: 'Verde' };
 
 // Tempo que o time da vez tem pra escolher uma palavra depois que o
 // Mestre-Espiao da a pista.
-const ANSWER_TIME_MS = 90000;
+const ANSWER_TIME_MS = Number(process.env.CODENAMES_TIME_MS) || 90000; // env so pra testes automatizados
 
 function emptyTeams(mode) {
   const teams = {};
@@ -212,8 +214,9 @@ function emptyTeams(mode) {
   return teams;
 }
 
-function createCodenamesGame() {
+function createCodenamesGame(roomId) {
   return {
+    roomId,
     status: 'lobby', // lobby | playing | over
     round: 0,
     mode: DEFAULT_GAME_MODE,
@@ -228,8 +231,48 @@ function createCodenamesGame() {
     log: [],
     clueGivenAt: null,
     answerTimer: null,
+    phaseStartedAt: null, // inicio do cronometro da fase atual (pista OU palpite)
+    phaseToken: 0, // muda a cada fase nova - timeout velho que dispare atrasado se reconhece e nao faz nada
+    timeoutSeq: 0, // conta quantas vezes o tempo esgotou - o cliente usa pra mostrar o aviso + som
+    lastTimeout: null, // { team, phase } do ultimo tempo esgotado
     hostId: null,
+    joinOrder: [], // ordem em que as pessoas entraram num time - define o proximo anfitriao
+    vacated: [], // [{ name, team, role }] de quem caiu com a partida rolando - volta pro lugar se reconectar
   };
+}
+
+// Um time so consegue jogar a vez se tiver mestre-espiao (pra dar a pista)
+// E pelo menos um agente (pra palpitar) - e nao tiver sido eliminado.
+function teamPlayable(game, team) {
+  const t = game.teams[team];
+  return !game.eliminated.includes(team) && !!t.spymaster && t.agents.length >= 1;
+}
+
+// Cronometro de 1min30 da fase atual - vale tanto pro mestre-espiao dar a
+// pista quanto pros agentes palpitarem. Esgotou = perde a vez.
+function startPhaseTimer(game) {
+  clearAnswerTimer(game);
+  game.phaseStartedAt = Date.now();
+  const token = ++game.phaseToken;
+  game.answerTimer = setTimeout(() => {
+    if (codenamesGames.get(game.roomId) !== game) return; // sala acabou / jogo foi trocado
+    if (game.status !== 'playing' || game.phaseToken !== token) return;
+    const team = game.currentTeam;
+    const who = game.phase === 'clue' ? 'o Mestre-Espião não deu a pista' : 'os agentes não escolheram';
+    game.log.push(`Tempo esgotado (${who}) - Equipe ${TEAM_LABEL[team]} perdeu a vez`);
+    game.timeoutSeq += 1;
+    game.lastTimeout = { team, phase: game.phase };
+    endGameTurn(game);
+    broadcastGameState(game.roomId);
+  }, ANSWER_TIME_MS);
+}
+
+// Proximo anfitriao quando o atual sai: o primeiro (na ordem em que
+// entraram num time) que ainda esta na sala e num time.
+function pickNextHost(game, roomId, leavingId) {
+  const room = rooms.get(roomId);
+  const next = game.joinOrder.find((id) => id !== leavingId && room && room.has(id) && playerGameRole(game, id));
+  return next || null;
 }
 
 // Só quem abriu o lobby (o primeiro a escolher uma equipe num lobby vazio -
@@ -253,7 +296,7 @@ function clearAnswerTimer(game) {
 }
 
 function getOrCreateGame(roomId) {
-  if (!codenamesGames.has(roomId)) codenamesGames.set(roomId, createCodenamesGame());
+  if (!codenamesGames.has(roomId)) codenamesGames.set(roomId, createCodenamesGame(roomId));
   return codenamesGames.get(roomId);
 }
 
@@ -286,7 +329,11 @@ function generateBoard(mode, startingTeam) {
     for (let i = 0; i < count; i++) teamsArr.push(team);
   });
   const shuffledTeams = shuffle(teamsArr);
-  return words.map((word, i) => ({ word, team: shuffledTeams[i], revealed: false }));
+  // Foto que aparece na carta quando ela e revelada - sorteada aqui pra
+  // todo mundo ver a MESMA foto na mesma carta. Numeros 0-24 embaralhados
+  // (o cliente faz % quantidade de fotos), entao quase nao repete.
+  const photos = shuffle(Array.from({ length: words.length }, (_, i) => i));
+  return words.map((word, i) => ({ word, team: shuffledTeams[i], revealed: false, photo: photos[i] }));
 }
 
 function countRemaining(game, team) {
@@ -313,12 +360,24 @@ function endGameTurn(game) {
   game.clueGivenAt = null;
   const order = GAME_MODES[game.mode].teams;
   const idx = order.indexOf(game.currentTeam);
+  // Pula times desfalcados (alguem saiu no meio: sem mestre-espiao ou sem
+  // agente). Se NENHUM time vivo der pra jogar, fica no proximo vivo mesmo
+  // - o cronometro continua girando a vez ate alguem voltar.
+  let firstAlive = null;
+  let chosen = null;
+  const skipped = [];
   for (let step = 1; step <= order.length; step++) {
     const candidate = order[(idx + step) % order.length];
-    if (!game.eliminated.includes(candidate)) { game.currentTeam = candidate; break; }
+    if (game.eliminated.includes(candidate)) continue;
+    if (!firstAlive) firstAlive = candidate;
+    if (teamPlayable(game, candidate)) { chosen = candidate; break; }
+    skipped.push(candidate);
   }
+  game.currentTeam = chosen || firstAlive || game.currentTeam;
+  if (chosen) skipped.forEach((t) => game.log.push(`Equipe ${TEAM_LABEL[t]} está desfalcada - vez pulada`));
   game.phase = 'clue';
   game.clue = null;
+  if (game.status === 'playing') startPhaseTimer(game);
 }
 
 function startNewGameRound(game) {
@@ -335,7 +394,9 @@ function startNewGameRound(game) {
   game.clueGivenAt = null;
   game.winner = null;
   game.winReason = null;
+  game.lastTimeout = null;
   game.log = [`Nova partida! Equipe ${TEAM_LABEL_FEM[startingTeam]} comeca.`];
+  startPhaseTimer(game);
 }
 
 function gameTeamsBothReady(game) {
@@ -359,7 +420,7 @@ function publicGameState(roomId) {
       status: 'lobby', round: 0, mode: DEFAULT_GAME_MODE, board: [], currentTeam: null, eliminated: [], phase: null, clue: null,
       teams: emptyTeams(DEFAULT_GAME_MODE),
       winner: null, winReason: null, remaining: { red: 0, blue: 0 }, log: [],
-      clueGivenAt: null, answerTimeMs: null, hostId: null,
+      clueGivenAt: null, answerTimeMs: null, phaseEndsInMs: null, timeoutSeq: 0, lastTimeout: null, hostId: null,
     };
   }
   const teams = GAME_MODES[game.mode].teams;
@@ -371,7 +432,11 @@ function publicGameState(roomId) {
     status: game.status,
     round: game.round,
     mode: game.mode,
-    board: game.board.map((c) => ({ word: c.word, revealed: c.revealed, team: c.revealed ? c.team : null })),
+    // No fim da partida todo mundo ve a cor de todas as cartas.
+    board: game.board.map((c) => {
+      const visible = c.revealed || game.status === 'over';
+      return { word: c.word, revealed: c.revealed, team: visible ? c.team : null, photo: visible ? c.photo : null };
+    }),
     currentTeam: game.currentTeam,
     eliminated: game.eliminated,
     phase: game.phase,
@@ -388,6 +453,12 @@ function publicGameState(roomId) {
     log: game.log.slice(-30),
     clueGivenAt: game.clueGivenAt,
     answerTimeMs: ANSWER_TIME_MS,
+    // Quanto falta do cronometro da fase AGORA (o cliente soma no proprio
+    // relogio ao receber - nao depende do relogio do PC bater com o servidor).
+    phaseEndsInMs: game.status === 'playing' && game.phaseStartedAt
+      ? Math.max(0, ANSWER_TIME_MS - (Date.now() - game.phaseStartedAt)) : null,
+    timeoutSeq: game.timeoutSeq,
+    lastTimeout: game.lastTimeout,
     hostId: game.hostId,
   };
 }
@@ -834,6 +905,26 @@ io.on('connection', (socket) => {
     // (nao via socket.to, porque eles nunca dao socket.join na sala).
     const specs = spectatorsByRoom.get(roomId);
     if (specs) specs.forEach((id) => io.to(id).emit('peer-joined', { id: socket.id, name: name || 'Anonimo' }));
+
+    // Codenames: quem caiu com a partida rolando e voltou com o MESMO nome
+    // reassume o lugar no time, se a vaga ainda estiver livre.
+    const game = codenamesGames.get(roomId);
+    if (game && game.status !== 'lobby') {
+      const cleanName = String(name || 'Anonimo').trim().toLowerCase();
+      const i = game.vacated.findIndex((v) => String(v.name).trim().toLowerCase() === cleanName);
+      if (i >= 0) {
+        const v = game.vacated[i];
+        const t = game.teams[v.team];
+        const free = v.role === 'spymaster' ? !t.spymaster : t.agents.length < GAME_MODES[game.mode].maxAgents;
+        if (free && !playerGameRole(game, socket.id)) {
+          if (v.role === 'spymaster') t.spymaster = socket.id; else t.agents.push(socket.id);
+          game.vacated.splice(i, 1);
+          if (!game.joinOrder.includes(socket.id)) game.joinOrder.push(socket.id);
+          game.log.push(`${name || 'Anonimo'} voltou pra Equipe ${TEAM_LABEL[v.team]}`);
+          broadcastGameState(roomId);
+        }
+      }
+    }
     broadcastRoomsToAdmins();
   });
 
@@ -880,6 +971,10 @@ io.on('connection', (socket) => {
       if (ack) ack({ ok: false, error: 'Só o Mestre-Espião vê o mapa secreto' });
       return;
     }
+    if (game.status === 'playing' && game.eliminated.includes(role.team)) {
+      if (ack) ack({ ok: false, error: 'Sua equipe foi eliminada' });
+      return;
+    }
     if (ack) ack({ ok: true, round: game.round, map: game.board.map((c) => c.team) });
   });
 
@@ -919,6 +1014,7 @@ io.on('connection', (socket) => {
     removeFromGameTeams(game, socket.id);
     if (role === 'spymaster') game.teams[team].spymaster = socket.id;
     else game.teams[team].agents.push(socket.id);
+    if (!game.joinOrder.includes(socket.id)) game.joinOrder.push(socket.id);
     broadcastGameState(currentRoom);
     // Codenames nao tem um "abrir lobby" explicito - o primeiro a escolher
     // equipe num lobby vazio e quem "iniciou" o jogo, e tambem quem fica
@@ -988,7 +1084,7 @@ io.on('connection', (socket) => {
       return;
     }
     if (oldGame) clearAnswerTimer(oldGame);
-    codenamesGames.set(currentRoom, createCodenamesGame());
+    codenamesGames.set(currentRoom, createCodenamesGame(currentRoom));
     broadcastGameState(currentRoom);
     if (ack) ack({ ok: true });
   });
@@ -1018,16 +1114,8 @@ io.on('connection', (socket) => {
     game.log.push(`${name} (Mestre-Espião ${teamLabel}) deu a pista "${cleanWord.toUpperCase()}" ${n}`);
     game.phase = 'guess';
 
-    clearAnswerTimer(game);
     game.clueGivenAt = Date.now();
-    const roomIdForTimer = currentRoom; // nao usar currentRoom direto dentro do timeout - e um "let" por socket, pode mudar antes do timer disparar
-    const teamAtClueTime = game.currentTeam;
-    game.answerTimer = setTimeout(() => {
-      if (game.status !== 'playing' || game.phase !== 'guess' || game.currentTeam !== teamAtClueTime) return;
-      game.log.push(`Tempo esgotado - Equipe ${TEAM_LABEL[teamAtClueTime]} perdeu a vez`);
-      endGameTurn(game);
-      broadcastGameState(roomIdForTimer);
-    }, ANSWER_TIME_MS);
+    startPhaseTimer(game);
 
     broadcastGameState(currentRoom);
     if (ack) ack({ ok: true });
@@ -1107,6 +1195,7 @@ io.on('connection', (socket) => {
     }
     const role = playerGameRole(game, socket.id);
     if (!role || role.team !== game.currentTeam) { if (ack) ack({ ok: false, error: 'Você não está na equipe da vez' }); return; }
+    if (role.role !== 'agent') { if (ack) ack({ ok: false, error: 'Só os agentes podem passar a vez' }); return; }
     const teamLabel = TEAM_LABEL[game.currentTeam];
     game.log.push(`Equipe ${teamLabel} passou a vez`);
     endGameTurn(game);
@@ -1288,10 +1377,13 @@ io.on('connection', (socket) => {
     }
 
     if (currentRoom && rooms.has(currentRoom)) {
+      const leavingName = rooms.get(currentRoom).get(socket.id)?.name || 'Alguém';
       rooms.get(currentRoom).delete(socket.id);
       const specs = spectatorsByRoom.get(currentRoom);
       if (rooms.get(currentRoom).size === 0) {
         rooms.delete(currentRoom);
+        const deadGame = codenamesGames.get(currentRoom);
+        if (deadGame) clearAnswerTimer(deadGame);
         codenamesGames.delete(currentRoom);
         const stopGame = stopGames.get(currentRoom);
         if (stopGame && stopGame.timer) clearTimeout(stopGame.timer);
@@ -1301,8 +1393,24 @@ io.on('connection', (socket) => {
         socket.to(currentRoom).emit('peer-left', { id: socket.id });
         const game = codenamesGames.get(currentRoom);
         if (game) {
+          const role = playerGameRole(game, socket.id);
+          // Partida rolando: guarda o lugar pra pessoa voltar se reconectar
+          // com o mesmo nome (ver join-room).
+          if (role && game.status !== 'lobby') {
+            game.vacated.push({ name: leavingName, team: role.team, role: role.role });
+            game.log.push(`${leavingName} saiu da sala (Equipe ${TEAM_LABEL[role.team]})`);
+          }
           removeFromGameTeams(game, socket.id);
-          if (game.hostId === socket.id) game.hostId = null;
+          if (game.hostId === socket.id) game.hostId = pickNextHost(game, currentRoom, socket.id);
+          // O time da vez ficou sem quem precisa agir AGORA (mestre-espiao na
+          // fase de pista, ou nenhum agente): pula a vez na hora. Se so o
+          // mestre saiu durante os palpites, os agentes terminam essa pista.
+          const t = role && game.teams[role.team];
+          const stuckNow = t && (t.agents.length === 0 || (game.phase === 'clue' && !t.spymaster));
+          if (role && game.status === 'playing' && role.team === game.currentTeam && stuckNow) {
+            game.log.push(`Equipe ${TEAM_LABEL[role.team]} está desfalcada - vez pulada`);
+            endGameTurn(game);
+          }
           broadcastGameState(currentRoom);
         }
         // Quem sai pode ter sido justamente quem faltava votar - reavalia
