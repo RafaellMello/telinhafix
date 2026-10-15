@@ -238,6 +238,8 @@ function createCodenamesGame(roomId) {
     hostId: null,
     joinOrder: [], // ordem em que as pessoas entraram num time - define o proximo anfitriao
     vacated: [], // [{ name, team, role }] de quem caiu com a partida rolando - volta pro lugar se reconectar
+    marks: {}, // socketId do agente -> indice da carta que ele esta apontando (o time todo ve)
+    clueHistory: [], // [{ team, word, number, hits, targets }] - targets so aparece no fim da partida
   };
 }
 
@@ -316,10 +318,12 @@ function removeFromGameTeams(game, socketId) {
 }
 
 function generateBoard(mode, startingTeam) {
-  const words = shuffle(CODENAMES_WORDS).slice(0, 25);
   let counts;
   if (mode === 'ffa3') {
-    counts = { red: 6, blue: 6, green: 6, neutral: 5, assassin: 2 };
+    // 2x2x2 (pedido do Rafael): 9 do time que comeca, 8 de cada um dos
+    // outros dois, 9 neutras e 3 assassinos = 37 cartas.
+    counts = { neutral: 9, assassin: 3 };
+    GAME_MODES.ffa3.teams.forEach((t) => { counts[t] = t === startingTeam ? 9 : 8; });
   } else {
     const otherTeam = GAME_MODES[mode].teams.find((t) => t !== startingTeam);
     counts = { [startingTeam]: 9, [otherTeam]: 8, neutral: 7, assassin: 1 };
@@ -328,6 +332,7 @@ function generateBoard(mode, startingTeam) {
   Object.entries(counts).forEach(([team, count]) => {
     for (let i = 0; i < count; i++) teamsArr.push(team);
   });
+  const words = shuffle(CODENAMES_WORDS).slice(0, teamsArr.length);
   const shuffledTeams = shuffle(teamsArr);
   // Foto que aparece na carta quando ela e revelada - sorteada aqui pra
   // todo mundo ver a MESMA foto na mesma carta. Numeros 0-24 embaralhados
@@ -377,6 +382,7 @@ function endGameTurn(game) {
   if (chosen) skipped.forEach((t) => game.log.push(`Equipe ${TEAM_LABEL[t]} está desfalcada - vez pulada`));
   game.phase = 'clue';
   game.clue = null;
+  game.marks = {};
   if (game.status === 'playing') startPhaseTimer(game);
 }
 
@@ -399,6 +405,8 @@ function startNewGameRound(game) {
   game.winner = null;
   game.winReason = null;
   game.lastTimeout = null;
+  game.marks = {};
+  game.clueHistory = [];
   game.log = [`Nova partida! Equipe ${TEAM_LABEL_FEM[startingTeam]} comeca.`];
   startPhaseTimer(game);
 }
@@ -424,7 +432,7 @@ function publicGameState(roomId) {
       status: 'lobby', round: 0, mode: DEFAULT_GAME_MODE, board: [], currentTeam: null, eliminated: [], phase: null, clue: null,
       teams: emptyTeams(DEFAULT_GAME_MODE),
       winner: null, winReason: null, remaining: { red: 0, blue: 0 }, log: [],
-      clueGivenAt: null, answerTimeMs: null, phaseEndsInMs: null, timeoutSeq: 0, lastTimeout: null, hostId: null,
+      clueGivenAt: null, answerTimeMs: null, phaseEndsInMs: null, timeoutSeq: 0, lastTimeout: null, hostId: null, marks: {}, clueHistory: [],
     };
   }
   const teams = GAME_MODES[game.mode].teams;
@@ -463,6 +471,18 @@ function publicGameState(roomId) {
     phaseEndsInMs: game.status === 'playing' && game.phaseStartedAt
       ? Math.max(0, ANSWER_TIME_MS - (Date.now() - game.phaseStartedAt)) : null,
     timeoutSeq: game.timeoutSeq,
+    marks: (() => {
+      const room = rooms.get(roomId);
+      const out = {};
+      for (const [id, idx] of Object.entries(game.marks)) {
+        (out[idx] = out[idx] || []).push({ id, name: (room && room.get(id) && room.get(id).name) || 'Jogador' });
+      }
+      return out;
+    })(),
+    clueHistory: game.clueHistory.map((c) => ({
+      team: c.team, word: c.word, number: c.number, hits: c.hits,
+      targets: game.status === 'over' ? c.targets : null,
+    })),
     lastTimeout: game.lastTimeout,
     hostId: game.hostId,
   };
@@ -1031,6 +1051,38 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
+  // "Sortear times" (so o anfitriao, so no lobby): embaralha TODO MUNDO da
+  // sala nos times do modo - primeiro 1 mestre-espiao por time, depois os
+  // agentes em rodizio ate o limite do modo; quem sobrar fica assistindo.
+  socket.on('game-shuffle-teams', (_data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = getOrCreateGame(currentRoom);
+    if (game.status !== 'lobby') { if (ack) ack({ ok: false, error: 'Só dá pra sortear no lobby' }); return; }
+    if (game.hostId && !isGameHost(game, currentRoom, socket.id)) {
+      if (ack) ack({ ok: false, error: 'Só quem abriu o lobby pode sortear os times' });
+      return;
+    }
+    const room = rooms.get(currentRoom);
+    const people = shuffle(Array.from(room ? room.keys() : []));
+    const teams = GAME_MODES[game.mode].teams;
+    const maxAgents = GAME_MODES[game.mode].maxAgents;
+    game.teams = emptyTeams(game.mode);
+    const queue = [...people];
+    teams.forEach((t) => { if (queue.length) game.teams[t].spymaster = queue.shift(); });
+    let ti = 0;
+    let fullRounds = 0;
+    while (queue.length && fullRounds < teams.length) {
+      const t = teams[ti % teams.length];
+      if (game.teams[t].agents.length < maxAgents) { game.teams[t].agents.push(queue.shift()); fullRounds = 0; } else { fullRounds += 1; }
+      ti += 1;
+    }
+    if (!game.hostId) game.hostId = socket.id;
+    game.joinOrder = [socket.id, ...people.filter((id) => id !== socket.id && playerGameRole(game, id))];
+    broadcastGameState(currentRoom);
+    notifyMinigameStarted(socket, currentRoom, 'codenames');
+    if (ack) ack({ ok: true });
+  });
+
   socket.on('game-leave-role', (_data, ack) => {
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = codenamesGames.get(currentRoom);
@@ -1095,7 +1147,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('game-give-clue', (data, ack) => {
-    const { word, number } = data || {};
+    const { word, number, targets } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = codenamesGames.get(currentRoom);
     if (!game || game.status !== 'playing' || game.phase !== 'clue') {
@@ -1114,6 +1166,10 @@ io.on('connection', (socket) => {
     if (n > 9) n = 9;
     const remaining = countRemaining(game, game.currentTeam);
     game.clue = { word: cleanWord, number: n, guessesMade: 0, guessesAllowed: n === 0 ? Infinity : Math.min(n + 1, remaining) };
+    const cleanTargets = Array.isArray(targets)
+      ? [...new Set(targets.map(Number))].filter((i) => Number.isInteger(i) && game.board[i] && !game.board[i].revealed).slice(0, 9)
+      : [];
+    game.clueHistory.push({ team: game.currentTeam, word: cleanWord, number: n, hits: 0, targets: cleanTargets });
     const teamLabel = TEAM_LABEL[game.currentTeam];
     const name = (rooms.get(currentRoom)?.get(socket.id)?.name) || 'Alguém';
     game.log.push(`${name} (Mestre-Espião ${teamLabel}) deu a pista "${cleanWord.toUpperCase()}" ${n}`);
@@ -1140,13 +1196,14 @@ io.on('connection', (socket) => {
       return;
     }
     const i = Number(index);
-    if (!Number.isInteger(i) || i < 0 || i > 24 || !game.board[i] || game.board[i].revealed) {
+    if (!Number.isInteger(i) || i < 0 || i >= game.board.length || !game.board[i] || game.board[i].revealed) {
       if (ack) ack({ ok: false, error: 'Palavra inválida' });
       return;
     }
 
     const cell = game.board[i];
     cell.revealed = true;
+    for (const [id, idx] of Object.entries(game.marks)) if (idx === i) delete game.marks[id];
     const name = (rooms.get(currentRoom)?.get(socket.id)?.name) || 'Alguém';
     const teamLabel = TEAM_LABEL[game.currentTeam];
 
@@ -1176,6 +1233,8 @@ io.on('connection', (socket) => {
     } else if (cell.team === game.currentTeam) {
       game.log.push(`${name} (${teamLabel}) acertou "${cell.word}"`);
       game.clue.guessesMade += 1;
+      const lastClue = game.clueHistory[game.clueHistory.length - 1];
+      if (lastClue && lastClue.team === game.currentTeam) lastClue.hits += 1;
       checkGameWinConditions(game);
       if (game.status === 'playing' && game.clue.guessesAllowed !== Infinity && game.clue.guessesMade >= game.clue.guessesAllowed) {
         endGameTurn(game);
@@ -1187,6 +1246,24 @@ io.on('connection', (socket) => {
       if (game.status === 'playing') endGameTurn(game);
     }
 
+    broadcastGameState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
+  socket.on('game-mark-cell', (data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = codenamesGames.get(currentRoom);
+    if (!game || game.status !== 'playing' || game.phase !== 'guess') { if (ack) ack({ ok: false, error: 'Não é hora de palpitar' }); return; }
+    const role = playerGameRole(game, socket.id);
+    if (!role || role.role !== 'agent' || role.team !== game.currentTeam) { if (ack) ack({ ok: false, error: 'Só os agentes da vez podem marcar' }); return; }
+    const index = data && data.index;
+    if (index === null || index === undefined) {
+      delete game.marks[socket.id];
+    } else {
+      const i = Number(index);
+      if (!Number.isInteger(i) || !game.board[i] || game.board[i].revealed) { if (ack) ack({ ok: false, error: 'Carta inválida' }); return; }
+      game.marks[socket.id] = i;
+    }
     broadcastGameState(currentRoom);
     if (ack) ack({ ok: true });
   });
@@ -1406,6 +1483,7 @@ io.on('connection', (socket) => {
             game.log.push(`${leavingName} saiu da sala (Equipe ${TEAM_LABEL[role.team]})`);
           }
           removeFromGameTeams(game, socket.id);
+          delete game.marks[socket.id];
           if (game.hostId === socket.id) game.hostId = pickNextHost(game, currentRoom, socket.id);
           // O time da vez ficou sem quem precisa agir AGORA (mestre-espiao na
           // fase de pista, ou nenhum agente): pula a vez na hora. Se so o

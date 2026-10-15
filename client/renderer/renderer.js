@@ -1746,6 +1746,7 @@ function renderGameLobby() {
   const startBtn = document.getElementById('btn-game-start');
   startBtn.disabled = !bothReady || !amIHost;
   startBtn.title = amIHost ? '' : 'Só quem abriu o lobby pode iniciar a partida';
+  document.getElementById('btn-game-shuffle').classList.toggle('hidden', !amIHost);
 }
 
 // Monta as 25 cartas do zero (fundo + verso, ver CSS .game-cell-inner) -
@@ -1768,6 +1769,9 @@ function buildBoardCells(boardEl) {
     frontWord.className = 'game-cell-word';
     frontWord.textContent = cell.word;
     front.appendChild(frontWord);
+    const marks = document.createElement('div');
+    marks.className = 'game-cell-marks';
+    front.appendChild(marks);
 
     const back = document.createElement('div');
     back.className = 'game-cell-face game-cell-back';
@@ -1791,7 +1795,7 @@ function buildBoardCells(boardEl) {
 
     div.addEventListener('click', () => handleGameCellClick(i));
 
-    return { root: div, inner, front, back, photo };
+    return { root: div, inner, front, back, photo, marks };
   });
 }
 
@@ -1814,6 +1818,12 @@ function handleGameCellClick(i) {
     cellEl.root.classList.toggle('game-cell-show-word', shownWordCells.has(i));
     return;
   }
+  if (cellEl && cellEl.root.classList.contains('game-cell-targetable')) {
+    if (clueTargets.has(i)) clueTargets.delete(i); else clueTargets.add(i);
+    cellEl.root.classList.toggle('game-cell-target', clueTargets.has(i));
+    updateClueTargetHint();
+    return;
+  }
   if (!cellEl || !cellEl.root.classList.contains('game-cell-clickable')) return;
   if (selectedGuessCellIndex === i) {
     confirmGuess();
@@ -1821,6 +1831,20 @@ function handleGameCellClick(i) {
   }
   selectedGuessCellIndex = i;
   updateGuessConfirmUi();
+  window.game.markCell(i).catch(() => {});
+}
+
+// Cartas que o Mestre-Espiao "tem em mente" pra pista que vai dar - so na
+// tela dele, vai junto com a pista e so aparece pra todo mundo no resumo do
+// fim ("O que os mestres quiseram dizer"). Opcional.
+const clueTargets = new Set();
+
+function updateClueTargetHint() {
+  const el = document.getElementById('game-clue-target-hint');
+  if (!el) return;
+  el.textContent = clueTargets.size
+    ? `${clueTargets.size} carta${clueTargets.size > 1 ? 's' : ''} marcada${clueTargets.size > 1 ? 's' : ''} como alvo da pista (só você vê; aparece no resumo do fim)`
+    : 'Opcional: clique nas cartas que você quer que o time ache. Só você vê - aparece no resumo do fim da partida.';
 }
 
 function confirmGuess() {
@@ -1834,6 +1858,7 @@ function confirmGuess() {
 function cancelGuessSelection() {
   selectedGuessCellIndex = null;
   updateGuessConfirmUi();
+  window.game.markCell(null).catch(() => {});
 }
 
 // Reflete a selecao pendente no tabuleiro (destaque na carta) e na barra de
@@ -1887,6 +1912,104 @@ function updateGameAnswerTimerDisplay() {
 function withPhaseDeadline(state) {
   if (state) state.phaseDeadline = state.phaseEndsInMs != null ? Date.now() + state.phaseEndsInMs : null;
   return state;
+}
+
+// Sons do Codenames (so pra quem esta com o jogo aberto): acerto, erro/
+// neutra, assassino e troca de vez - comparando o estado anterior com o novo.
+function playGameStateSounds(prev, next) {
+  if (!prev || !next || !gameOverlayOpen || currentGameView !== 'codenames') return;
+  const sameBoard = (prev.boardId || prev.round) === (next.boardId || next.round) && prev.board.length === next.board.length;
+  if (!sameBoard || prev.status !== 'playing') return;
+  const notes = [];
+  next.board.forEach((c, i) => {
+    if (!c.revealed || prev.board[i].revealed) return;
+    if (c.team === 'assassin') {
+      notes.push({ freq: 196, duration: 0.25, type: 'sawtooth', gain: 0.08 }, { freq: 147, start: 0.22, duration: 0.35, type: 'sawtooth', gain: 0.08 }, { freq: 98, start: 0.5, duration: 0.7, type: 'sawtooth', gain: 0.09 });
+    } else if (c.team === prev.currentTeam) {
+      notes.push({ freq: 659.25, duration: 0.1, gain: 0.11 }, { freq: 987.77, start: 0.09, duration: 0.2, gain: 0.11 });
+    } else {
+      notes.push({ freq: 311, duration: 0.16, type: 'triangle', gain: 0.13 }, { freq: 233, start: 0.14, duration: 0.26, type: 'triangle', gain: 0.13 });
+    }
+  });
+  if (next.status === 'playing' && prev.currentTeam !== next.currentTeam) {
+    const at = notes.length ? 0.55 : 0;
+    notes.push({ freq: 523.25, start: at, duration: 0.09, gain: 0.07 }, { freq: 659.25, start: at + 0.09, duration: 0.09, gain: 0.07 }, { freq: 783.99, start: at + 0.18, duration: 0.14, gain: 0.07 });
+  }
+  if (notes.length) playTones(notes);
+}
+
+// Efeitos visuais do Codenames: tela treme + caveira quando alguem revela o
+// assassino, e confete + letreiro na cor do time vencedor no fim da partida.
+// So pra quem esta com o jogo aberto.
+function playGameStateEffects(prev, next) {
+  if (!prev || !next || !gameOverlayOpen || currentGameView !== 'codenames') return;
+  const sameBoard = (prev.boardId || prev.round) === (next.boardId || next.round) && prev.board.length === next.board.length;
+  if (!sameBoard || prev.status !== 'playing') return;
+  const hitAssassin = next.board.some((c, i) => c.revealed && !prev.board[i].revealed && c.team === 'assassin');
+  if (hitAssassin) playAssassinEffect();
+  if (next.status === 'over' && next.winner) {
+    setTimeout(() => celebrateWinner(next.winner), hitAssassin ? 1300 : 300);
+  }
+}
+
+function playAssassinEffect() {
+  const view = document.getElementById('game-board-view');
+  const skull = document.getElementById('game-fx-skull');
+  view.classList.remove('game-assassin-hit');
+  void view.offsetWidth; // reinicia a animacao se vier dois seguidos
+  view.classList.add('game-assassin-hit');
+  skull.innerHTML = CARD_WATERMARKS.assassin;
+  skull.classList.remove('hidden');
+  setTimeout(() => { view.classList.remove('game-assassin-hit'); skull.classList.add('hidden'); }, 1400);
+}
+
+function celebrateWinner(team) {
+  const label = GAME_TEAM_LABEL[team] || '';
+  const el = document.getElementById('game-fx-victory');
+  el.innerHTML = `<strong>Vitória!</strong><span>Equipe ${escapeHtml(label)}</span>`;
+  el.className = `game-fx-victory game-fx-victory-${team}`;
+  setTimeout(() => el.classList.add('hidden'), 3800);
+  const teamColor = getComputedStyle(document.documentElement).getPropertyValue(`--game-${team}`).trim() || '#e2231a';
+  launchConfetti([teamColor, teamColor, '#ffffff', '#ffd54a']);
+  playTones([
+    { freq: 523.25, duration: 0.12, gain: 0.09 }, { freq: 659.25, start: 0.12, duration: 0.12, gain: 0.09 },
+    { freq: 783.99, start: 0.24, duration: 0.12, gain: 0.09 }, { freq: 1046.5, start: 0.36, duration: 0.4, gain: 0.1 },
+  ]);
+}
+
+// Confete simples num canvas por cima de tudo (some sozinho em ~4s).
+function launchConfetti(colors) {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'game-confetti';
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  const pieces = Array.from({ length: 180 }, () => ({
+    x: Math.random() * canvas.width,
+    y: -20 - Math.random() * canvas.height * 0.5,
+    w: 6 + Math.random() * 7,
+    h: 9 + Math.random() * 9,
+    vx: -2 + Math.random() * 4,
+    vy: 2.5 + Math.random() * 4.5,
+    rot: Math.random() * Math.PI,
+    vr: -0.2 + Math.random() * 0.4,
+    color: colors[Math.floor(Math.random() * colors.length)],
+  }));
+  const start = performance.now();
+  const frame = (now) => {
+    const t = now - start;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = t > 3200 ? Math.max(0, 1 - (t - 3200) / 800) : 1;
+    pieces.forEach((p) => {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.rot += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.fillStyle = p.color; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    });
+    if (t < 4000) requestAnimationFrame(frame); else canvas.remove();
+  };
+  requestAnimationFrame(frame);
 }
 
 // Tempo esgotou (pista ou palpite): aviso grande na tela + som, pra todo
@@ -1978,6 +2101,19 @@ function renderGameTurnBanner() {
 // Paineis laterais (OPERATIVES/SPYMASTER por equipe, contagem restante,
 // cronometro) copiando o layout do site oficial - distribui as equipes
 // entre os dois lados (no modo ffa3, com 3 equipes, um lado fica com 2).
+// Pistas que o time ja recebeu, da mais recente pra mais antiga, com
+// quantas palavras certas o time achou em cada uma - ajuda a usar o
+// palpite extra pra buscar palavra de pista antiga.
+function clueHistoryHtml(team) {
+  const clues = (gameState.clueHistory || []).filter((c) => c.team === team);
+  if (!clues.length) return '';
+  const items = clues.slice().reverse().map((c) => {
+    const done = c.number > 0 && c.hits >= c.number;
+    return `<li class="${done ? 'game-clue-done' : ''}"><span class="game-clue-word">${escapeHtml(c.word.toUpperCase())}</span><span class="game-clue-num">${c.number === 0 ? '∞' : c.number}</span><span class="game-clue-hits" title="Palavras certas achadas com essa pista">✓ ${c.hits}</span></li>`;
+  }).join('');
+  return `<div class="game-clue-history"><div class="game-clue-history-title">Pistas</div><ul>${items}</ul></div>`;
+}
+
 function renderGameSidePanels() {
   const leftEl = document.getElementById('game-panels-left');
   const rightEl = document.getElementById('game-panels-right');
@@ -2001,6 +2137,7 @@ function renderGameSidePanels() {
           <div class="game-remaining-card">${CARD_WATERMARKS[team] || ''}</div>
         </div>
         ${gameRoleCardHtml('Mestre-Espião', t.spymaster ? [t.spymaster] : [], spymasterActing)}
+        ${clueHistoryHtml(team)}
         ${showTimer ? `<div id="game-answer-timer" class="game-answer-timer"></div>` : ''}
       </div>
     `;
@@ -2074,12 +2211,20 @@ function updateGameCameraButton() {
 function renderGameBoard() {
   const role = myGameRole();
   const boardEl = document.getElementById('game-board');
+  // 2x2x2 tem 37 cartas: tabuleiro largo, 8 por linha (ultima linha centralizada).
+  const wideBoard = gameState.board.length > 25;
+  boardEl.classList.toggle('game-board-wide', wideBoard);
+  document.querySelector('#codenames-view .game-table')?.classList.toggle('game-table-wide', wideBoard);
 
   if (currentBoardKey() !== boardCellRound || boardCellEls.length !== gameState.board.length) {
     buildBoardCells(boardEl);
     boardCellRound = currentBoardKey();
     selectedGuessCellIndex = null;
   }
+
+  const mySpymasterClueTurn = gameState.status === 'playing' && gameState.phase === 'clue'
+    && role && role.role === 'spymaster' && role.team === gameState.currentTeam;
+  if (!mySpymasterClueTurn && clueTargets.size) clueTargets.clear();
 
   gameState.board.forEach((cell, i) => {
     const { root, inner, front, back, photo } = boardCellEls[i];
@@ -2109,6 +2254,18 @@ function renderGameBoard() {
     const clickable = gameState.status === 'playing' && gameState.phase === 'guess'
       && role && role.role === 'agent' && role.team === gameState.currentTeam && !cell.revealed;
     root.classList.toggle('game-cell-clickable', !!clickable);
+
+    const targetable = mySpymasterClueTurn && !cell.revealed;
+    root.classList.toggle('game-cell-targetable', targetable);
+    root.classList.toggle('game-cell-target', targetable && clueTargets.has(i));
+
+    const cellMarks = (!cell.revealed && gameState.status === 'playing' && gameState.marks && gameState.marks[i]) || [];
+    const marksKey = cellMarks.map((m) => m.id).join(',');
+    if (boardCellEls[i].marks.dataset.key !== marksKey) {
+      boardCellEls[i].marks.dataset.key = marksKey;
+      boardCellEls[i].marks.innerHTML = cellMarks
+        .map((m) => `<span class="game-cell-mark" title="${escapeHtml(m.name)}">${escapeHtml(avatarInitials(m.name))}</span>`).join('');
+    }
   });
 
   updateGuessConfirmUi();
@@ -2135,6 +2292,8 @@ function renderGameBoard() {
   const showClueForm = gameState.status === 'playing' && gameState.phase === 'clue'
     && role && role.role === 'spymaster' && role.team === gameState.currentTeam;
   document.getElementById('game-clue-form').classList.toggle('hidden', !showClueForm);
+  document.getElementById('game-clue-target-hint').classList.toggle('hidden', !showClueForm);
+  if (showClueForm) updateClueTargetHint();
 
   const showEndTurn = gameState.status === 'playing' && gameState.phase === 'guess'
     && role && role.role === 'agent' && role.team === gameState.currentTeam;
@@ -2175,6 +2334,19 @@ function renderGameBoard() {
       if (i === gameState.log.length - 1) li.classList.add('game-over-recap-fatal');
       recapEl.appendChild(li);
     });
+
+    const intentsEl = document.getElementById('game-over-intents');
+    const withTargets = (gameState.clueHistory || []).filter((c) => c.targets && c.targets.length);
+    document.getElementById('game-over-intents-wrap').classList.toggle('hidden', withTargets.length === 0);
+    intentsEl.innerHTML = withTargets.map((c) => {
+      const words = c.targets.map((idx) => {
+        const card = gameState.board[idx];
+        if (!card) return '';
+        const ok = card.revealed && card.team === c.team;
+        return `<span class="game-intent-word ${ok ? 'game-intent-ok' : 'game-intent-miss'}">${escapeHtml(card.word)} ${ok ? '✓' : '✗'}</span>`;
+      }).join('');
+      return `<li><span class="game-intent-clue game-intent-${c.team}">${escapeHtml(c.word.toUpperCase())} ${c.number === 0 ? '∞' : c.number}</span>${words}</li>`;
+    }).join('');
 
     const amIHost = !gameState.hostId || gameState.hostId === selfId;
     const playAgainBtn = document.getElementById('btn-game-play-again');
@@ -3659,9 +3831,14 @@ document.getElementById('game-clue-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const wordInput = document.getElementById('game-clue-word');
   const number = Number(document.getElementById('game-clue-number').value);
-  window.game.giveClue(wordInput.value, number)
-    .then(() => { wordInput.value = ''; })
+  window.game.giveClue(wordInput.value, number, Array.from(clueTargets))
+    .then(() => { wordInput.value = ''; clueTargets.clear(); })
     .catch((err) => console.error('Falha ao dar a pista:', err));
+});
+
+document.getElementById('btn-game-shuffle').addEventListener('click', () => {
+  setGameError('');
+  window.game.shuffleTeams().catch((err) => setGameError(err.message));
 });
 
 document.getElementById('btn-game-end-turn').addEventListener('click', () => {
@@ -3783,6 +3960,8 @@ btnJoin.addEventListener('click', async () => {
         mySecretMap = null;
         mySecretMapBoardId = null;
       }
+      playGameStateSounds(gameState, newState);
+      playGameStateEffects(gameState, newState);
       gameState = withPhaseDeadline(newState);
       notifyGameTimeoutIfNew();
       renderGame();

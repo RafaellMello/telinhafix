@@ -154,8 +154,11 @@ contextBridge.exposeInMainWorld('game', {
   start() {
     return emitAck('game-start', null);
   },
-  giveClue(word, number) {
-    return emitAck('game-give-clue', { word, number });
+  giveClue(word, number, targets) {
+    return emitAck('game-give-clue', { word, number, targets: targets || [] });
+  },
+  markCell(index) {
+    return emitAck('game-mark-cell', { index });
   },
   revealWord(index) {
     return emitAck('game-reveal-word', { index });
@@ -165,6 +168,9 @@ contextBridge.exposeInMainWorld('game', {
   },
   playAgain() {
     return emitAck('game-play-again', null);
+  },
+  shuffleTeams() {
+    return emitAck('game-shuffle-teams', null);
   },
   resetLobby() {
     return emitAck('game-reset-lobby', null);

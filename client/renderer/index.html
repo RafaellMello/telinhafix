@@ -427,6 +427,7 @@
 
           <div class="game-lobby-actions">
             <button type="button" id="btn-game-leave-role" class="ghost hidden">Sair da equipe</button>
+            <button type="button" id="btn-game-shuffle" class="ghost hidden">Sortear times</button>
             <button type="button" id="btn-game-start">Iniciar partida</button>
           </div>
           <p id="game-lobby-error" class="settings-hint game-error hidden"></p>
@@ -435,6 +436,8 @@
         <div id="game-board-view" class="game-board-view hidden">
           <div id="game-turn-banner" class="game-turn-banner"></div>
           <div id="game-timeout-notice" class="game-timeout-notice hidden" role="alert"></div>
+          <div id="game-fx-skull" class="game-fx-skull hidden" aria-hidden="true"></div>
+          <div id="game-fx-victory" class="game-fx-victory hidden" role="status"></div>
 
           <div class="game-table">
             <div class="game-side-col">
@@ -462,6 +465,7 @@
                 <input id="game-clue-number" type="number" min="0" max="9" value="1" />
                 <button type="submit">Dar pista</button>
               </form>
+              <p id="game-clue-target-hint" class="game-clue-target-hint hidden"></p>
 
               <div class="game-bottom-row">
                 <button type="button" id="btn-game-camera" class="ghost">Ligar câmera</button>
@@ -485,6 +489,10 @@
             </div>
             <p class="game-over-recap-title">Como foi a partida</p>
             <ol id="game-over-recap" class="game-over-recap"></ol>
+            <div id="game-over-intents-wrap" class="hidden">
+              <p class="game-over-recap-title">O que os mestres quiseram dizer</p>
+              <ul id="game-over-intents" class="game-over-intents"></ul>
+            </div>
           </div>
         </div>
         </div>
