@@ -142,6 +142,7 @@
         <button type="button" class="settings-tab-btn" data-tab="sons">Sons</button>
         <button type="button" class="settings-tab-btn" data-tab="atalhos">Atalhos</button>
         <button type="button" class="settings-tab-btn" data-tab="desempenho">Teste de Desempenho</button>
+        <button type="button" class="settings-tab-btn" data-tab="novidades">Novidades</button>
       </nav>
 
       <div class="settings-content">
@@ -313,6 +314,12 @@
             <div id="quality-test-summary" class="quality-test-summary">Nunca testado.</div>
             <button id="btn-quality-test-open" class="ghost" type="button">Testar agora (~40s)</button>
           </div>
+        </section>
+
+        <section class="settings-pane hidden" data-pane="novidades">
+          <h2>Novidades</h2>
+          <p class="settings-hint">O que mudou em cada versão do TelinhaFix, da mais nova pra mais antiga.</p>
+          <div id="changelog-list" class="changelog-list"></div>
         </section>
       </div>
     </div>
@@ -641,6 +648,7 @@
     </div>
   </div>
 
+  <script src="changelog.js"></script>
   <script src="renderer.js"></script>
   <script src="quality-test.js"></script>
   <script type="module" src="backgrounds/manager.js"></script>

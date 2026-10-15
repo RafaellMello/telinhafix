@@ -2719,3 +2719,37 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 @keyframes game-victory-in { from { transform: translate(-50%, -50%) scale(0.3); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 @keyframes game-victory-out { to { transform: translate(-50%, -50%) scale(0.9); opacity: 0; } }
 .game-confetti { position: fixed; inset: 0; z-index: 67; pointer-events: none; }
+
+/* Aba "Novidades" (ver changelog.js / showNewsIfUpdated) */
+.changelog-list { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+.changelog-entry {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.changelog-entry-current { border-color: var(--red-bright); box-shadow: 0 0 0 1px var(--red-bright), 0 6px 20px rgba(var(--red-rgb), 0.18); }
+.changelog-entry header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.changelog-version {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(var(--red-rgb), 0.18);
+  color: var(--red-bright);
+}
+.changelog-title { font-size: calc(15px * var(--font-scale)); }
+.changelog-badge {
+  font-size: calc(10px * var(--font-scale));
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--red-bright);
+  color: #fff;
+}
+.changelog-date { margin-left: auto; font-size: calc(11px * var(--font-scale)); color: var(--text-muted); }
+.changelog-entry ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.changelog-entry li { font-size: calc(13px * var(--font-scale)); line-height: 1.4; color: var(--text); }
