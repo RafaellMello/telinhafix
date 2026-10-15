@@ -1504,12 +1504,22 @@ let gameState = null;
 let gameOverlayOpen = false;
 let mySecretMap = null;
 let mySecretMapRound = -1;
+let mySecretMapBoardId = null;
+
+// Chave do tabuleiro atual: o boardId do servidor (unico por tabuleiro).
+// Servidor antigo sem boardId: cai no round, como era antes.
+function currentBoardKey() {
+  return gameState ? (gameState.boardId || `round-${gameState.round}`) : null;
+}
+function secretMapIsCurrent() {
+  return !!mySecretMap && mySecretMapBoardId === currentBoardKey();
+}
 // Elementos das 25 cartas, mantidos entre renders (ver renderGameBoard) -
 // reaproveitar o mesmo DOM em vez de recriar tudo a cada estado novo e o
 // que permite a transicao CSS do flip tocar de verdade quando uma carta
 // passa de "escondida" pra "revelada".
 let boardCellEls = [];
-let boardCellRound = -1;
+let boardCellRound = -1; // guarda a chave do tabuleiro (ver currentBoardKey), nao so o round
 let gameTickInterval = null;
 // 'picker' | 'codenames' | 'stop' - qual tela o painel 🎮 ta mostrando.
 let currentGameView = 'picker';
@@ -1653,10 +1663,11 @@ function ensureSecretMap() {
   if (!role || role.role !== 'spymaster') return;
   if (gameState && gameState.status === 'playing' && gameState.eliminated?.includes(role.team)) return;
   if (!gameState || (gameState.status !== 'playing' && gameState.status !== 'over')) return;
-  if (mySecretMapRound === gameState.round && mySecretMap) return;
+  if (secretMapIsCurrent()) return;
   window.game.getSecretMap().then((res) => {
     mySecretMap = res.map;
     mySecretMapRound = res.round;
+    mySecretMapBoardId = res.boardId || `round-${res.round}`;
     renderGame();
   }).catch((err) => console.error('Falha ao buscar mapa secreto:', err));
 }
@@ -2064,9 +2075,9 @@ function renderGameBoard() {
   const role = myGameRole();
   const boardEl = document.getElementById('game-board');
 
-  if (gameState.round !== boardCellRound || boardCellEls.length !== gameState.board.length) {
+  if (currentBoardKey() !== boardCellRound || boardCellEls.length !== gameState.board.length) {
     buildBoardCells(boardEl);
-    boardCellRound = gameState.round;
+    boardCellRound = currentBoardKey();
     selectedGuessCellIndex = null;
   }
 
@@ -2081,7 +2092,7 @@ function renderGameBoard() {
 
     front.className = 'game-cell-face game-cell-front';
     const myTeamEliminated = role && gameState.status === 'playing' && gameState.eliminated?.includes(role.team);
-    if (!cell.revealed && role && role.role === 'spymaster' && !myTeamEliminated && mySecretMap && mySecretMapRound === gameState.round) {
+    if (!cell.revealed && role && role.role === 'spymaster' && !myTeamEliminated && secretMapIsCurrent()) {
       front.classList.add(`game-cell-spy-${mySecretMap[i]}`);
     }
 
@@ -2219,6 +2230,7 @@ function resetGameUiState() {
   gameState = null;
   mySecretMap = null;
   mySecretMapRound = -1;
+  mySecretMapBoardId = null;
   boardCellEls = [];
   boardCellRound = -1;
   selectedGuessCellIndex = null;
@@ -3766,7 +3778,11 @@ btnJoin.addEventListener('click', async () => {
       // as palavras antigas na tela mesmo com um tabuleiro novo chegando do
       // servidor. Resetar aqui (sempre que o estado NAO esta jogando) cobre
       // isso mesmo com o painel fechado, quando renderGame nem chega a rodar.
-      if (newState.status !== 'playing' && newState.status !== 'over') boardCellRound = -1;
+      if (newState.status !== 'playing' && newState.status !== 'over') {
+        boardCellRound = -1;
+        mySecretMap = null;
+        mySecretMapBoardId = null;
+      }
       gameState = withPhaseDeadline(newState);
       notifyGameTimeoutIfNew();
       renderGame();

@@ -385,6 +385,10 @@ function startNewGameRound(game) {
   const teams = GAME_MODES[game.mode].teams;
   const startingTeam = teams[Math.floor(Math.random() * teams.length)];
   game.board = generateBoard(game.mode, startingTeam);
+  // Identifica ESTE tabuleiro. O "round" volta pra 1 quando a sala volta
+  // pro lobby (jogo novo), entao nao serve pra saber se um mapa secreto
+  // guardado no app e deste tabuleiro ou de uma partida anterior.
+  game.boardId = require('crypto').randomBytes(8).toString('hex');
   game.round += 1;
   game.status = 'playing';
   game.currentTeam = startingTeam;
@@ -431,6 +435,7 @@ function publicGameState(roomId) {
   return {
     status: game.status,
     round: game.round,
+    boardId: game.boardId || null,
     mode: game.mode,
     // No fim da partida todo mundo ve a cor de todas as cartas.
     board: game.board.map((c) => {
@@ -975,7 +980,7 @@ io.on('connection', (socket) => {
       if (ack) ack({ ok: false, error: 'Sua equipe foi eliminada' });
       return;
     }
-    if (ack) ack({ ok: true, round: game.round, map: game.board.map((c) => c.team) });
+    if (ack) ack({ ok: true, round: game.round, boardId: game.boardId, map: game.board.map((c) => c.team) });
   });
 
   // So pode trocar o modo (livre/2x2/3x3/ffa3) com a partida parada - troca
