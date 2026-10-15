@@ -1588,6 +1588,11 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   max-height: none;
   border-radius: 0;
   border: none;
+  /* opaco: com o modal translucido (modo Serio) a grade de videos atras
+     vazava borrada no fundo do jogo */
+  background: var(--bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 #game-overlay.game-overlay-fullscreen .game-center-col { max-width: 1000px; }
 #game-overlay.game-overlay-fullscreen .game-cell { min-height: 120px; }
@@ -2092,7 +2097,25 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 900;
   color: #fff;
 }
+/* Camera ligada no Codenames: o video toma o lugar do avatar, num circulo
+   maior pra dar pra ver a pessoa. */
+.game-role-avatar { position: relative; overflow: hidden; transition: width 0.2s, height 0.2s; }
+.game-role-avatar-has-video { width: 110px; height: 110px; border-color: rgba(255, 255, 255, 0.8); }
+.game-role-avatar-has-video .game-role-initials { display: none; }
+.game-role-avatar-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  transform: scaleX(-1);
+}
+#btn-game-camera.active-camera { border-color: var(--red-bright); color: var(--red-bright); }
+
 .game-role-name {
+  position: relative;
+  z-index: 1;
   margin-top: -10px;
   max-width: 100%;
   padding: 3px 14px;
