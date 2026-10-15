@@ -52,30 +52,127 @@ const rooms = new Map();
 // pelo menos 25 pra montar um tabuleiro; bem mais que isso pra nao repetir
 // toda hora entre partidas seguidas no mesmo grupo.
 const CODENAMES_WORDS = [
-  'CASTELO', 'LUA', 'MEDICO', 'BANANA', 'AVIAO', 'ROBO', 'PRAIA', 'PIRATA', 'GELO', 'REI',
-  'AGUIA', 'BANCO', 'FOGO', 'MOUSE', 'MARTE', 'ESCOLA', 'CHAVE', 'CACHORRO', 'RIO', 'COROA',
-  'TELEFONE', 'DRAGAO', 'MUSICA', 'PONTE', 'NEVE', 'GATO', 'LEAO', 'CARRO', 'SOL', 'ESPACO',
-  'SATURNO', 'SERPENTE', 'FLORESTA', 'MONTANHA', 'OCEANO', 'DESERTO', 'VULCAO', 'CHURRASCO',
-  'PROFESSOR', 'ENGENHEIRO', 'ADVOGADO', 'BOMBEIRO', 'POLICIAL', 'ASTRONAUTA', 'CIENTISTA',
-  'PINTOR', 'MUSICO', 'ATOR', 'JORNALISTA', 'COZINHEIRO', 'ELEFANTE', 'GIRAFA', 'MACACO',
-  'TIGRE', 'URSO', 'LOBO', 'RAPOSA', 'COBRA', 'TARTARUGA', 'GOLFINHO', 'TUBARAO', 'BALEIA',
-  'POLVO', 'CAMALEAO', 'PINGUIM', 'CANGURU', 'ZEBRA', 'RINOCERONTE', 'HIPOPOTAMO',
-  'COMPUTADOR', 'CELULAR', 'TECLADO', 'MONITOR', 'IMPRESSORA', 'FONE', 'CAMERA', 'RELOGIO',
-  'OCULOS', 'BICICLETA', 'MOTO', 'TREM', 'NAVIO', 'FOGUETE', 'HELICOPTERO', 'METRO', 'ONIBUS',
-  'CAMINHAO', 'ESTRADA', 'TUNEL', 'FAROL', 'BUSSOLA', 'MAPA', 'TESOURO', 'BAU', 'MOEDA',
-  'DIAMANTE', 'OURO', 'PRATA', 'ANEL', 'ESPADA', 'ESCUDO', 'ARCO', 'FLECHA', 'ARMADURA',
-  'CAVALEIRO', 'PRINCESA', 'BRUXA', 'FANTASMA', 'VAMPIRO', 'ZUMBI', 'MONSTRO', 'LABIRINTO',
-  'TORRE', 'MURALHA', 'PORTAO', 'JARDIM', 'FONTE', 'ESTATUA', 'IGREJA', 'TEMPLO', 'PIRAMIDE',
-  'MUMIA', 'FARAO', 'OASIS', 'CAMELO', 'CACTO', 'TERREMOTO', 'FURACAO', 'TEMPESTADE', 'RAIO',
-  'TROVAO', 'ARCO-IRIS', 'NUVEM', 'CHUVA', 'GRANIZO', 'GELEIRA', 'ILHA', 'CACHOEIRA', 'LAGO',
-  'PANTANO', 'CAVERNA', 'ROCHA', 'AREIA', 'CONCHA', 'CORAL', 'RECIFE', 'PEIXE', 'CAVALO-MARINHO',
-  'CARANGUEJO', 'LAGOSTA', 'GAIVOTA', 'PELICANO', 'CORUJA', 'MORCEGO', 'ARANHA', 'ESCORPIAO',
-  'FORMIGA', 'ABELHA', 'BORBOLETA', 'GAFANHOTO', 'JOANINHA', 'VIOLAO', 'PIANO', 'BATERIA',
-  'GUITARRA', 'TROMPETE', 'FLAUTA', 'MICROFONE', 'PALCO', 'TEATRO', 'CINEMA', 'LIVRO',
-  'CADERNO', 'LAPIS', 'CANETA', 'TINTA', 'PINCEL', 'TELA', 'QUADRO', 'ESCULTURA', 'MUSEU',
-  'BIBLIOTECA', 'HOSPITAL', 'FARMACIA', 'MERCADO', 'PADARIA', 'RESTAURANTE', 'HOTEL',
-  'AEROPORTO', 'ESTACAO', 'FABRICA', 'USINA', 'FAZENDA', 'CELEIRO', 'TRATOR', 'MOINHO',
-  'PLANTACAO', 'COLHEITA', 'SEMENTE',
+  'CASTELO', 'LUA', 'MÉDICO', 'BANANA', 'AVIÃO', 'ROBÔ', 'PRAIA', 'PIRATA', 'GELO',
+  'REI', 'ÁGUIA', 'BANCO', 'FOGO', 'MOUSE', 'MARTE', 'ESCOLA', 'CHAVE', 'CACHORRO',
+  'RIO', 'COROA', 'TELEFONE', 'DRAGÃO', 'MÚSICA', 'PONTE', 'NEVE', 'GATO', 'LEÃO',
+  'CARRO', 'SOL', 'ESPAÇO', 'SATURNO', 'SERPENTE', 'FLORESTA', 'MONTANHA', 'OCEANO', 'DESERTO',
+  'VULCÃO', 'CHURRASCO', 'PROFESSOR', 'ENGENHEIRO', 'ADVOGADO', 'BOMBEIRO', 'POLICIAL', 'ASTRONAUTA', 'CIENTISTA',
+  'PINTOR', 'MÚSICO', 'ATOR', 'JORNALISTA', 'COZINHEIRO', 'ELEFANTE', 'GIRAFA', 'MACACO', 'TIGRE',
+  'URSO', 'LOBO', 'RAPOSA', 'COBRA', 'TARTARUGA', 'GOLFINHO', 'TUBARÃO', 'BALEIA', 'POLVO',
+  'CAMALEÃO', 'PINGUIM', 'CANGURU', 'ZEBRA', 'RINOCERONTE', 'HIPOPÓTAMO', 'COMPUTADOR', 'CELULAR', 'TECLADO',
+  'MONITOR', 'IMPRESSORA', 'FONE', 'CÂMERA', 'RELÓGIO', 'ÓCULOS', 'BICICLETA', 'MOTO', 'TREM',
+  'NAVIO', 'FOGUETE', 'HELICÓPTERO', 'METRÔ', 'ÔNIBUS', 'CAMINHÃO', 'ESTRADA', 'TÚNEL', 'FAROL',
+  'BÚSSOLA', 'MAPA', 'TESOURO', 'BAÚ', 'MOEDA', 'DIAMANTE', 'OURO', 'PRATA', 'ANEL',
+  'ESPADA', 'ESCUDO', 'ARCO', 'FLECHA', 'ARMADURA', 'CAVALEIRO', 'PRINCESA', 'BRUXA', 'FANTASMA',
+  'VAMPIRO', 'ZUMBI', 'MONSTRO', 'LABIRINTO', 'TORRE', 'MURALHA', 'PORTÃO', 'JARDIM', 'FONTE',
+  'ESTÁTUA', 'IGREJA', 'TEMPLO', 'PIRÂMIDE', 'MÚMIA', 'FARAÓ', 'OÁSIS', 'CAMELO', 'CACTO',
+  'TERREMOTO', 'FURACÃO', 'TEMPESTADE', 'RAIO', 'TROVÃO', 'ARCO-ÍRIS', 'NUVEM', 'CHUVA', 'GRANIZO',
+  'GELEIRA', 'ILHA', 'CACHOEIRA', 'LAGO', 'PÂNTANO', 'CAVERNA', 'ROCHA', 'AREIA', 'CONCHA',
+  'CORAL', 'RECIFE', 'PEIXE', 'CAVALO-MARINHO', 'CARANGUEJO', 'LAGOSTA', 'GAIVOTA', 'PELICANO', 'CORUJA',
+  'MORCEGO', 'ARANHA', 'ESCORPIÃO', 'FORMIGA', 'ABELHA', 'BORBOLETA', 'GAFANHOTO', 'JOANINHA', 'VIOLÃO',
+  'PIANO', 'BATERIA', 'GUITARRA', 'TROMPETE', 'FLAUTA', 'MICROFONE', 'PALCO', 'TEATRO', 'CINEMA',
+  'LIVRO', 'CADERNO', 'LÁPIS', 'CANETA', 'TINTA', 'PINCEL', 'TELA', 'QUADRO', 'ESCULTURA',
+  'MUSEU', 'BIBLIOTECA', 'HOSPITAL', 'FARMÁCIA', 'MERCADO', 'PADARIA', 'RESTAURANTE', 'HOTEL', 'AEROPORTO',
+  'ESTAÇÃO', 'FÁBRICA', 'USINA', 'FAZENDA', 'CELEIRO', 'TRATOR', 'MOINHO', 'PLANTAÇÃO', 'COLHEITA',
+  'SEMENTE', 'CABEÇA', 'OLHO', 'NARIZ', 'BOCA', 'ORELHA', 'DENTE', 'LÍNGUA', 'PESCOÇO',
+  'OMBRO', 'BRAÇO', 'COTOVELO', 'PULSO', 'MÃO', 'DEDO', 'UNHA', 'PEITO', 'COSTAS',
+  'BARRIGA', 'UMBIGO', 'QUADRIL', 'PERNA', 'JOELHO', 'TORNOZELO', 'PÉ', 'CALCANHAR', 'CABELO',
+  'SOBRANCELHA', 'CÍLIO', 'QUEIXO', 'TESTA', 'BOCHECHA', 'CORAÇÃO', 'PULMÃO', 'FÍGADO', 'RIM',
+  'ESTÔMAGO', 'CÉREBRO', 'OSSO', 'MÚSCULO', 'SANGUE', 'PELE', 'VEIA', 'CAMISA', 'CALÇA',
+  'VESTIDO', 'SAIA', 'CASACO', 'JAQUETA', 'BONÉ', 'CHAPÉU', 'LUVA', 'CINTO', 'GRAVATA',
+  'MEIA', 'SAPATO', 'TÊNIS', 'SANDÁLIA', 'BOTA', 'BOLSA', 'MOCHILA', 'CARTEIRA', 'PULSEIRA',
+  'COLAR', 'BRINCO', 'CACHECOL', 'PIJAMA', 'UNIFORME', 'AVENTAL', 'TOUCA', 'CUECA', 'SUNGA',
+  'BIQUÍNI', 'ARROZ', 'FEIJÃO', 'MACARRÃO', 'PIZZA', 'HAMBÚRGUER', 'SANDUÍCHE', 'SALADA', 'SOPA',
+  'OMELETE', 'PÃO', 'QUEIJO', 'PRESUNTO', 'MANTEIGA', 'LEITE', 'IOGURTE', 'SORVETE', 'CHOCOLATE',
+  'BOLO', 'TORTA', 'BISCOITO', 'PIPOCA', 'AMENDOIM', 'CASTANHA', 'MEL', 'AÇÚCAR', 'SAL',
+  'PIMENTA', 'ALHO', 'CEBOLA', 'TOMATE', 'BATATA', 'CENOURA', 'ALFACE', 'REPOLHO', 'BRÓCOLIS',
+  'MILHO', 'UVA', 'MAÇÃ', 'LARANJA', 'LIMÃO', 'MORANGO', 'MELANCIA', 'ABACAXI', 'MAMÃO',
+  'MANGA', 'PERA', 'PÊSSEGO', 'COCO', 'ABACATE', 'GOIABA', 'CAFÉ', 'CHÁ', 'SUCO',
+  'ÁGUA', 'CERVEJA', 'VINHO', 'REFRIGERANTE', 'FUTEBOL', 'BASQUETE', 'VÔLEI', 'NATAÇÃO', 'CORRIDA',
+  'CICLISMO', 'BOXE', 'JUDÔ', 'KARATÊ', 'SURF', 'SKATE', 'XADREZ', 'DOMINÓ', 'BARALHO',
+  'DADO', 'PIPA', 'BOLA', 'RAQUETE', 'CAPACETE', 'PATINS', 'PRANCHA', 'REDE', 'GOL',
+  'QUADRA', 'PISCINA', 'GINÁSIO', 'MEDALHA', 'TROFÉU', 'CAMPEONATO', 'ÁRBITRO', 'TIME', 'DENTISTA',
+  'VETERINÁRIO', 'PSICÓLOGO', 'ENFERMEIRO', 'FARMACÊUTICO', 'MOTORISTA', 'PILOTO', 'MARINHEIRO', 'SOLDADO', 'GENERAL',
+  'JUIZ', 'PROMOTOR', 'CONTADOR', 'BANCÁRIO', 'VENDEDOR', 'GARÇOM', 'CABELEIREIRO', 'ELETRICISTA', 'ENCANADOR',
+  'PEDREIRO', 'CARPINTEIRO', 'MECÂNICO', 'ALFAIATE', 'PADEIRO', 'AÇOUGUEIRO', 'AGRICULTOR', 'PESCADOR', 'CAÇADOR',
+  'MINERADOR', 'COSTUREIRA', 'FOTÓGRAFO', 'ESCRITOR', 'POETA', 'PALHAÇO', 'MÁGICO', 'DOMADOR', 'ACROBATA',
+  'CASA', 'APARTAMENTO', 'PRÉDIO', 'ARRANHA-CÉU', 'GARAGEM', 'PORÃO', 'SÓTÃO', 'VARANDA', 'TELHADO',
+  'PAREDE', 'JANELA', 'PORTA', 'ESCADA', 'ELEVADOR', 'CORREDOR', 'QUARTO', 'SALA', 'COZINHA',
+  'BANHEIRO', 'QUINTAL', 'CONDOMÍNIO', 'BAIRRO', 'CIDADE', 'VILA', 'ALDEIA', 'CAPITAL', 'PRAÇA',
+  'PARQUE', 'ZOOLÓGICO', 'AQUÁRIO', 'PLANETÁRIO', 'ESTÁDIO', 'SHOPPING', 'FEIRA', 'CEMITÉRIO', 'PRISÃO',
+  'QUARTEL', 'EMBAIXADA', 'PALÁCIO', 'FORTALEZA', 'MOSTEIRO', 'SINAGOGA', 'MESQUITA', 'INTERNET', 'SENHA',
+  'ARQUIVO', 'PASTA', 'PROGRAMA', 'APLICATIVO', 'SITE', 'VIDEOGAME', 'CONTROLE', 'CARREGADOR', 'CABO',
+  'ANTENA', 'SATÉLITE', 'DRONE', 'TABLET', 'NOTEBOOK', 'PENDRIVE', 'WEBCAM', 'PROJETOR', 'TELEVISÃO',
+  'MICROONDAS', 'GELADEIRA', 'FOGÃO', 'LIQUIDIFICADOR', 'TORRADEIRA', 'ASPIRADOR', 'VENTILADOR', 'LÂMPADA', 'INTERRUPTOR',
+  'TOMADA', 'DISJUNTOR', 'ÁRVORE', 'FOLHA', 'GALHO', 'RAIZ', 'TRONCO', 'FLOR', 'PÉTALA',
+  'GRAMA', 'MATO', 'ARBUSTO', 'SAMAMBAIA', 'MUSGO', 'COGUMELO', 'BAMBU', 'PINHEIRO', 'CARVALHO',
+  'PALMEIRA', 'IPÊ', 'ORQUÍDEA', 'ROSA', 'GIRASSOL', 'MARGARIDA', 'TULIPA', 'LÍRIO', 'CRAVO',
+  'VIOLETA', 'JASMIM', 'GALÁXIA', 'COMETA', 'METEORO', 'ASTEROIDE', 'ECLIPSE', 'CONSTELAÇÃO', 'PLANETA',
+  'ÓRBITA', 'GRAVIDADE', 'NEBULOSA', 'SUPERNOVA', 'TELESCÓPIO', 'OBSERVATÓRIO', 'VENTO', 'BRISA', 'NEBLINA',
+  'ORVALHO', 'MARÉ', 'ONDA', 'PLANALTO', 'PLANÍCIE', 'VALE', 'COLINA', 'PENHASCO', 'FALÉSIA',
+  'DUNA', 'SAVANA', 'TUNDRA', 'SELVA', 'MANGUE', 'DELTA', 'FOZ', 'NASCENTE', 'AFLUENTE',
+  'CONTINENTE', 'HEMISFÉRIO', 'EQUADOR', 'UNICÓRNIO', 'FÊNIX', 'GRIFO', 'CENTAURO', 'SEREIA', 'MINOTAURO',
+  'CÍCLOPE', 'TITÃ', 'ORÁCULO', 'FEITICEIRO', 'DUENDE', 'FADA', 'GNOMO', 'TROLL', 'OGRO',
+  'ELFO', 'ANÃO', 'GIGANTE', 'LOBISOMEM', 'HIDRA', 'QUIMERA', 'PÉGASO', 'CARROÇA', 'CHARRETE',
+  'BALSA', 'IATE', 'SUBMARINO', 'TELEFÉRICO', 'BONDE', 'PATINETE', 'TRICICLO', 'VAN', 'CARAVANA',
+  'LIMUSINE', 'AMBULÂNCIA', 'VIATURA', 'GUINCHO', 'EMPILHADEIRA', 'GUINDASTE', 'SAXOFONE', 'CLARINETE', 'TROMBONE',
+  'HARPA', 'VIOLINO', 'VIOLONCELO', 'CONTRABAIXO', 'PANDEIRO', 'TAMBOR', 'XILOFONE', 'SINO', 'GAITA',
+  'ACORDEÃO', 'BANDOLIM', 'CAVAQUINHO', 'BERIMBAU', 'MARACÁ', 'CHOCALHO', 'PARTITURA', 'ORQUESTRA', 'BALÉ',
+  'DANÇA', 'ÓPERA', 'GUARDA-CHUVA', 'LANTERNA', 'VELA', 'FÓSFORO', 'ISQUEIRO', 'CORDA', 'CORRENTE',
+  'CADEADO', 'FECHADURA', 'PARAFUSO', 'PREGO', 'MARTELO', 'SERROTE', 'ALICATE', 'FITA-ADESIVA', 'COLA',
+  'AGULHA', 'LINHA', 'BOTÃO', 'ZÍPER', 'ESPELHO', 'PENTE', 'ESCOVA', 'SABONETE', 'SHAMPOO',
+  'TOALHA', 'TRAVESSEIRO', 'COBERTOR', 'LENÇOL', 'COLCHÃO', 'CORTINA', 'TAPETE', 'VASSOURA', 'RODO',
+  'BALDE', 'ESPONJA', 'PANO', 'ESTOJO', 'BORRACHA', 'APONTADOR', 'RÉGUA', 'COMPASSO', 'CALCULADORA',
+  'GLOBO', 'LOUSA', 'GIZ', 'DIPLOMA', 'BOLETIM', 'PROVA', 'REDAÇÃO', 'UNIVERSIDADE', 'FACULDADE',
+  'LABORATÓRIO', 'LEOPARDO', 'PANTERA', 'GUEPARDO', 'HIENA', 'CHACAL', 'BISÃO', 'BÚFALO', 'ALCE',
+  'VEADO', 'COELHO', 'ESQUILO', 'OURIÇO', 'TOUPEIRA', 'MORSA', 'FOCA', 'LONTRA', 'CASTOR',
+  'GAMBÁ', 'TATU', 'PREGUIÇA', 'ONÇA', 'PUMA', 'LINCE', 'AVESTRUZ', 'FLAMINGO', 'CISNE',
+  'PATO', 'GANSO', 'PERU', 'GALINHA', 'GALO', 'PINTO', 'POMBO', 'PAPAGAIO', 'ARARA',
+  'TUCANO', 'BEIJA-FLOR', 'FALCÃO', 'GAVIÃO', 'URUBU', 'CORVO', 'PICA-PAU', 'SABIÁ', 'CANÁRIO',
+  'PERIQUITO', 'IGUANA', 'LAGARTO', 'CROCODILO', 'JACARÉ', 'SALAMANDRA', 'SAPO', 'RÃ', 'LESMA',
+  'MINHOCA', 'CENTOPEIA', 'LACRAIA', 'GRILO', 'BESOURO', 'VAGA-LUME', 'MOSCA', 'MOSQUITO', 'PULGA',
+  'PIOLHO', 'LAGARTA', 'AMOR', 'ÓDIO', 'MEDO', 'CORAGEM', 'PAZ', 'GUERRA', 'LIBERDADE',
+  'JUSTIÇA', 'VERDADE', 'MENTIRA', 'SONHO', 'PESADELO', 'MEMÓRIA', 'ESPERANÇA', 'SORTE', 'DESTINO',
+  'TEMPO', 'SILÊNCIO', 'BARULHO', 'LUZ', 'SOMBRA', 'ESCURIDÃO', 'CALOR', 'FRIO', 'VELOCIDADE',
+  'FORÇA', 'PODER', 'MAGIA', 'AZAR', 'SAMBA', 'CARNAVAL', 'FOLIA', 'FEIJOADA', 'CAIPIRINHA',
+  'VIOLA', 'FORRÓ', 'FREVO', 'CAPOEIRA', 'CORDEL', 'RENDA', 'ARTESANATO', 'QUADRILHA', 'FOGUEIRA',
+  'BALÃO', 'BANDEIRA', 'HINO', 'SELEÇÃO', 'TORCIDA', 'ANDAIME', 'CIMENTO', 'TIJOLO', 'CONCRETO',
+  'VIGA', 'COLUNA', 'ALICERCE', 'TELHA', 'CANO', 'TORNEIRA', 'VÁLVULA', 'FIO-ELÉTRICO', 'JANEIRO',
+  'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO',
+  'NOVEMBRO', 'DEZEMBRO', 'SEGUNDA-FEIRA', 'TERÇA-FEIRA', 'QUARTA-FEIRA', 'QUINTA-FEIRA', 'SEXTA-FEIRA', 'SÁBADO', 'DOMINGO',
+  'CÍRCULO', 'QUADRADO', 'TRIÂNGULO', 'RETÂNGULO', 'CUBO', 'ESFERA', 'ÂNGULO', 'SIMETRIA', 'METAL',
+  'FERRO', 'AÇO', 'COBRE', 'BRONZE', 'ALUMÍNIO', 'CHUMBO', 'ESTANHO', 'PLÁSTICO', 'VIDRO',
+  'MADEIRA', 'PAPEL', 'TECIDO', 'COURO', 'SEDA', 'ALGODÃO', 'LINHO', 'VERNIZ', 'CERÂMICA',
+  'PORCELANA', 'ARGILA', 'PEDRA', 'MÁRMORE', 'GRANITO', 'CARVÃO', 'PETRÓLEO', 'GASOLINA', 'DIESEL',
+  'ENERGIA', 'ELETRICIDADE', 'ASTRÔNOMO', 'BIÓLOGO', 'QUÍMICO',
+  'FÍSICO', 'MATEMÁTICO', 'HISTORIADOR', 'GEÓGRAFO', 'FILÓSOFO', 'ARQUITETO', 'DESIGNER', 'PROGRAMADOR', 'TRADUTOR',
+  'INTÉRPRETE', 'DIPLOMATA', 'EMBAIXADOR', 'SENADOR', 'DEPUTADO', 'PREFEITO', 'GOVERNADOR', 'PRESIDENTE', 'REPÓRTER',
+  'APRESENTADOR', 'LOCUTOR', 'DIRETOR', 'PRODUTOR', 'ROTEIRISTA', 'DUBLADOR', 'MODELO', 'ESTILISTA', 'JOALHEIRO',
+  'RELOJOEIRO', 'MARCENEIRO', 'VIDRACEIRO', 'SERRALHEIRO', 'JARDINEIRO', 'ZELADOR', 'PORTEIRO', 'SEGURANÇA', 'DETETIVE',
+  'ESPIÃO', 'BIBLIOTECÁRIO', 'APICULTOR',
+  'GARRAFA', 'COPO', 'XÍCARA', 'PRATO', 'TIGELA', 'PANELA', 'FRIGIDEIRA', 'TALHER', 'GARFO',
+  'FACA', 'COLHER', 'BANDEJA', 'JARRA', 'SALEIRO', 'AÇUCAREIRO', 'CORTADOR', 'RALADOR', 'PENEIRA',
+  'FUNIL', 'ABRIDOR', 'SACA-ROLHAS', 'PÁ', 'ENXADA', 'REGADOR', 'TESOURA', 'CESTA',
+  'SACOLA', 'MALA', 'BAGAGEM', 'CANIVETE', 'BARRACA', 'SACO-DE-DORMIR', 'CANTIL', 'TERMOS',
+  'PUDIM', 'BRIGADEIRO', 'BEIJINHO', 'PAÇOCA', 'CANJICA', 'PAMONHA', 'CURAU', 'RAPADURA', 'COCADA',
+  'QUINDIM', 'ROSCA', 'PANETONE', 'COLOMBA', 'OVO-DE-PÁSCOA', 'BOMBOM', 'TRUFA', 'MARSHMALLOW', 'CHICLETE',
+  'PIRULITO', 'BALA', 'GOMA', 'GELATINA', 'MOUSSE', 'MILK-SHAKE', 'AÇAÍ', 'TAPIOCA', 'CUSCUZ',
+  'CANJA', 'VATAPÁ', 'ACARAJÉ', 'COXINHA', 'PASTEL', 'ESFIHA', 'KIBE', 'EMPADA', 'QUIBE',
+  'ALEGRIA', 'TRISTEZA', 'RAIVA', 'INVEJA', 'CIÚME', 'ORGULHO', 'VERGONHA', 'CULPA', 'SAUDADE',
+  'NOSTALGIA', 'ANSIEDADE', 'CALMA', 'PACIÊNCIA', 'GRATIDÃO', 'COMPAIXÃO', 'EMPATIA', 'SOLIDÃO', 'AMIZADE',
+  'CONFIANÇA', 'DÚVIDA', 'CURIOSIDADE', 'SURPRESA', 'CHOQUE', 'ALÍVIO', 'EUFORIA', 'TÉDIO', 'FRUSTRAÇÃO',
+  'SATISFAÇÃO', 'ARREPENDIMENTO', 'PERDÃO', 'LUA-CHEIA', 'ESTRELA-CADENTE', 'VIA-LÁCTEA', 'BURACO-NEGRO', 'UNIVERSO', 'SISTEMA-SOLAR',
+  'MERCÚRIO', 'VÊNUS', 'JÚPITER', 'URANO', 'NETUNO', 'PLUTÃO', 'ESTAÇÃO-ESPACIAL', 'TRAJE-ESPACIAL',
+  'ÁTOMO', 'MOLÉCULA', 'CÉLULA', 'DNA', 'GENE', 'VÍRUS', 'BACTÉRIA', 'VACINA', 'MICROSCÓPIO',
+  'ÍMÃ', 'PILHA', 'CIRCUITO', 'ALAVANCA',
+  'MOLA', 'PÊNDULO', 'PRISMA', 'LENTE', 'RAIO-LASER', 'GUARDA-SOL', 'CADEIRA-DE-PRAIA', 'CANGA',
+  'BOIA', 'PRANCHA-DE-SURF', 'BARCO-A-VELA', 'JANGADA', 'FOGOS-DE-ARTIFÍCIO', 'CONFETE', 'SERPENTINA', 'FANTASIA', 'MÁSCARA',
+  'CONVITE', 'PRESENTE', 'ENFEITE', 'GUIRLANDA', 'ÁRVORE-DE-NATAL', 'PAPAI-NOEL', 'COELHO-DA-PÁSCOA', 'AMIGO-OCULTO', 'RELÂMPAGO',
+  'MARÉ-ALTA', 'MARÉ-BAIXA', 'TSUNAMI', 'AVALANCHE', 'DESMORONAMENTO', 'INCÊNDIO', 'EXPLOSÃO', 'FUMAÇA', 'CINZAS',
+  'LAVA', 'MAGMA', 'CRATERA', 'TERMÔMETRO', 'PARA-RAIOS',
+  'FILTRO-SOLAR', 'PROTETOR', 'CURATIVO', 'GESSO', 'MULETA', 'CADEIRA-DE-RODAS', 'BENGALA', 'ANDADOR', 'SERINGA',
+  'RAIO-X', 'POLEGAR', 'ASA', 'GRÃO', 'MARFIM', 'SECRETÁRIA',
+  'FRENTE', 'CASCA', 'BERMUDA', 'NOÉ', 'DOENÇA', 'BEBIDA', 'ELÉTRICO', 'SINAL', 'JORNADA',
 ];
 
 // roomId -> estado do minijogo "Codigo Secreto" (ver mais abaixo). So existe
@@ -106,10 +203,8 @@ const TEAM_LABEL = { red: 'Vermelho', blue: 'Azul', green: 'Verde' };
 const TEAM_LABEL_FEM = { red: 'Vermelha', blue: 'Azul', green: 'Verde' };
 
 // Tempo que o time da vez tem pra escolher uma palavra depois que o
-// Mestre-Espiao da a pista - "null" (Iniciante) = sem limite, igual sempre
-// foi. Quem abre a sala escolhe, junto com o modo de equipes.
-const ANSWER_TIME_MODES = { especialista: 20000, sargento: 40000, novato: 60000, iniciante: null };
-const DEFAULT_ANSWER_TIME_MODE = 'iniciante';
+// Mestre-Espiao da a pista.
+const ANSWER_TIME_MS = 90000;
 
 function emptyTeams(mode) {
   const teams = {};
@@ -131,10 +226,20 @@ function createCodenamesGame() {
     winner: null,
     winReason: null, // 'words' | 'assassin' | 'last-standing'
     log: [],
-    answerTimeMode: DEFAULT_ANSWER_TIME_MODE,
     clueGivenAt: null,
     answerTimer: null,
+    hostId: null,
   };
+}
+
+// Só quem abriu o lobby (o primeiro a escolher uma equipe num lobby vazio -
+// ver "lobbyWasEmpty" em game-set-role) pode iniciar a partida. Se esse
+// socket saiu da sala, o lobby fica "sem anfitrião" e qualquer um pode
+// iniciar - senão a sala ficaria travada pra sempre se o anfitrião sumisse.
+function isGameHost(game, roomId, socketId) {
+  const room = rooms.get(roomId);
+  const hostStillHere = game.hostId && room && room.has(game.hostId);
+  return !hostStillHere || game.hostId === socketId;
 }
 
 // Limpa o cronometro de resposta pendente, se tiver - chamado sempre que o
@@ -254,7 +359,7 @@ function publicGameState(roomId) {
       status: 'lobby', round: 0, mode: DEFAULT_GAME_MODE, board: [], currentTeam: null, eliminated: [], phase: null, clue: null,
       teams: emptyTeams(DEFAULT_GAME_MODE),
       winner: null, winReason: null, remaining: { red: 0, blue: 0 }, log: [],
-      answerTimeMode: DEFAULT_ANSWER_TIME_MODE, clueGivenAt: null, answerTimeMs: null,
+      clueGivenAt: null, answerTimeMs: null, hostId: null,
     };
   }
   const teams = GAME_MODES[game.mode].teams;
@@ -281,9 +386,9 @@ function publicGameState(roomId) {
     winReason: game.winReason,
     remaining,
     log: game.log.slice(-30),
-    answerTimeMode: game.answerTimeMode,
     clueGivenAt: game.clueGivenAt,
-    answerTimeMs: ANSWER_TIME_MODES[game.answerTimeMode],
+    answerTimeMs: ANSWER_TIME_MS,
+    hostId: game.hostId,
   };
 }
 
@@ -591,7 +696,7 @@ let peakParticipants = 0;
 function getPeersInRoom(roomId) {
   const room = rooms.get(roomId);
   if (!room) return [];
-  return Array.from(room.entries()).map(([id, info]) => ({ id, name: info.name }));
+  return Array.from(room.entries()).map(([id, info]) => ({ id, name: info.name, shareMode: info.shareMode || null }));
 }
 
 function getRoomsSnapshot() {
@@ -718,7 +823,7 @@ io.on('connection', (socket) => {
 
     const existingPeers = getPeersInRoom(roomId);
 
-    room.set(socket.id, { name: name || 'Anonimo' });
+    room.set(socket.id, { name: name || 'Anonimo', shareMode: null });
     socket.join(roomId);
 
     if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers });
@@ -736,6 +841,20 @@ io.on('connection', (socket) => {
     const { to, data } = payload || {};
     if (!to || (!currentRoom && !spectatingRoom)) return;
     io.to(to).emit('signal', { from: socket.id, data });
+  });
+
+  // Avisa a sala o que a pessoa esta transmitindo agora ('camera' | 'screen'
+  // | 'screen-native' | null) - guarda no participante pra quem entrar
+  // depois ja saber (ver getPeersInRoom), e repassa pra quem ja esta na
+  // sala (inclusive espectadores invisiveis, mesmo padrao do join-room).
+  socket.on('share-mode-changed', (data) => {
+    if (!currentRoom) return;
+    const mode = (data && typeof data.mode === 'string') ? data.mode : null;
+    const room = rooms.get(currentRoom);
+    if (room && room.has(socket.id)) room.get(socket.id).shareMode = mode;
+    socket.to(currentRoom).emit('peer-share-mode', { id: socket.id, mode });
+    const specs = spectatorsByRoom.get(currentRoom);
+    if (specs) specs.forEach((id) => io.to(id).emit('peer-share-mode', { id: socket.id, mode }));
   });
 
   // Minijogo "Codigo Secreto" (Codenames) - os jogadores sao sempre quem
@@ -779,20 +898,6 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
-  socket.on('game-set-answer-time', (data, ack) => {
-    const { answerTimeMode } = data || {};
-    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
-    const game = getOrCreateGame(currentRoom);
-    if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra trocar com a partida em andamento' }); return; }
-    if (!Object.prototype.hasOwnProperty.call(ANSWER_TIME_MODES, answerTimeMode)) {
-      if (ack) ack({ ok: false, error: 'Modo inválido' });
-      return;
-    }
-    game.answerTimeMode = answerTimeMode;
-    broadcastGameState(currentRoom);
-    if (ack) ack({ ok: true });
-  });
-
   socket.on('game-set-role', (data, ack) => {
     const { team, role } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
@@ -816,8 +921,12 @@ io.on('connection', (socket) => {
     else game.teams[team].agents.push(socket.id);
     broadcastGameState(currentRoom);
     // Codenames nao tem um "abrir lobby" explicito - o primeiro a escolher
-    // equipe num lobby vazio e quem "iniciou" o jogo.
-    if (lobbyWasEmpty) notifyMinigameStarted(socket, currentRoom, 'codenames');
+    // equipe num lobby vazio e quem "iniciou" o jogo, e tambem quem fica
+    // marcado como anfitriao (so ele pode apertar "Iniciar partida").
+    if (lobbyWasEmpty) {
+      game.hostId = socket.id;
+      notifyMinigameStarted(socket, currentRoom, 'codenames');
+    }
     if (ack) ack({ ok: true });
   });
 
@@ -835,10 +944,15 @@ io.on('connection', (socket) => {
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = getOrCreateGame(currentRoom);
     if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Já tem uma partida em andamento' }); return; }
+    if (!isGameHost(game, currentRoom, socket.id)) {
+      if (ack) ack({ ok: false, error: 'Só quem abriu o lobby pode iniciar a partida' });
+      return;
+    }
     if (!gameTeamsBothReady(game)) {
       if (ack) ack({ ok: false, error: 'Cada equipe precisa de 1 Mestre-Espião e pelo menos 1 Agente' });
       return;
     }
+    game.hostId = socket.id;
     startNewGameRound(game);
     broadcastGameState(currentRoom);
     if (ack) ack({ ok: true });
@@ -848,10 +962,15 @@ io.on('connection', (socket) => {
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = codenamesGames.get(currentRoom);
     if (!game || game.status !== 'over') { if (ack) ack({ ok: false, error: 'A partida ainda não acabou' }); return; }
+    if (!isGameHost(game, currentRoom, socket.id)) {
+      if (ack) ack({ ok: false, error: 'Só quem abriu o lobby pode iniciar a partida' });
+      return;
+    }
     if (!gameTeamsBothReady(game)) {
       if (ack) ack({ ok: false, error: 'Cada equipe precisa de 1 Mestre-Espião e pelo menos 1 Agente' });
       return;
     }
+    game.hostId = socket.id;
     startNewGameRound(game);
     broadcastGameState(currentRoom);
     if (ack) ack({ ok: true });
@@ -860,6 +979,14 @@ io.on('connection', (socket) => {
   socket.on('game-reset-lobby', (_data, ack) => {
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const oldGame = codenamesGames.get(currentRoom);
+    // So restringe pro anfitriao quando esta ENCERRANDO uma partida em
+    // andamento (botao "Encerrar partida") - voltar ao lobby depois que a
+    // partida ja acabou sozinha ("Trocar equipes"/"Jogar de novo") continua
+    // livre pra qualquer um, isso nunca foi a parte sensivel.
+    if (oldGame && oldGame.status === 'playing' && !isGameHost(oldGame, currentRoom, socket.id)) {
+      if (ack) ack({ ok: false, error: 'Só quem abriu o lobby pode encerrar a partida' });
+      return;
+    }
     if (oldGame) clearAnswerTimer(oldGame);
     codenamesGames.set(currentRoom, createCodenamesGame());
     broadcastGameState(currentRoom);
@@ -893,17 +1020,14 @@ io.on('connection', (socket) => {
 
     clearAnswerTimer(game);
     game.clueGivenAt = Date.now();
-    const limitMs = ANSWER_TIME_MODES[game.answerTimeMode];
-    if (limitMs) {
-      const roomIdForTimer = currentRoom; // nao usar currentRoom direto dentro do timeout - e um "let" por socket, pode mudar antes do timer disparar
-      const teamAtClueTime = game.currentTeam;
-      game.answerTimer = setTimeout(() => {
-        if (game.status !== 'playing' || game.phase !== 'guess' || game.currentTeam !== teamAtClueTime) return;
-        game.log.push(`Tempo esgotado - Equipe ${TEAM_LABEL[teamAtClueTime]} perdeu a vez`);
-        endGameTurn(game);
-        broadcastGameState(roomIdForTimer);
-      }, limitMs);
-    }
+    const roomIdForTimer = currentRoom; // nao usar currentRoom direto dentro do timeout - e um "let" por socket, pode mudar antes do timer disparar
+    const teamAtClueTime = game.currentTeam;
+    game.answerTimer = setTimeout(() => {
+      if (game.status !== 'playing' || game.phase !== 'guess' || game.currentTeam !== teamAtClueTime) return;
+      game.log.push(`Tempo esgotado - Equipe ${TEAM_LABEL[teamAtClueTime]} perdeu a vez`);
+      endGameTurn(game);
+      broadcastGameState(roomIdForTimer);
+    }, ANSWER_TIME_MS);
 
     broadcastGameState(currentRoom);
     if (ack) ack({ ok: true });
@@ -1178,6 +1302,7 @@ io.on('connection', (socket) => {
         const game = codenamesGames.get(currentRoom);
         if (game) {
           removeFromGameTeams(game, socket.id);
+          if (game.hostId === socket.id) game.hostId = null;
           broadcastGameState(currentRoom);
         }
         // Quem sai pode ter sido justamente quem faltava votar - reavalia

@@ -70,6 +70,7 @@
       <div class="box-reveal" style="--i:5">
         <div class="box-reveal-content">
           <button id="btn-join">Entrar</button>
+          <button type="button" id="btn-check-updates" class="ghost login-check-updates">Procurar atualizações</button>
         </div>
         <div class="box-reveal-cover"></div>
       </div>
@@ -364,21 +365,20 @@
               <button type="button" class="game-mode-option" data-mode="livre">Livre</button>
               <button type="button" class="game-mode-option" data-mode="2x2">2x2</button>
               <button type="button" class="game-mode-option" data-mode="3x3">3x3</button>
-              <button type="button" class="game-mode-option" data-mode="ffa3">3x3 Todos contra todos</button>
+              <button type="button" class="game-mode-option" data-mode="ffa3">2x2x2 Todos contra todos</button>
             </div>
             <p class="settings-hint">Trocar o modo reinicia as equipes escolhidas até agora.</p>
           </div>
 
           <div class="settings-group">
-            <label>Tempo de resposta</label>
-            <div id="game-answer-time-options" class="game-mode-options">
-              <button type="button" class="game-mode-option" data-answer-time="especialista">Especialista (20s)</button>
-              <button type="button" class="game-mode-option" data-answer-time="sargento">Sargento (40s)</button>
-              <button type="button" class="game-mode-option" data-answer-time="novato">Novato (60s)</button>
-              <button type="button" class="game-mode-option" data-answer-time="iniciante">Iniciante (sem limite)</button>
+            <label>Tema do tabuleiro</label>
+            <div id="game-theme-options" class="game-mode-options">
+              <button type="button" class="game-mode-option" data-game-theme="dark">Escuro</button>
+              <button type="button" class="game-mode-option" data-game-theme="light">Claro</button>
             </div>
-            <p class="settings-hint">Tempo pro time da vez escolher uma palavra depois que o Mestre-Espião dá a pista. Se esgotar, a vez passa sozinha.</p>
           </div>
+
+          <p class="settings-hint">O time da vez tem 1 minuto e 30 segundos pra escolher uma palavra depois que o Mestre-Espião dá a pista. Se esgotar, a vez passa sozinha.</p>
 
           <div class="game-teams-row">
             <div class="game-team-card game-team-card-red">
@@ -432,28 +432,38 @@
         </div>
 
         <div id="game-board-view" class="game-board-view hidden">
-          <div class="game-status-row">
-            <span id="game-turn-indicator" class="game-turn-indicator"></span>
-            <span id="game-answer-timer" class="game-answer-timer hidden"></span>
-            <span id="game-remaining" class="game-remaining"></span>
+          <div id="game-turn-banner" class="game-turn-banner"></div>
+
+          <div class="game-table">
+            <div id="game-panels-left" class="game-team-panels"></div>
+
+            <div class="game-center-col">
+              <div id="game-board" class="game-board"></div>
+
+              <div id="game-guess-confirm" class="game-guess-confirm hidden">
+                <span id="game-guess-confirm-text"></span>
+                <button type="button" id="btn-game-guess-confirm">Confirmar</button>
+                <button type="button" id="btn-game-guess-cancel" class="ghost">Cancelar</button>
+              </div>
+
+              <div id="game-clue-active" class="game-clue-active hidden"></div>
+
+              <form id="game-clue-form" class="game-clue-form hidden">
+                <input id="game-clue-word" type="text" maxlength="40" placeholder="Palavra-pista" autocomplete="off" />
+                <input id="game-clue-number" type="number" min="0" max="9" value="1" />
+                <button type="submit">Dar pista</button>
+              </form>
+
+              <div class="game-bottom-row">
+                <button type="button" id="btn-game-end-turn" class="ghost hidden">Passar a vez</button>
+                <button type="button" id="btn-game-abort" class="ghost">Encerrar partida</button>
+              </div>
+            </div>
+
+            <div id="game-panels-right" class="game-team-panels">
+              <div id="game-log" class="game-log"></div>
+            </div>
           </div>
-
-          <div id="game-board" class="game-board"></div>
-
-          <div id="game-clue-active" class="game-clue-active hidden"></div>
-
-          <form id="game-clue-form" class="game-clue-form hidden">
-            <input id="game-clue-word" type="text" maxlength="40" placeholder="Palavra-pista" autocomplete="off" />
-            <input id="game-clue-number" type="number" min="0" max="9" value="1" />
-            <button type="submit">Dar pista</button>
-          </form>
-
-          <div class="game-bottom-row">
-            <button type="button" id="btn-game-end-turn" class="ghost hidden">Passar a vez</button>
-            <button type="button" id="btn-game-abort" class="ghost">Encerrar partida</button>
-          </div>
-
-          <div id="game-log" class="game-log"></div>
 
           <div id="game-over-banner" class="game-over-banner hidden">
             <div class="game-over-header">

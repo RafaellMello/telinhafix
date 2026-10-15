@@ -82,23 +82,26 @@
   /* Cores fixas das equipes do minijogo Codenames - de proposito
      independentes da cor principal escolhida em Aparencia (que pode ser
      qualquer cor): o jogo sempre fala em equipe "Vermelha" e "Azul", entao
-     essas cores nunca podem mudar com o tema. Paleta inspirada nas cartas
-     fisicas originais do jogo (laranja queimado + teal sobre fundo
-     texturizado), ver .game-board/.game-cell mais abaixo. */
-  --game-red: #d9742f;
-  --game-red-rgb: 217, 116, 47;
-  --game-blue: #2f9aa6;
-  --game-blue-rgb: 47, 154, 166;
-  /* 3o time (modo "3x3 Todos contra todos") - verde oliva pra combinar com
-     o resto da paleta terrosa em vez de um verde neon. */
-  --game-green: #5a8c3a;
-  --game-green-rgb: 90, 140, 58;
-  --game-cream: #efe0c4;
-  --game-cream-rgb: 239, 224, 196;
-  --game-cream-border: #d9bd8e;
+     essas cores nunca podem mudar com o tema. Paleta copiada do site
+     oficial do Codenames (codenames.game) - azul/vermelho de verdade,
+     fundo de mesa escuro, carta clara com barra escura pro texto. */
+  --game-red: #c2452e;
+  --game-red-rgb: 194, 69, 46;
+  --game-blue: #3a72b8;
+  --game-blue-rgb: 58, 114, 184;
+  /* 3o time (modo "3x3 Todos contra todos") - nao existe no site oficial
+     (so tem 2 equipes la), verde pra ficar bem distinto do azul/vermelho. */
+  --game-green: #4a8c3f;
+  --game-green-rgb: 74, 140, 63;
+  --game-cream: #e8d4a8;
+  --game-cream-rgb: 232, 212, 168;
+  --game-cream-border: #d1b683;
   --game-assassin: #2b2b2b;
   --game-assassin-rgb: 43, 43, 43;
-  --game-board-bg: #c97a44;
+  --game-board-bg: transparent;
+  --game-table-bg: #241a12;
+  --game-label-bg: #4a3625;
+  --game-label-text: #f3e9d6;
 }
 
 * { box-sizing: border-box; }
@@ -370,6 +373,12 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 }
 
 #btn-join:hover::after { opacity: 1; }
+
+.login-check-updates {
+  margin-top: 10px;
+  padding: 7px 14px;
+  font-size: calc(11px * var(--font-scale));
+}
 
 .error { color: var(--red-bright); font-size: calc(12px * var(--font-scale)); min-height: 16px; margin-top: 10px; text-align: center; }
 
@@ -1175,6 +1184,12 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   background: #000;
 }
 
+/* Toda transmissao de camera (a sua e a de quem for) aparece espelhada
+   pra todo mundo - ver peerShareModes/updatePeerTileMirror no renderer.js. */
+.video-tile video.mirrored-video {
+  transform: scaleX(-1);
+}
+
 .video-tile .label {
   position: absolute;
   bottom: 6px;
@@ -1551,8 +1566,8 @@ button.ghost:hover { filter: none; border-color: var(--red); }
      relativo ao .settings-overlay (position:fixed, tela toda) em vez do
      modal, e some no canto da janela em vez do canto do modal. */
   position: relative;
-  width: 880px;
-  max-width: 94vw;
+  width: 1080px;
+  max-width: 96vw;
   height: auto;
   max-height: 90vh;
   flex-direction: column;
@@ -1563,6 +1578,20 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   overflow-y: auto;
   padding: 28px 36px;
 }
+
+/* Codenames ocupa a janela inteira (ver setCodenamesFullscreen) - tabuleiro
+   e as colunas das equipes crescem pra aproveitar o espaco. */
+#game-overlay.game-overlay-fullscreen .game-modal {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+}
+#game-overlay.game-overlay-fullscreen .game-center-col { max-width: 1000px; }
+#game-overlay.game-overlay-fullscreen .game-cell { min-height: 120px; }
+#game-overlay.game-overlay-fullscreen .game-team-panels { width: 220px; }
 
 .game-header {
   display: flex;
@@ -1967,41 +1996,189 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .game-lobby-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
 .game-error { color: var(--red-bright); }
 
-.game-status-row {
+/* Faixa "aguardando pista"/"escolham uma palavra" no topo, copiando o
+   banner escuro arredondado do site oficial - a cor muda pra combinar com
+   quem esta na vez (vermelho/azul/verde). */
+.game-turn-banner {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 auto 14px;
+  padding: 10px 20px;
+  max-width: fit-content;
+  background: var(--game-table-bg);
+  border-radius: 999px;
   font-size: calc(13px * var(--font-scale));
-}
-.game-turn-indicator { font-weight: 700; }
-.game-answer-timer {
-  font-family: 'JetBrains Mono', Consolas, monospace;
   font-weight: 800;
-  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #fff;
+  border: 2px solid transparent;
 }
-.game-answer-timer.game-answer-timer-urgent { color: var(--red-bright); }
-.game-remaining {
-  color: var(--text-muted);
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-size: calc(12px * var(--font-scale));
+.game-turn-banner-red { border-color: var(--game-red); }
+.game-turn-banner-blue { border-color: var(--game-blue); }
+.game-turn-banner-green { border-color: var(--game-green); }
+.game-turn-banner-avatar { width: 24px; height: 24px; font-size: 10px; flex-shrink: 0; }
+
+/* Mesa: painel da equipe a esquerda | tabuleiro+controles no centro |
+   painel da equipe a direita (+ log do jogo), igual o site oficial. */
+.game-table {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: center;
+}
+.game-center-col { flex: 1; min-width: 0; max-width: 620px; }
+.game-team-panels {
+  width: 190px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
-/* Tabuleiro ao estilo das cartas fisicas originais do Codenames: fundo
-   laranja queimado com textura de pontinhos, cartas com borda grossa na
-   cor do time e uma etiqueta branca pra palavra em vez do fundo inteiro
-   colorido (ver referencia que o Rafael mandou). */
+/* Coluna de cada equipe, igual o site oficial: card AGENTES em cima,
+   quantas palavras faltam no meio, card MESTRE-ESPIÃO embaixo. */
+.game-team-panel {
+  --team-color: var(--game-red);
+  --team-rgb: var(--game-red-rgb);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  text-align: center;
+}
+.game-team-panel-blue { --team-color: var(--game-blue); --team-rgb: var(--game-blue-rgb); }
+.game-team-panel-green { --team-color: var(--game-green); --team-rgb: var(--game-green-rgb); }
+.game-team-panel-eliminated { opacity: 0.45; filter: grayscale(0.8); }
+
+.game-role-card {
+  background: linear-gradient(180deg, rgba(var(--team-rgb), 0.95), rgba(var(--team-rgb), 0.75));
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  padding: 10px 10px 14px;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+/* Quem esta pra agir agora (Mestre-Espiao na pista, Agentes no palpite)
+   fica selecionado - so o card dele, dentro do time da vez. */
+.game-role-card-active {
+  border-color: #fff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85), 0 0 22px rgba(var(--team-rgb), 0.9);
+  transform: scale(1.03);
+}
+.game-role-title {
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 8px;
+}
+.game-role-people { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.game-role-person { display: flex; flex-direction: column; align-items: center; width: 100%; }
+.game-role-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.2);
+  border: 4px solid rgba(255, 255, 255, 0.45);
+  font-size: 20px;
+  font-weight: 900;
+  color: #fff;
+}
+.game-role-name {
+  margin-top: -10px;
+  max-width: 100%;
+  padding: 3px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: calc(14px * var(--font-scale));
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.game-role-empty { margin: 6px 0; font-size: calc(12px * var(--font-scale)); color: rgba(255, 255, 255, 0.75); font-style: italic; }
+
+.game-remaining-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.game-remaining-number {
+  font-size: calc(46px * var(--font-scale));
+  font-weight: 900;
+  line-height: 1;
+  color: #fff;
+  -webkit-text-stroke: 3px var(--team-color);
+  paint-order: stroke fill;
+  min-width: 40px;
+}
+.game-remaining-card {
+  width: 96px;
+  height: 58px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(var(--team-rgb), 1), rgba(var(--team-rgb), 0.6));
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.55);
+}
+.game-remaining-card svg { width: 54px; height: 54px; margin-bottom: -6px; }
+
+.game-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text);
+}
+.game-answer-timer {
+  margin-top: 6px;
+  padding: 4px 0;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-weight: 800;
+  font-size: calc(14px * var(--font-scale));
+  color: var(--text);
+}
+.game-answer-timer.game-answer-timer-urgent { color: var(--red-bright); }
+
+/* Tabuleiro copiado do site oficial (codenames.game): mesa escura, cartas
+   claras sem borda grossa (so uma sombra sutil) e uma barra escura solida
+   embaixo com o texto branco, em vez da etiqueta branca/pill de antes. */
 .game-board {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 14px;
-  background-color: var(--game-board-bg);
-  background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1.4px, transparent 1.4px);
-  background-size: 13px 13px;
+  background-color: var(--game-table-bg);
   border-radius: 12px;
-  padding: 16px;
+  padding: 18px;
 }
+
+/* Tema do tabuleiro (ver seletor "Tema do tabuleiro" no lobby) - fundo liso
+   em vez da mesa de madeira padrao, preferencia local de cada pessoa. */
+#codenames-view.codenames-theme-light .game-board { background-color: #ffffff; }
+#codenames-view.codenames-theme-dark .game-board { background-color: #000000; }
 
 /* Carta com flip 3D de verdade: .game-cell e so o slot (tamanho +
    perspectiva), .game-cell-inner e quem gira, e front/back sao as duas
@@ -2028,8 +2205,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .game-cell-face {
   position: absolute;
   inset: 0;
-  border-radius: 10px;
-  border: 3px solid;
+  border-radius: 8px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -2037,24 +2213,10 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   overflow: hidden;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.35);
 }
 
-.game-cell-front { background: var(--game-cream); border-color: var(--game-cream-border); }
-
-/* O "selo" circular no canto superior direito, igual a referencia -
-   decorativo, so reforca a sensacao de carta fisica. Fica so na face da
-   frente (virada pra baixo o resto do tempo, como no verso de uma carta). */
-.game-cell-front::before {
-  content: '';
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-}
+.game-cell-front { background: var(--game-cream); }
 
 .game-cell-back { transform: rotateY(180deg); }
 
@@ -2079,52 +2241,72 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .game-cell-word {
   position: relative;
-  display: block;
-  width: calc(100% - 14px);
-  margin: 0 7px 7px;
-  background: #fff;
-  color: #221c12;
-  padding: 7px 3px;
-  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 30px;
+  margin: 0;
+  background: var(--game-label-bg);
+  color: var(--game-label-text);
+  padding: 6px 4px;
+  border-radius: 0 0 8px 8px;
   font-family: 'Poppins', 'Nunito', var(--font-ui);
   font-size: calc(11.5px * var(--font-scale));
   font-weight: 800;
   letter-spacing: 0.2px;
   text-transform: uppercase;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .game-cell-clickable { cursor: pointer; }
 .game-cell-clickable:hover .game-cell-inner { filter: brightness(1.08); transform: translateY(-2px); }
 .game-cell-clickable:hover .game-cell-inner.flipped { transform: translateY(-2px) rotateY(180deg); }
 
+/* Carta selecionada mas ainda NAO confirmada (ver game-guess-confirm/
+   handleGameCellClick no renderer.js) - clicar de novo ou usar a barra de
+   baixo e que revela de verdade. */
+.game-cell-selected .game-cell-inner {
+  outline: 3px solid var(--red-bright);
+  outline-offset: 2px;
+  transform: translateY(-2px);
+}
+
+.game-guess-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--red-bright);
+  border-radius: 8px;
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 700;
+  color: var(--text);
+}
+.game-guess-confirm button { padding: 7px 14px; font-size: calc(12px * var(--font-scale)); }
+
 /* Visao do Mestre-Espiao: a MESMA cor do time, so que mais clara/leve -
    bem mais discreta que uma palavra ja revelada (essa fica com a cor
    cheia, ver .game-cell-back-* abaixo), pra nao virar "spoiler" visual
    gritante mesmo so aparecendo pra quem pode ver mesmo. Fica na face da
    FRENTE (a carta ainda nao virou de verdade - so o Mestre-Espiao sabe). */
-.game-cell-front.game-cell-spy-red { background: rgba(var(--game-red-rgb), 0.38); border-color: var(--game-red); }
-.game-cell-front.game-cell-spy-blue { background: rgba(var(--game-blue-rgb), 0.38); border-color: var(--game-blue); }
-.game-cell-front.game-cell-spy-green { background: rgba(var(--game-green-rgb), 0.38); border-color: var(--game-green); }
-.game-cell-front.game-cell-spy-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
-.game-cell-front.game-cell-spy-assassin { background: rgba(var(--game-assassin-rgb), 0.6); border-color: var(--game-assassin); }
+.game-cell-front.game-cell-spy-red { background: rgba(var(--game-red-rgb), 0.38); }
+.game-cell-front.game-cell-spy-blue { background: rgba(var(--game-blue-rgb), 0.38); }
+.game-cell-front.game-cell-spy-green { background: rgba(var(--game-green-rgb), 0.38); }
+.game-cell-front.game-cell-spy-neutral { background: var(--game-cream); }
+.game-cell-front.game-cell-spy-assassin { background: rgba(var(--game-assassin-rgb), 0.6); }
 
-.game-cell-back-red { background: var(--game-red); border-color: #a85420; }
-.game-cell-back-blue { background: var(--game-blue); border-color: #1f6b73; }
-.game-cell-back-green { background: var(--game-green); border-color: #355423; }
-.game-cell-back-neutral { background: var(--game-cream); border-color: var(--game-cream-border); }
-.game-cell-back-assassin { background: var(--game-assassin); border-color: #000; }
-.game-cell-back-assassin::before {
-  content: '';
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-}
+.game-cell-back-red { background: var(--game-red); }
+.game-cell-back-blue { background: var(--game-blue); }
+.game-cell-back-green { background: var(--game-green); }
+.game-cell-back-neutral { background: var(--game-cream); }
+.game-cell-back-assassin { background: var(--game-assassin); }
+.game-cell-back-red .game-cell-word,
+.game-cell-back-blue .game-cell-word,
+.game-cell-back-green .game-cell-word,
+.game-cell-back-assassin .game-cell-word { background: rgba(0, 0, 0, 0.3); }
 
 .game-clue-active {
   text-align: center;
@@ -2141,17 +2323,27 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .game-bottom-row { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 10px; }
 
 .game-log {
-  max-height: 110px;
+  max-height: 260px;
   overflow-y: auto;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: calc(12px * var(--font-scale));
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: calc(11px * var(--font-scale));
   color: var(--text-muted);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+}
+.game-log::before {
+  content: 'Histórico';
+  display: block;
+  font-size: calc(10px * var(--font-scale));
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
 }
 
 .game-over-banner {
