@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, globalShortcut, screen, clipboard } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, globalShortcut, screen, clipboard, Menu } = require('electron');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const { autoUpdater } = require('electron-updater');
@@ -510,6 +510,20 @@ function createWindow() {
     clipboard.writeText(String(text || ''));
   });
 
+  ipcMain.handle('check-for-updates', () => {
+    checkForUpdatesManually();
+  });
+
+  // Tela cheia da janela (usada ao entrar no Codenames) - retorna se ja
+  // estava em tela cheia antes, pro renderer saber se deve desfazer depois.
+  ipcMain.handle('window-set-fullscreen', (event, on) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return false;
+    const wasFullscreen = win.isFullScreen();
+    win.setFullScreen(!!on);
+    return wasFullscreen;
+  });
+
   // Atalhos globais (funcionam mesmo com o TelinhaFix em segundo plano, tipo
   // enquanto a pessoa ta num jogo) - a pessoa escolhe a combinacao de cada
   // um e pode desligar tudo nas configuracoes de aparencia; esse estado
@@ -558,6 +572,35 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
+// "Procurar atualizacoes" no menu do app (ver buildAppMenu) chama a MESMA
+// checagem automatica de sempre, so que com esse flag ligado - os handlers
+// abaixo usam ele pra decidir se mostram um dialogo pra pessoa (checagem
+// manual) ou so logam no console (checagem silenciosa no boot do app).
+let manualUpdateCheckPending = false;
+
+function checkForUpdatesManually() {
+  if (!app.isPackaged) {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Procurar atualizações',
+      message: 'Checagem de atualização só funciona no app instalado (fora do modo de desenvolvimento).',
+      buttons: ['OK'],
+    });
+    return;
+  }
+  manualUpdateCheckPending = true;
+  autoUpdater.checkForUpdates().catch((err) => {
+    manualUpdateCheckPending = false;
+    console.error('[updater] Falha ao checar atualizacao (manual):', err);
+    dialog.showMessageBox({
+      type: 'error',
+      title: 'Falha ao procurar atualizações',
+      message: `Não foi possível checar atualizações agora.\n\n${err.message || err}`,
+      buttons: ['OK'],
+    });
+  });
+}
+
 // Checa por versao nova no GitHub Releases (metadados gerados pelo proprio
 // electron-builder no build) e baixa sozinho em segundo plano. So avisa a
 // pessoa quando ja esta pronta pra instalar - reiniciar sem avisar no meio
@@ -573,15 +616,42 @@ function setupAutoUpdater() {
   });
   autoUpdater.on('update-available', (info) => {
     console.log(`[updater] atualizacao disponivel: ${info.version} - baixando...`);
+    if (manualUpdateCheckPending) {
+      manualUpdateCheckPending = false;
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Atualização encontrada',
+        message: `Encontramos a versão ${info.version}. Baixando agora em segundo plano - você será avisado quando estiver pronta pra instalar.`,
+        buttons: ['OK'],
+      });
+    }
   });
   autoUpdater.on('update-not-available', (info) => {
     console.log(`[updater] ja esta na versao mais recente (${info.version})`);
+    if (manualUpdateCheckPending) {
+      manualUpdateCheckPending = false;
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Sem atualizações',
+        message: `Você já está na versão mais recente (${info.version}).`,
+        buttons: ['OK'],
+      });
+    }
   });
   autoUpdater.on('download-progress', (progress) => {
     console.log(`[updater] baixando: ${Math.round(progress.percent)}%`);
   });
   autoUpdater.on('error', (err) => {
     console.error('[updater] Falha ao checar/baixar atualizacao:', err);
+    if (manualUpdateCheckPending) {
+      manualUpdateCheckPending = false;
+      dialog.showMessageBox({
+        type: 'error',
+        title: 'Falha ao procurar atualizações',
+        message: `Não foi possível checar atualizações agora.\n\n${err.message || err}`,
+        buttons: ['OK'],
+      });
+    }
   });
 
   autoUpdater.on('update-downloaded', (info) => {
@@ -616,8 +686,24 @@ function setupAutoUpdater() {
   });
 }
 
+// Menu nativo do app (some sozinho por causa do autoHideMenuBar - aparece
+// com Alt) - a unica entrada que precisa existir por enquanto e a checagem
+// manual de atualizacao.
+function buildAppMenu() {
+  const template = [
+    {
+      label: 'Ajuda',
+      submenu: [
+        { label: 'Procurar atualizações', click: () => checkForUpdatesManually() },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(() => {
   createWindow();
+  buildAppMenu();
   setupAutoUpdater();
 
   // Abertura "a frio" (app nao estava rodando) clicando num link de convite -

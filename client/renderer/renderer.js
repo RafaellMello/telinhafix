@@ -11,6 +11,10 @@ const FONT_STACKS = {
 };
 
 const THEME_STORAGE_KEY = 'telinhafix-theme';
+// Tema claro/escuro SO do fundo do tabuleiro de Codenames - independente do
+// resto do app (ver DEFAULT_THEME acima), preferencia de cada pessoa na
+// propria maquina, nao sincroniza com a sala.
+const CODENAMES_BOARD_THEME_STORAGE_KEY = 'telinhafix-codenames-board-theme';
 const DEFAULT_KEYBINDS = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M', quickShare: 'Control+Alt+Q' };
 const DEFAULT_VOLUMES = { join: 1, leave: 1, chat: 1, connection: 1, buttons: 1 };
 const DEFAULT_THEME = {
@@ -808,6 +812,17 @@ let currentQuality = null;
 const peers = new Map();
 // peerId -> nome, usado para a lista de participantes
 const peerNames = new Map();
+// peerId -> 'camera' | 'screen' | 'screen-native' | null - o que cada um
+// esta transmitindo agora (ver onPeerShareMode/setShareMode), so pra saber
+// quando espelhar o video (toda camera, sua ou de quem for, aparece
+// espelhada pra todo mundo - ver updatePeerTileMirror).
+const peerShareModes = new Map();
+
+function updatePeerTileMirror(peerId) {
+  const tile = document.getElementById(`tile-${peerId}`);
+  const video = tile ? tile.querySelector('video') : null;
+  if (video) video.classList.toggle('mirrored-video', peerShareModes.get(peerId) === 'camera');
+}
 // ids de espectadores admin invisiveis (ver onSpectatorJoined/Left abaixo) -
 // o ontrack em createPeerConnection confere esse Set antes de criar
 // qualquer tile/audio pra nao vazar a presenca deles: mesmo com a direcao
@@ -1500,10 +1515,34 @@ let gameTickInterval = null;
 let currentGameView = 'picker';
 
 const GAME_TEAM_LABEL = { red: 'Vermelha', blue: 'Azul', green: 'Verde' };
-const GAME_MODE_LABEL = { livre: 'Livre', '2x2': '2x2', '3x3': '3x3', ffa3: '3x3 Todos contra todos' };
+const GAME_MODE_LABEL = { livre: 'Livre', '2x2': '2x2', '3x3': '3x3', ffa3: '2x2x2 Todos contra todos' };
 const GAME_TITLES = { picker: 'Minijogos', codenames: 'Codenames', stop: 'Stop / Adedonha', sketch: 'Sketch do PC' };
 
+// Codenames abre ocupando a janela inteira (e em tela cheia de verdade) -
+// o tabuleiro + as duas colunas de equipe nao cabem legiveis no modal
+// pequeno. Sai da tela cheia ao voltar pros jogos ou fechar o painel.
+// Feito pelo processo principal (BrowserWindow.setFullScreen) e nao pela
+// API de fullscreen do HTML, que exige um clique "fresco" e falha a toa
+// (ex: entrando pelo convite/badge). So desfaz se fomos nos que ligamos.
+let codenamesEnteredFullscreen = false;
+
+function setCodenamesFullscreen(on) {
+  const overlay = document.getElementById('game-overlay');
+  if (overlay.classList.contains('game-overlay-fullscreen') === on) return;
+  overlay.classList.toggle('game-overlay-fullscreen', on);
+  if (on) {
+    codenamesEnteredFullscreen = true;
+    window.appWindow.setFullscreen(true)
+      .then((wasFullscreen) => { if (wasFullscreen) codenamesEnteredFullscreen = false; })
+      .catch((err) => console.warn('Nao deu pra entrar em tela cheia:', err));
+  } else if (codenamesEnteredFullscreen) {
+    codenamesEnteredFullscreen = false;
+    window.appWindow.setFullscreen(false).catch(() => {});
+  }
+}
+
 function showGamePicker() {
+  setCodenamesFullscreen(false);
   currentGameView = 'picker';
   document.getElementById('game-title').textContent = GAME_TITLES.picker;
   document.getElementById('btn-game-back').classList.add('hidden');
@@ -1521,6 +1560,7 @@ function selectGame(name) {
   document.getElementById('codenames-view').classList.toggle('hidden', name !== 'codenames');
   document.getElementById('stop-view').classList.toggle('hidden', name !== 'stop');
   document.getElementById('sketch-view').classList.toggle('hidden', name !== 'sketch');
+  setCodenamesFullscreen(name === 'codenames');
   if (name === 'codenames') refreshGameState();
   else if (name === 'stop') refreshStopState();
   else if (name === 'sketch') refreshSketchState();
@@ -1601,6 +1641,7 @@ function openGameOverlay() {
 }
 
 function closeGameOverlay() {
+  setCodenamesFullscreen(false);
   gameOverlayOpen = false;
   document.getElementById('game-overlay').classList.add('hidden');
   clearStopTimerInterval();
@@ -1642,9 +1683,6 @@ function renderGameLobby() {
 
   document.querySelectorAll('.game-mode-option[data-mode]').forEach((btn) => {
     btn.classList.toggle('selected', btn.dataset.mode === gameState.mode);
-  });
-  document.querySelectorAll('.game-mode-option[data-answer-time]').forEach((btn) => {
-    btn.classList.toggle('selected', btn.dataset.answerTime === gameState.answerTimeMode);
   });
 
   // Carta da equipe Verde so existe no modo ffa3 - as outras duas (vermelha/
@@ -1692,7 +1730,10 @@ function renderGameLobby() {
   document.getElementById('btn-game-leave-role').classList.toggle('hidden', !role);
 
   const bothReady = activeTeams.every((team) => gameState.teams[team].spymaster && gameState.teams[team].agents.length >= 1);
-  document.getElementById('btn-game-start').disabled = !bothReady;
+  const amIHost = !gameState.hostId || gameState.hostId === selfId;
+  const startBtn = document.getElementById('btn-game-start');
+  startBtn.disabled = !bothReady || !amIHost;
+  startBtn.title = amIHost ? '' : 'Só quem abriu o lobby pode iniciar a partida';
 }
 
 // Monta as 25 cartas do zero (fundo + verso, ver CSS .game-cell-inner) -
@@ -1730,13 +1771,67 @@ function buildBoardCells(boardEl) {
     div.appendChild(inner);
     boardEl.appendChild(div);
 
-    div.addEventListener('click', () => {
-      if (!div.classList.contains('game-cell-clickable')) return;
-      window.game.revealWord(i).catch((err) => console.error('Falha ao revelar palavra:', err));
-    });
+    div.addEventListener('click', () => handleGameCellClick(i));
 
     return { root: div, inner, front, back, watermark };
   });
+}
+
+// Clicar numa carta clicavel so SELECIONA (ver updateGuessConfirmUi) - so
+// revela de verdade clicando de novo na MESMA carta (confirma) ou no botao
+// "Confirmar" da barra que aparece. Clicar numa carta diferente so troca a
+// selecao, sem revelar a anterior. Pedido explicito do Rafael: cliques sem
+// querer perto do fim do turno estavam revelando a palavra errada.
+let selectedGuessCellIndex = null;
+
+function handleGameCellClick(i) {
+  const cellEl = boardCellEls[i];
+  if (!cellEl || !cellEl.root.classList.contains('game-cell-clickable')) return;
+  if (selectedGuessCellIndex === i) {
+    confirmGuess();
+    return;
+  }
+  selectedGuessCellIndex = i;
+  updateGuessConfirmUi();
+}
+
+function confirmGuess() {
+  if (selectedGuessCellIndex === null) return;
+  const index = selectedGuessCellIndex;
+  selectedGuessCellIndex = null;
+  updateGuessConfirmUi();
+  window.game.revealWord(index).catch((err) => console.error('Falha ao revelar palavra:', err));
+}
+
+function cancelGuessSelection() {
+  selectedGuessCellIndex = null;
+  updateGuessConfirmUi();
+}
+
+// Reflete a selecao pendente no tabuleiro (destaque na carta) e na barra de
+// confirmacao - chamado a cada render do tabuleiro, pra limpar sozinho
+// quando a selecao deixa de fazer sentido (a vez passou, a carta ja foi
+// revelada por outra pessoa, etc).
+function updateGuessConfirmUi() {
+  if (selectedGuessCellIndex !== null) {
+    const stillValid = gameState && gameState.status === 'playing' && gameState.phase === 'guess'
+      && gameState.board[selectedGuessCellIndex] && !gameState.board[selectedGuessCellIndex].revealed
+      && boardCellEls[selectedGuessCellIndex] && boardCellEls[selectedGuessCellIndex].root.classList.contains('game-cell-clickable');
+    if (!stillValid) selectedGuessCellIndex = null;
+  }
+
+  boardCellEls.forEach((cellEl, i) => {
+    cellEl.root.classList.toggle('game-cell-selected', i === selectedGuessCellIndex);
+  });
+
+  const bar = document.getElementById('game-guess-confirm');
+  if (selectedGuessCellIndex === null) {
+    bar.classList.add('hidden');
+    return;
+  }
+  const word = gameState.board[selectedGuessCellIndex].word;
+  document.getElementById('game-guess-confirm-text').textContent = `Revelar "${word.toUpperCase()}"?`;
+  bar.classList.remove('hidden');
 }
 
 // Contagem regressiva do "tempo de resposta" (ver seletor Especialista/
@@ -1751,7 +1846,9 @@ function updateGameAnswerTimerDisplay() {
   }
   const remainingMs = Math.max(0, gameState.answerTimeMs - (Date.now() - gameState.clueGivenAt));
   const seconds = Math.ceil(remainingMs / 1000);
-  el.textContent = `${seconds}s pra responder`;
+  const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const ss = String(seconds % 60).padStart(2, '0');
+  el.textContent = `${mm}:${ss}`;
   el.classList.toggle('game-answer-timer-urgent', seconds <= 5);
   el.classList.remove('hidden');
 }
@@ -1766,6 +1863,94 @@ function clearGameTimerInterval() {
   if (gameTickInterval) { clearInterval(gameTickInterval); gameTickInterval = null; }
 }
 
+// Iniciais pro avatar generico (sem foto de verdade - ver aviso no pedido
+// do Rafael, nao da pra copiar a arte dos personagens do site oficial).
+function avatarInitials(name) {
+  const clean = (name || '?').trim();
+  if (!clean) return '?';
+  const parts = clean.split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// Nomes vem de outros participantes e vao parar em innerHTML - sempre escapar.
+function escapeHtml(text) {
+  return String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function gameRolePersonHtml(name) {
+  return `<div class="game-role-person"><div class="game-role-avatar">${escapeHtml(avatarInitials(name))}</div><div class="game-role-name">${escapeHtml(name)}</div></div>`;
+}
+
+// Card colorido da equipe (AGENTES ou MESTRE-ESPIÃO) - titulo, avatar
+// grande redondo e o nome numa pilula escura embaixo, igual o site oficial.
+function gameRoleCardHtml(title, people, acting) {
+  const body = people.length
+    ? people.map((p) => gameRolePersonHtml(p.name)).join('')
+    : '<p class="game-role-empty">Ninguém ainda</p>';
+  return `<div class="game-role-card${acting ? ' game-role-card-active' : ''}"><div class="game-role-title">${title}</div><div class="game-role-people">${body}</div></div>`;
+}
+
+// Faixa no topo copiando o "WAIT FOR [avatar] TO GIVE YOU A CLUE" do site
+// oficial - quem precisa agir agora (dar a pista ou escolher uma palavra).
+function renderGameTurnBanner() {
+  const el = document.getElementById('game-turn-banner');
+  if (gameState.status === 'over') { el.innerHTML = ''; return; }
+  const team = gameState.currentTeam;
+  const teamData = gameState.teams[team];
+  let actorName = null;
+  let text;
+  if (gameState.phase === 'clue') {
+    actorName = teamData?.spymaster?.name || null;
+    text = `Aguardando ${actorName ? '' : 'o Mestre-Espião'} dar uma pista`;
+  } else {
+    text = 'Escolham uma palavra';
+  }
+  el.innerHTML = `
+    ${actorName ? `<div class="game-avatar game-turn-banner-avatar">${escapeHtml(avatarInitials(actorName))}</div>` : ''}
+    <span>${actorName ? `<strong>${escapeHtml(actorName)}</strong> vai ${text.toLowerCase().startsWith('aguardando') ? 'dar uma pista' : text}` : text}</span>
+  `;
+  el.className = `game-turn-banner game-turn-banner-${team}`;
+}
+
+// Paineis laterais (OPERATIVES/SPYMASTER por equipe, contagem restante,
+// cronometro) copiando o layout do site oficial - distribui as equipes
+// entre os dois lados (no modo ffa3, com 3 equipes, um lado fica com 2).
+function renderGameSidePanels() {
+  const leftEl = document.getElementById('game-panels-left');
+  const rightEl = document.getElementById('game-panels-right');
+  const teams = Object.keys(gameState.teams);
+
+  const panelHtml = (team) => {
+    const t = gameState.teams[team];
+    const eliminated = gameState.eliminated?.includes(team);
+    const isActingTeam = gameState.status === 'playing' && gameState.currentTeam === team;
+    const showTimer = isActingTeam && gameState.phase === 'guess' && gameState.answerTimeMs;
+    // "Quem esta jogando" fica destacado: o time da vez inteiro ganha um
+    // contorno, e dentro dele so a parte que realmente esta pra agir agora
+    // (Mestre-Espiao na fase de pista, Agentes na fase de palpite).
+    const agentsActing = isActingTeam && gameState.phase === 'guess';
+    const spymasterActing = isActingTeam && gameState.phase === 'clue';
+    return `
+      <div class="game-team-panel game-team-panel-${team}${eliminated ? ' game-team-panel-eliminated' : ''}${isActingTeam ? ' game-team-panel-active' : ''}">
+        ${gameRoleCardHtml('Agentes', t.agents, agentsActing)}
+        <div class="game-remaining-row" title="Palavras que faltam">
+          <span class="game-remaining-number">${eliminated ? '✕' : gameState.remaining[team]}</span>
+          <div class="game-remaining-card">${CARD_WATERMARKS[team] || ''}</div>
+        </div>
+        ${gameRoleCardHtml('Mestre-Espião', t.spymaster ? [t.spymaster] : [], spymasterActing)}
+        ${showTimer ? `<div id="game-answer-timer" class="game-answer-timer"></div>` : ''}
+      </div>
+    `;
+  };
+
+  leftEl.innerHTML = teams.filter((_, i) => i % 2 === 0).map(panelHtml).join('');
+  const rightTeamsHtml = teams.filter((_, i) => i % 2 === 1).map(panelHtml).join('');
+  const logEl = document.getElementById('game-log');
+  rightEl.innerHTML = rightTeamsHtml;
+  rightEl.appendChild(logEl);
+}
+
 function renderGameBoard() {
   const role = myGameRole();
   const boardEl = document.getElementById('game-board');
@@ -1773,6 +1958,7 @@ function renderGameBoard() {
   if (gameState.round !== boardCellRound || boardCellEls.length !== gameState.board.length) {
     buildBoardCells(boardEl);
     boardCellRound = gameState.round;
+    selectedGuessCellIndex = null;
   }
 
   gameState.board.forEach((cell, i) => {
@@ -1795,29 +1981,17 @@ function renderGameBoard() {
     root.classList.toggle('game-cell-clickable', !!clickable);
   });
 
+  updateGuessConfirmUi();
+
+  renderGameTurnBanner();
+  renderGameSidePanels();
+
   if (gameState.status === 'playing' && gameState.phase === 'guess' && gameState.answerTimeMs) {
     startGameTimerInterval();
   } else {
     clearGameTimerInterval();
     updateGameAnswerTimerDisplay();
   }
-
-  const teamLabel = GAME_TEAM_LABEL[gameState.currentTeam] || '';
-  const turnEl = document.getElementById('game-turn-indicator');
-  if (gameState.status === 'over') {
-    turnEl.textContent = '';
-  } else if (gameState.phase === 'clue') {
-    turnEl.textContent = `Vez da equipe ${teamLabel} — aguardando pista do Mestre-Espião`;
-  } else {
-    turnEl.textContent = `Vez da equipe ${teamLabel} — escolham uma palavra`;
-  }
-
-  document.getElementById('game-remaining').textContent = Object.keys(gameState.teams)
-    .map((team) => {
-      const eliminatedTag = gameState.eliminated?.includes(team) ? ' (eliminada)' : '';
-      return `${GAME_TEAM_LABEL[team]}: ${gameState.remaining[team]} restantes${eliminatedTag}`;
-    })
-    .join(' · ');
 
   const clueActiveEl = document.getElementById('game-clue-active');
   if (gameState.clue && gameState.status === 'playing') {
@@ -1835,6 +2009,11 @@ function renderGameBoard() {
   const showEndTurn = gameState.status === 'playing' && gameState.phase === 'guess'
     && role && role.team === gameState.currentTeam;
   document.getElementById('btn-game-end-turn').classList.toggle('hidden', !showEndTurn);
+
+  // So quem abriu o lobby pode encerrar a partida pra todo mundo (mesma
+  // regra de "so o anfitriao inicia" - ver isGameHost no servidor).
+  const amIHostForAbort = !gameState.hostId || gameState.hostId === selfId;
+  document.getElementById('btn-game-abort').classList.toggle('hidden', !amIHostForAbort);
 
   const logEl = document.getElementById('game-log');
   logEl.innerHTML = '';
@@ -1866,6 +2045,11 @@ function renderGameBoard() {
       if (i === gameState.log.length - 1) li.classList.add('game-over-recap-fatal');
       recapEl.appendChild(li);
     });
+
+    const amIHost = !gameState.hostId || gameState.hostId === selfId;
+    const playAgainBtn = document.getElementById('btn-game-play-again');
+    playAgainBtn.disabled = !amIHost;
+    playAgainBtn.title = amIHost ? '' : 'Só quem abriu o lobby pode iniciar a partida';
 
     overBanner.classList.remove('hidden');
   } else {
@@ -1918,6 +2102,7 @@ function resetGameUiState() {
   mySecretMapRound = -1;
   boardCellEls = [];
   boardCellRound = -1;
+  selectedGuessCellIndex = null;
   stopState = null;
   stopFieldsBuilt = -1;
   clearTimeout(stopSyncDebounce);
@@ -2348,6 +2533,7 @@ function createPeerConnection(peerId) {
 
     const video = getOrCreateVideoTile(peerId, name);
     video.srcObject = stream;
+    updatePeerTileMirror(peerId);
     // So conecta ao Web Audio quando a track de AUDIO especificamente
     // chega - assim garante que o stream ja tem audio de verdade no
     // momento da conexao (ver comentario em wireRemoteAudioGain).
@@ -2625,6 +2811,12 @@ function drawCompositeFrame() {
     compositeCtx.arc(cx, cy, bubbleSize / 2, 0, Math.PI * 2);
     compositeCtx.closePath();
     compositeCtx.clip();
+    // Espelha a bolinha da camera (igual toda transmissao de camera - ver
+    // .mirrored-video no CSS) - reflete em torno do proprio centro (cx) pra
+    // nao mudar a posicao da bolinha na tela, so o conteudo dentro dela.
+    compositeCtx.translate(cx, 0);
+    compositeCtx.scale(-1, 1);
+    compositeCtx.translate(-cx, 0);
     drawCover(compositeCtx, cameraSourceVideo, bx, by, bubbleSize, bubbleSize);
     compositeCtx.restore();
 
@@ -3104,6 +3296,8 @@ async function finishStartingShare(selfLabel) {
 
   const video = getOrCreateVideoTile(selfId, selfLabel, true);
   video.srcObject = localStream;
+  video.classList.toggle('mirrored-video', shareMode === 'camera');
+  window.rtc.setShareMode(shareMode);
   updateSelfAudienceLabel();
 
   btnShare.classList.add('hidden');
@@ -3139,6 +3333,7 @@ async function stopShare() {
   localVideoStream = null;
   currentQuality = null;
   shareMode = null;
+  window.rtc.setShareMode(null);
   refreshAllGainsForSharingState();
 
   teardownCapturedAudioTrack();
@@ -3287,12 +3482,24 @@ document.querySelectorAll('.game-mode-option[data-mode]').forEach((btn) => {
   });
 });
 
-document.querySelectorAll('.game-mode-option[data-answer-time]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    if (gameState && gameState.answerTimeMode === btn.dataset.answerTime) return;
-    setGameError('');
-    window.game.setAnswerTime(btn.dataset.answerTime).catch((err) => setGameError(err.message));
+function applyGameBoardTheme(theme) {
+  const codenamesView = document.getElementById('codenames-view');
+  codenamesView.classList.toggle('codenames-theme-light', theme === 'light');
+  codenamesView.classList.toggle('codenames-theme-dark', theme !== 'light');
+  document.querySelectorAll('.game-mode-option[data-game-theme]').forEach((btn) => {
+    btn.classList.toggle('selected', btn.dataset.gameTheme === theme);
   });
+  try { localStorage.setItem(CODENAMES_BOARD_THEME_STORAGE_KEY, theme); } catch (err) {}
+}
+
+(() => {
+  let savedTheme = 'dark';
+  try { savedTheme = localStorage.getItem(CODENAMES_BOARD_THEME_STORAGE_KEY) || 'dark'; } catch (err) {}
+  applyGameBoardTheme(savedTheme);
+})();
+
+document.querySelectorAll('.game-mode-option[data-game-theme]').forEach((btn) => {
+  btn.addEventListener('click', () => applyGameBoardTheme(btn.dataset.gameTheme));
 });
 
 document.querySelectorAll('.game-pick-btn').forEach((btn) => {
@@ -3325,6 +3532,9 @@ document.getElementById('btn-game-end-turn').addEventListener('click', () => {
   window.game.endTurn().catch((err) => console.error('Falha ao passar a vez:', err));
 });
 
+document.getElementById('btn-game-guess-confirm').addEventListener('click', () => confirmGuess());
+document.getElementById('btn-game-guess-cancel').addEventListener('click', () => cancelGuessSelection());
+
 document.getElementById('btn-game-play-again').addEventListener('click', () => {
   window.game.playAgain().catch((err) => console.error('Falha ao jogar de novo:', err));
 });
@@ -3344,6 +3554,10 @@ document.getElementById('credit-link').addEventListener('click', (e) => {
 });
 
 document.getElementById('build-version').textContent = `build (${window.appInfo.version})`;
+
+document.getElementById('btn-check-updates').addEventListener('click', () => {
+  window.appInfo.checkForUpdates();
+});
 
 btnJoin.addEventListener('click', async () => {
   setLoginError('');
@@ -3368,6 +3582,7 @@ btnJoin.addEventListener('click', async () => {
     const { selfId: id, peers: existingPeers } = await window.rtc.joinRoom(roomId, name);
     selfId = id;
     saveRoomToHistory(roomId);
+    existingPeers.forEach((p) => peerShareModes.set(p.id, p.shareMode || null));
 
     window.rtc.onSignal(handleSignal);
 
@@ -3386,6 +3601,7 @@ btnJoin.addEventListener('click', async () => {
       if (state) state.pc.close();
       peers.delete(peerId);
       peerNames.delete(peerId);
+      peerShareModes.delete(peerId);
       updateSelfAudienceLabel();
       removeParticipantRow(peerId);
       removeVideoTile(peerId);
@@ -3393,11 +3609,25 @@ btnJoin.addEventListener('click', async () => {
       playLeaveSound();
     });
 
+    window.rtc.onPeerShareMode(({ id: peerId, mode }) => {
+      peerShareModes.set(peerId, mode || null);
+      updatePeerTileMirror(peerId);
+    });
+
     window.rtc.onDisconnected(() => {
       setLoginError('Conexão com o servidor perdida.');
     });
 
     window.game.onState((newState) => {
+      // "round" por si so nao basta pra saber se o tabuleiro precisa ser
+      // reconstruido (ver renderGameBoard/buildBoardCells): resetar o lobby
+      // ("Trocar equipes") zera o round de volta pra 0, entao a PROXIMA
+      // partida pode cair exatamente no mesmo numero de round de uma
+      // partida anterior na mesma sala, enganando a comparacao e deixando
+      // as palavras antigas na tela mesmo com um tabuleiro novo chegando do
+      // servidor. Resetar aqui (sempre que o estado NAO esta jogando) cobre
+      // isso mesmo com o painel fechado, quando renderGame nem chega a rodar.
+      if (newState.status !== 'playing' && newState.status !== 'over') boardCellRound = -1;
       gameState = newState;
       renderGame();
       renderGameActivityBadge();

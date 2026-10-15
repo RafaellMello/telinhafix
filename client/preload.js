@@ -70,6 +70,21 @@ contextBridge.exposeInMainWorld('rtc', {
     socket.on('peer-left', (peer) => cb(peer));
   },
 
+  // Avisa a sala toda o que esta sendo transmitido agora ('camera' | 'screen'
+  // | 'screen-native' | null pra "parou") - usado so pra saber quando
+  // espelhar o video (ver espelhamento de camera no renderer.js). O
+  // servidor guarda o ultimo valor por participante e manda pra quem
+  // entrar depois (ver "peers" no retorno de joinRoom).
+  setShareMode(mode) {
+    if (!socket) return;
+    socket.emit('share-mode-changed', { mode });
+  },
+
+  onPeerShareMode(cb) {
+    if (!socket) return;
+    socket.on('peer-share-mode', (data) => cb(data));
+  },
+
   // Painel de admin (ver server/index.js): quando o dono do app entra numa
   // sala no modo espectador invisivel, o servidor avisa os participantes
   // JA na sala por esses dois eventos em vez de peer-joined/peer-left -
@@ -129,9 +144,6 @@ contextBridge.exposeInMainWorld('game', {
   },
   setMode(mode) {
     return emitAck('game-set-mode', { mode });
-  },
-  setAnswerTime(answerTimeMode) {
-    return emitAck('game-set-answer-time', { answerTimeMode });
   },
   setRole(team, role) {
     return emitAck('game-set-role', { team, role });
@@ -304,8 +316,17 @@ contextBridge.exposeInMainWorld('appLinks', {
   },
 });
 
+contextBridge.exposeInMainWorld('appWindow', {
+  setFullscreen(on) {
+    return ipcRenderer.invoke('window-set-fullscreen', !!on);
+  },
+});
+
 contextBridge.exposeInMainWorld('appInfo', {
   version: require('./package.json').version,
+  checkForUpdates() {
+    return ipcRenderer.invoke('check-for-updates');
+  },
 });
 
 // Atalhos de teclado globais (funcionam com o app em segundo plano).
