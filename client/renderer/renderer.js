@@ -1878,15 +1878,15 @@ function escapeHtml(text) {
   return String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function gameRolePersonHtml(name) {
-  return `<div class="game-role-person"><div class="game-role-avatar">${escapeHtml(avatarInitials(name))}</div><div class="game-role-name">${escapeHtml(name)}</div></div>`;
+function gameRolePersonHtml(person) {
+  return `<div class="game-role-person"><div class="game-role-avatar" data-avatar-peer="${escapeHtml(person.id)}"><span class="game-role-initials">${escapeHtml(avatarInitials(person.name))}</span></div><div class="game-role-name">${escapeHtml(person.name)}</div></div>`;
 }
 
 // Card colorido da equipe (AGENTES ou MESTRE-ESPIÃO) - titulo, avatar
 // grande redondo e o nome numa pilula escura embaixo, igual o site oficial.
 function gameRoleCardHtml(title, people, acting) {
   const body = people.length
-    ? people.map((p) => gameRolePersonHtml(p.name)).join('')
+    ? people.map((p) => gameRolePersonHtml(p)).join('')
     : '<p class="game-role-empty">Ninguém ainda</p>';
   return `<div class="game-role-card${acting ? ' game-role-card-active' : ''}"><div class="game-role-title">${title}</div><div class="game-role-people">${body}</div></div>`;
 }
@@ -1949,6 +1949,64 @@ function renderGameSidePanels() {
   const logEl = document.getElementById('game-log');
   rightEl.innerHTML = rightTeamsHtml;
   rightEl.appendChild(logEl);
+  refreshGameAvatarVideos();
+}
+
+// --- Camera no avatar do Codenames ---------------------------------------
+// "Ligar câmera" dentro do Codenames e o mesmo compartilhamento de camera
+// de sempre (startCameraShare) - so que aqui a camera de cada jogador
+// aparece DENTRO do circulo do avatar dele na coluna da equipe. Os <video>
+// ficam guardados por pessoa e sao so reencaixados a cada render (os
+// paineis sao refeitos via innerHTML) - reinserir no mesmo tick nao pausa o
+// video, entao nao pisca.
+const gameAvatarVideos = new Map();
+
+function cameraStreamFor(peerId) {
+  if (peerId === selfId) return shareMode === 'camera' ? localStream : null;
+  if (peerShareModes.get(peerId) !== 'camera') return null;
+  const tileVideo = document.querySelector(`#tile-${CSS.escape(peerId)} video`);
+  return tileVideo ? tileVideo.srcObject : null;
+}
+
+function refreshGameAvatarVideos() {
+  const usedIds = new Set();
+  document.querySelectorAll('#codenames-view [data-avatar-peer]').forEach((slot) => {
+    const peerId = slot.dataset.avatarPeer;
+    const stream = cameraStreamFor(peerId);
+    slot.classList.toggle('game-role-avatar-has-video', !!stream);
+    if (!stream) return;
+    usedIds.add(peerId);
+    let video = gameAvatarVideos.get(peerId);
+    if (!video) {
+      video = document.createElement('video');
+      video.className = 'game-role-avatar-video mirrored-video';
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = true; // o audio (se tiver) ja toca pela tile normal
+      gameAvatarVideos.set(peerId, video);
+    }
+    if (video.srcObject !== stream) video.srcObject = stream;
+    if (video.parentElement !== slot) slot.appendChild(video);
+    if (video.paused) video.play().catch(() => {});
+  });
+  for (const [peerId, video] of gameAvatarVideos) {
+    if (usedIds.has(peerId)) continue;
+    video.srcObject = null;
+    video.remove();
+    gameAvatarVideos.delete(peerId);
+  }
+  updateGameCameraButton();
+}
+
+function updateGameCameraButton() {
+  const btn = document.getElementById('btn-game-camera');
+  if (!btn) return;
+  const cameraOn = shareMode === 'camera';
+  const sharingOther = !!localStream && !cameraOn;
+  btn.textContent = cameraOn ? 'Desligar câmera' : 'Ligar câmera';
+  btn.classList.toggle('active-camera', cameraOn);
+  btn.disabled = sharingOther;
+  btn.title = sharingOther ? 'Pare de compartilhar a tela pra ligar a câmera' : '';
 }
 
 function renderGameBoard() {
@@ -2534,6 +2592,7 @@ function createPeerConnection(peerId) {
     const video = getOrCreateVideoTile(peerId, name);
     video.srcObject = stream;
     updatePeerTileMirror(peerId);
+    refreshGameAvatarVideos();
     // So conecta ao Web Audio quando a track de AUDIO especificamente
     // chega - assim garante que o stream ja tem audio de verdade no
     // momento da conexao (ver comentario em wireRemoteAudioGain).
@@ -3306,6 +3365,7 @@ async function finishStartingShare(selfLabel) {
   btnStopShare.classList.remove('hidden');
 
   localVideoStream.getVideoTracks()[0].addEventListener('ended', stopShare);
+  refreshGameAvatarVideos();
 }
 
 async function stopShare() {
@@ -3345,6 +3405,7 @@ async function stopShare() {
   btnShareCamera.classList.remove('hidden');
   btnToggleCamera.classList.add('hidden');
   btnStopShare.classList.add('hidden');
+  refreshGameAvatarVideos();
 }
 
 async function leaveRoom() {
@@ -3532,6 +3593,11 @@ document.getElementById('btn-game-end-turn').addEventListener('click', () => {
   window.game.endTurn().catch((err) => console.error('Falha ao passar a vez:', err));
 });
 
+document.getElementById('btn-game-camera').addEventListener('click', () => {
+  if (shareMode === 'camera') stopShare();
+  else if (!localStream) startCameraShare();
+});
+
 document.getElementById('btn-game-guess-confirm').addEventListener('click', () => confirmGuess());
 document.getElementById('btn-game-guess-cancel').addEventListener('click', () => cancelGuessSelection());
 
@@ -3602,6 +3668,7 @@ btnJoin.addEventListener('click', async () => {
       peers.delete(peerId);
       peerNames.delete(peerId);
       peerShareModes.delete(peerId);
+      refreshGameAvatarVideos();
       updateSelfAudienceLabel();
       removeParticipantRow(peerId);
       removeVideoTile(peerId);
@@ -3612,6 +3679,7 @@ btnJoin.addEventListener('click', async () => {
     window.rtc.onPeerShareMode(({ id: peerId, mode }) => {
       peerShareModes.set(peerId, mode || null);
       updatePeerTileMirror(peerId);
+      refreshGameAvatarVideos();
     });
 
     window.rtc.onDisconnected(() => {
