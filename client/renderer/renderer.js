@@ -271,18 +271,19 @@ function setupSettingsPanel() {
     }
   }
 
-  function openSettings() {
+  function openSettings(tab = 'aparencia') {
     refreshUI();
-    selectTab('aparencia');
+    selectTab(tab);
     overlay.classList.remove('hidden');
   }
+  window.__openSettingsTab = openSettings;
 
   function closeSettings() {
     overlay.classList.add('hidden');
   }
 
-  if (btnOpen) btnOpen.addEventListener('click', openSettings);
-  if (btnOpenRoom) btnOpenRoom.addEventListener('click', openSettings);
+  if (btnOpen) btnOpen.addEventListener('click', () => openSettings());
+  if (btnOpenRoom) btnOpenRoom.addEventListener('click', () => openSettings());
   btnClose.addEventListener('click', closeSettings);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) closeSettings();
@@ -331,7 +332,42 @@ function setupSettingsPanel() {
   });
 }
 
+// --- Novidades ----------------------------------------------------------
+// Lista do changelog.js na aba "Novidades". Na primeira vez que o app abre
+// numa versao nova (que tenha entrada no changelog), abre essa aba sozinho.
+const LAST_SEEN_VERSION_STORAGE_KEY = 'telinhafix-last-seen-version';
+
+function renderChangelog() {
+  const list = document.getElementById('changelog-list');
+  const entries = window.TELINHAFIX_CHANGELOG || [];
+  if (!list) return;
+  const current = window.appInfo.version;
+  list.innerHTML = entries.map((e) => `
+    <article class="changelog-entry${e.version === current ? ' changelog-entry-current' : ''}">
+      <header>
+        <span class="changelog-version">v${escapeHtml(e.version)}</span>
+        <strong class="changelog-title">${escapeHtml(e.title)}</strong>
+        ${e.version === current ? '<span class="changelog-badge">Sua versão</span>' : ''}
+        <span class="changelog-date">${escapeHtml(e.date || '')}</span>
+      </header>
+      <ul>${e.items.map((it) => `<li>${escapeHtml(it)}</li>`).join('')}</ul>
+    </article>`).join('');
+}
+
+function showNewsIfUpdated() {
+  renderChangelog();
+  const current = window.appInfo.version;
+  let lastSeen = null;
+  try { lastSeen = localStorage.getItem(LAST_SEEN_VERSION_STORAGE_KEY); } catch (err) {}
+  const hasEntry = (window.TELINHAFIX_CHANGELOG || []).some((e) => e.version === current);
+  if (lastSeen === current || !hasEntry) return;
+  try { localStorage.setItem(LAST_SEEN_VERSION_STORAGE_KEY, current); } catch (err) {}
+  // depois da animacao de entrada da tela de login
+  setTimeout(() => { if (window.__openSettingsTab) window.__openSettingsTab('novidades'); }, 1200);
+}
+
 setupSettingsPanel();
+showNewsIfUpdated();
 
 // --- Captura de keybinds customizaveis (atalhos globais) ------------------
 
