@@ -1627,7 +1627,7 @@ function setGameError(msg) {
 
 async function refreshGameState() {
   try {
-    gameState = await window.game.getState();
+    gameState = withPhaseDeadline(await window.game.getState());
     renderGame();
   } catch (err) {
     console.error('Falha ao buscar estado do minijogo:', err);
@@ -1651,6 +1651,7 @@ function closeGameOverlay() {
 function ensureSecretMap() {
   const role = myGameRole();
   if (!role || role.role !== 'spymaster') return;
+  if (gameState && gameState.status === 'playing' && gameState.eliminated?.includes(role.team)) return;
   if (!gameState || (gameState.status !== 'playing' && gameState.status !== 'over')) return;
   if (mySecretMapRound === gameState.round && mySecretMap) return;
   window.game.getSecretMap().then((res) => {
@@ -1742,6 +1743,7 @@ function renderGameLobby() {
 // flip - ver renderGameBoard).
 function buildBoardCells(boardEl) {
   boardEl.innerHTML = '';
+  shownWordCells.clear();
   boardCellEls = gameState.board.map((cell, i) => {
     const div = document.createElement('div');
     div.className = 'game-cell';
@@ -1758,9 +1760,14 @@ function buildBoardCells(boardEl) {
 
     const back = document.createElement('div');
     back.className = 'game-cell-face game-cell-back';
-    const watermark = document.createElement('div');
-    watermark.className = 'game-cell-watermark';
-    back.appendChild(watermark);
+    const photo = document.createElement('img');
+    photo.className = 'game-cell-photo';
+    photo.alt = '';
+    photo.draggable = false;
+    back.appendChild(photo);
+    const tint = document.createElement('div');
+    tint.className = 'game-cell-tint';
+    back.appendChild(tint);
     const backWord = document.createElement('span');
     backWord.className = 'game-cell-word';
     backWord.textContent = cell.word;
@@ -1773,7 +1780,7 @@ function buildBoardCells(boardEl) {
 
     div.addEventListener('click', () => handleGameCellClick(i));
 
-    return { root: div, inner, front, back, watermark };
+    return { root: div, inner, front, back, photo };
   });
 }
 
@@ -1784,8 +1791,18 @@ function buildBoardCells(boardEl) {
 // querer perto do fim do turno estavam revelando a palavra errada.
 let selectedGuessCellIndex = null;
 
+// Cartas ja reveladas mostram so a foto; clicar alterna entre a foto e a
+// palavra - so na tela de quem clicou.
+const shownWordCells = new Set();
+
 function handleGameCellClick(i) {
   const cellEl = boardCellEls[i];
+  const cell = gameState?.board?.[i];
+  if (cellEl && cell && (cell.revealed || (gameState.status === 'over' && cell.team))) {
+    if (shownWordCells.has(i)) shownWordCells.delete(i); else shownWordCells.add(i);
+    cellEl.root.classList.toggle('game-cell-show-word', shownWordCells.has(i));
+    return;
+  }
   if (!cellEl || !cellEl.root.classList.contains('game-cell-clickable')) return;
   if (selectedGuessCellIndex === i) {
     confirmGuess();
@@ -1840,17 +1857,51 @@ function updateGuessConfirmUi() {
 function updateGameAnswerTimerDisplay() {
   const el = document.getElementById('game-answer-timer');
   if (!el || !gameState) return;
-  if (gameState.status !== 'playing' || gameState.phase !== 'guess' || !gameState.answerTimeMs || !gameState.clueGivenAt) {
+  if (gameState.status !== 'playing' || !gameState.phaseDeadline) {
     el.classList.add('hidden');
     return;
   }
-  const remainingMs = Math.max(0, gameState.answerTimeMs - (Date.now() - gameState.clueGivenAt));
+  const remainingMs = Math.max(0, gameState.phaseDeadline - Date.now());
   const seconds = Math.ceil(remainingMs / 1000);
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
   const ss = String(seconds % 60).padStart(2, '0');
-  el.textContent = `${mm}:${ss}`;
+  el.textContent = `${gameState.phase === 'clue' ? 'Pista ' : ''}${mm}:${ss}`;
   el.classList.toggle('game-answer-timer-urgent', seconds <= 5);
   el.classList.remove('hidden');
+}
+
+// O servidor manda "quanto falta" (phaseEndsInMs) em vez do horario de
+// inicio - assim o cronometro nao depende do relogio do PC bater com o do
+// servidor. Vira um prazo no relogio local na hora que o estado chega.
+function withPhaseDeadline(state) {
+  if (state) state.phaseDeadline = state.phaseEndsInMs != null ? Date.now() + state.phaseEndsInMs : null;
+  return state;
+}
+
+// Tempo esgotou (pista ou palpite): aviso grande na tela + som, pra todo
+// mundo perceber que a vez passou. timeoutSeq so cresce; o primeiro estado
+// recebido (abrir a aba no meio da partida) so registra, nao avisa.
+let lastSeenTimeoutSeq = null;
+let gameTimeoutNoticeTimer = null;
+function notifyGameTimeoutIfNew() {
+  const seq = gameState?.timeoutSeq ?? 0;
+  if (lastSeenTimeoutSeq === null || seq < lastSeenTimeoutSeq) { lastSeenTimeoutSeq = seq; return; }
+  if (seq === lastSeenTimeoutSeq) return;
+  lastSeenTimeoutSeq = seq;
+  const lt = gameState.lastTimeout;
+  const el = document.getElementById('game-timeout-notice');
+  if (el && lt) {
+    const who = lt.phase === 'clue' ? 'O Mestre-Espião não deu a pista a tempo' : 'Os agentes não escolheram a tempo';
+    el.innerHTML = `<strong>Tempo esgotado!</strong><span>${who} - Equipe ${escapeHtml(GAME_TEAM_LABEL[lt.team] || '')} perdeu a vez</span>`;
+    el.className = `game-timeout-notice game-timeout-notice-${lt.team}`;
+    clearTimeout(gameTimeoutNoticeTimer);
+    gameTimeoutNoticeTimer = setTimeout(() => el.classList.add('hidden'), 3000);
+  }
+  playTones([
+    { freq: 660, duration: 0.14, type: 'square', gain: 0.07 },
+    { freq: 520, start: 0.16, duration: 0.14, type: 'square', gain: 0.07 },
+    { freq: 390, start: 0.32, duration: 0.3, type: 'square', gain: 0.07 },
+  ]);
 }
 
 function startGameTimerInterval() {
@@ -1895,7 +1946,7 @@ function gameRoleCardHtml(title, people, acting) {
 // oficial - quem precisa agir agora (dar a pista ou escolher uma palavra).
 function renderGameTurnBanner() {
   const el = document.getElementById('game-turn-banner');
-  if (gameState.status === 'over') { el.innerHTML = ''; return; }
+  if (gameState.status === 'over') { el.innerHTML = ''; el.className = 'game-turn-banner hidden'; return; }
   const team = gameState.currentTeam;
   const teamData = gameState.teams[team];
   let actorName = null;
@@ -1925,7 +1976,7 @@ function renderGameSidePanels() {
     const t = gameState.teams[team];
     const eliminated = gameState.eliminated?.includes(team);
     const isActingTeam = gameState.status === 'playing' && gameState.currentTeam === team;
-    const showTimer = isActingTeam && gameState.phase === 'guess' && gameState.answerTimeMs;
+    const showTimer = isActingTeam && !!gameState.phaseDeadline;
     // "Quem esta jogando" fica destacado: o time da vez inteiro ganha um
     // contorno, e dentro dele so a parte que realmente esta pra agir agora
     // (Mestre-Espiao na fase de pista, Agentes na fase de palpite).
@@ -2020,19 +2071,29 @@ function renderGameBoard() {
   }
 
   gameState.board.forEach((cell, i) => {
-    const { root, inner, front, back, watermark } = boardCellEls[i];
+    const { root, inner, front, back, photo } = boardCellEls[i];
 
-    inner.classList.toggle('flipped', cell.revealed);
+    // No fim da partida o servidor manda a cor de todas - vira todas, e as que
+    // ninguem tinha revelado ficam um pouco apagadas pra dar pra diferenciar.
+    const showBack = cell.revealed || (gameState.status === 'over' && !!cell.team);
+    inner.classList.toggle('flipped', showBack);
+    root.classList.toggle('game-cell-unrevealed-end', showBack && !cell.revealed);
 
     front.className = 'game-cell-face game-cell-front';
-    if (!cell.revealed && role && role.role === 'spymaster' && mySecretMap && mySecretMapRound === gameState.round) {
+    const myTeamEliminated = role && gameState.status === 'playing' && gameState.eliminated?.includes(role.team);
+    if (!cell.revealed && role && role.role === 'spymaster' && !myTeamEliminated && mySecretMap && mySecretMapRound === gameState.round) {
       front.classList.add(`game-cell-spy-${mySecretMap[i]}`);
     }
 
-    if (cell.revealed) {
+    if (showBack) {
       back.className = `game-cell-face game-cell-back game-cell-back-${cell.team}`;
-      watermark.innerHTML = CARD_WATERMARKS[cell.team] || '';
+      if (cell.photo != null) {
+        const file = AVATAR_FILES[cell.photo % AVATAR_FILES.length];
+        if (photo.dataset.file !== file) { photo.src = `assets/avatars/${file}`; photo.dataset.file = file; }
+      }
     }
+    root.classList.toggle('game-cell-revealed-photo', showBack);
+    root.classList.toggle('game-cell-show-word', showBack && shownWordCells.has(i));
 
     const clickable = gameState.status === 'playing' && gameState.phase === 'guess'
       && role && role.role === 'agent' && role.team === gameState.currentTeam && !cell.revealed;
@@ -2044,7 +2105,7 @@ function renderGameBoard() {
   renderGameTurnBanner();
   renderGameSidePanels();
 
-  if (gameState.status === 'playing' && gameState.phase === 'guess' && gameState.answerTimeMs) {
+  if (gameState.status === 'playing' && gameState.phaseDeadline) {
     startGameTimerInterval();
   } else {
     clearGameTimerInterval();
@@ -2065,7 +2126,7 @@ function renderGameBoard() {
   document.getElementById('game-clue-form').classList.toggle('hidden', !showClueForm);
 
   const showEndTurn = gameState.status === 'playing' && gameState.phase === 'guess'
-    && role && role.team === gameState.currentTeam;
+    && role && role.role === 'agent' && role.team === gameState.currentTeam;
   document.getElementById('btn-game-end-turn').classList.toggle('hidden', !showEndTurn);
 
   // So quem abriu o lobby pode encerrar a partida pra todo mundo (mesma
@@ -2161,6 +2222,8 @@ function resetGameUiState() {
   boardCellEls = [];
   boardCellRound = -1;
   selectedGuessCellIndex = null;
+  lastSeenTimeoutSeq = null;
+  shownWordCells.clear();
   stopState = null;
   stopFieldsBuilt = -1;
   clearTimeout(stopSyncDebounce);
@@ -3547,7 +3610,7 @@ function applyGameBoardTheme(theme) {
   const codenamesView = document.getElementById('codenames-view');
   codenamesView.classList.toggle('codenames-theme-light', theme === 'light');
   codenamesView.classList.toggle('codenames-theme-dark', theme !== 'light');
-  document.querySelectorAll('.game-mode-option[data-game-theme]').forEach((btn) => {
+  document.querySelectorAll('[data-game-theme]').forEach((btn) => {
     btn.classList.toggle('selected', btn.dataset.gameTheme === theme);
   });
   try { localStorage.setItem(CODENAMES_BOARD_THEME_STORAGE_KEY, theme); } catch (err) {}
@@ -3559,7 +3622,7 @@ function applyGameBoardTheme(theme) {
   applyGameBoardTheme(savedTheme);
 })();
 
-document.querySelectorAll('.game-mode-option[data-game-theme]').forEach((btn) => {
+document.querySelectorAll('[data-game-theme]').forEach((btn) => {
   btn.addEventListener('click', () => applyGameBoardTheme(btn.dataset.gameTheme));
 });
 
@@ -3623,6 +3686,14 @@ document.getElementById('build-version').textContent = `build (${window.appInfo.
 
 document.getElementById('btn-check-updates').addEventListener('click', () => {
   window.appInfo.checkForUpdates();
+});
+
+// Versao nova baixada: o processo principal reinicia o app em 5s (ver
+// update-downloaded no main.js) - avisa antes pra ninguem levar susto.
+window.appInfo.onUpdating((version) => {
+  const el = document.getElementById('app-update-toast');
+  el.textContent = `Atualizando o TelinhaFix pra versão ${version}... o app vai reiniciar em 5 segundos.`;
+  el.classList.remove('hidden');
 });
 
 btnJoin.addEventListener('click', async () => {
@@ -3696,7 +3767,8 @@ btnJoin.addEventListener('click', async () => {
       // servidor. Resetar aqui (sempre que o estado NAO esta jogando) cobre
       // isso mesmo com o painel fechado, quando renderGame nem chega a rodar.
       if (newState.status !== 'playing' && newState.status !== 'over') boardCellRound = -1;
-      gameState = newState;
+      gameState = withPhaseDeadline(newState);
+      notifyGameTimeoutIfNew();
       renderGame();
       renderGameActivityBadge();
     });

@@ -1595,7 +1595,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   -webkit-backdrop-filter: none;
 }
 #game-overlay.game-overlay-fullscreen .game-center-col { max-width: 1000px; }
-#game-overlay.game-overlay-fullscreen .game-cell { min-height: 120px; }
+#game-overlay.game-overlay-fullscreen .game-cell-word { font-size: calc(18px * var(--font-scale)); }
 #game-overlay.game-overlay-fullscreen .game-team-panels { width: 220px; }
 
 .game-header {
@@ -2210,7 +2210,8 @@ button.ghost:hover { filter: none; border-color: var(--red); }
    original - nao e so trocar a cor na hora. */
 .game-cell {
   position: relative;
-  min-height: 92px;
+  aspect-ratio: 1.75 / 1;
+  min-height: 84px;
   border-radius: 10px;
   perspective: 700px;
 }
@@ -2228,57 +2229,72 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .game-cell-face {
   position: absolute;
   inset: 0;
-  border-radius: 8px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  word-break: break-word;
+  border-radius: 9px;
   overflow: hidden;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.35);
 }
 
-.game-cell-front { background: var(--game-cream); }
+/* Frente copiada do card de referencia (codenames.game): carta pessego com
+   borda caramelo, um painel claro em baixo-relevo em cima, uma linha
+   gravada atravessando a carta e a barra marrom da palavra embaixo. */
+.game-cell-front {
+  --card-bg: #f8cfa6;
+  --card-edge: #d99c6c;
+  background: var(--card-bg);
+  border: 2px solid var(--card-edge);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+.game-cell-front::before {
+  content: '';
+  position: absolute;
+  top: 12%;
+  left: 5%;
+  right: 5%;
+  height: 34%;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(160, 90, 40, 0.35);
+  box-shadow: inset 0 1px 2px rgba(160, 90, 40, 0.15);
+}
+.game-cell-front::after {
+  content: '';
+  position: absolute;
+  top: 52%;
+  left: 3%;
+  right: 3%;
+  height: 1px;
+  background: rgba(150, 85, 40, 0.45);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+}
 
 .game-cell-back { transform: rotateY(180deg); }
 
-/* Silhueta grande meio apagada atras da palavra na face revelada - espiao
-   pros times, civil pra neutra, caveira pro assassino (ver CARD_WATERMARKS
-   no renderer.js). So decorativo, nunca recebe clique. */
-.game-cell-watermark {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.25;
-  pointer-events: none;
-}
-.game-cell-watermark svg { width: 58%; height: 58%; }
-.game-cell-back-neutral .game-cell-watermark { color: var(--game-cream-border); opacity: 0.45; }
-.game-cell-back-red .game-cell-watermark,
-.game-cell-back-blue .game-cell-watermark,
-.game-cell-back-green .game-cell-watermark,
-.game-cell-back-assassin .game-cell-watermark { color: #fff; }
-
 .game-cell-word {
-  position: relative;
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: 7%;
+  height: 38%;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  min-height: 30px;
-  margin: 0;
-  background: var(--game-label-bg);
-  color: var(--game-label-text);
-  padding: 6px 4px;
-  border-radius: 0 0 8px 8px;
-  font-family: 'Poppins', 'Nunito', var(--font-ui);
-  font-size: calc(11.5px * var(--font-scale));
-  font-weight: 800;
-  letter-spacing: 0.2px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #a67953;
+  border: 1px solid #8b5f3e;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+  color: #fff;
+  font-family: 'Anton', 'Poppins', var(--font-ui);
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
+  text-align: center;
+  word-break: break-word;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45), 0 0 3px rgba(0, 0, 0, 0.25);
 }
 
 .game-cell-clickable { cursor: pointer; }
@@ -2315,21 +2331,57 @@ button.ghost:hover { filter: none; border-color: var(--red); }
    cheia, ver .game-cell-back-* abaixo), pra nao virar "spoiler" visual
    gritante mesmo so aparecendo pra quem pode ver mesmo. Fica na face da
    FRENTE (a carta ainda nao virou de verdade - so o Mestre-Espiao sabe). */
-.game-cell-front.game-cell-spy-red { background: rgba(var(--game-red-rgb), 0.38); }
-.game-cell-front.game-cell-spy-blue { background: rgba(var(--game-blue-rgb), 0.38); }
-.game-cell-front.game-cell-spy-green { background: rgba(var(--game-green-rgb), 0.38); }
-.game-cell-front.game-cell-spy-neutral { background: var(--game-cream); }
-.game-cell-front.game-cell-spy-assassin { background: rgba(var(--game-assassin-rgb), 0.6); }
+.game-cell-front.game-cell-spy-red { background: linear-gradient(rgba(var(--game-red-rgb), 0.5), rgba(var(--game-red-rgb), 0.5)), var(--card-bg); border-color: var(--game-red); }
+.game-cell-front.game-cell-spy-blue { background: linear-gradient(rgba(var(--game-blue-rgb), 0.6), rgba(var(--game-blue-rgb), 0.6)), var(--card-bg); border-color: var(--game-blue); }
+.game-cell-front.game-cell-spy-green { background: linear-gradient(rgba(var(--game-green-rgb), 0.55), rgba(var(--game-green-rgb), 0.55)), var(--card-bg); border-color: var(--game-green); }
+.game-cell-front.game-cell-spy-neutral { background: var(--card-bg); }
+.game-cell-front.game-cell-spy-assassin { background: linear-gradient(rgba(var(--game-assassin-rgb), 0.7), rgba(var(--game-assassin-rgb), 0.7)), var(--card-bg); border-color: #111; }
 
-.game-cell-back-red { background: var(--game-red); }
-.game-cell-back-blue { background: var(--game-blue); }
-.game-cell-back-green { background: var(--game-green); }
-.game-cell-back-neutral { background: var(--game-cream); }
-.game-cell-back-assassin { background: var(--game-assassin); }
-.game-cell-back-red .game-cell-word,
-.game-cell-back-blue .game-cell-word,
-.game-cell-back-green .game-cell-word,
-.game-cell-back-assassin .game-cell-word { background: rgba(0, 0, 0, 0.3); }
+/* Carta revelada: uma das fotos do app (sorteada pelo servidor, igual pra
+   todo mundo) em preto e branco, com uma camada da cor da carta por cima -
+   igual as cartas de agente do site oficial. A palavra fica escondida;
+   clicar na carta mostra/esconde (ver handleGameCellClick). */
+.game-cell-back { isolation: isolate; background: #1c1c1c; }
+.game-cell-back-red { --tint: var(--game-red); }
+.game-cell-back-blue { --tint: var(--game-blue); }
+.game-cell-back-green { --tint: var(--game-green); }
+.game-cell-back-neutral { --tint: #d8b98c; }
+.game-cell-back-assassin { --tint: #151515; }
+.game-cell-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(1) contrast(1.08) brightness(1.08);
+  pointer-events: none;
+  user-select: none;
+}
+/* "color" pinta a foto com o tom da carta mantendo a luz/sombra dela; o
+   ::after em multiply escurece um pouco pra cor ficar mais cheia. */
+.game-cell-tint { position: absolute; inset: 0; background: var(--tint); mix-blend-mode: color; }
+.game-cell-back::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--tint);
+  mix-blend-mode: multiply;
+  opacity: 0.45;
+  pointer-events: none;
+}
+.game-cell-back-assassin::after { opacity: 0.7; }
+.game-cell-back::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 9px;
+  pointer-events: none;
+}
+.game-cell-back .game-cell-word { display: none; z-index: 4; background: rgba(0, 0, 0, 0.62); border-color: rgba(0, 0, 0, 0.7); }
+.game-cell-show-word .game-cell-back .game-cell-word { display: flex; }
+.game-cell-revealed-photo { cursor: pointer; }
 
 .game-clue-active {
   text-align: center;
@@ -2426,4 +2478,89 @@ button.ghost:hover { filter: none; border-color: var(--red); }
    ======================================================================== */
 .border-chama2k19 * {
   border-radius: 0 !important;
+}
+
+/* Aviso grande de "Tempo esgotado" (ver notifyGameTimeoutIfNew) */
+.game-timeout-notice {
+  position: fixed;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 22px 40px;
+  border-radius: 16px;
+  background: rgba(15, 15, 15, 0.92);
+  border: 3px solid var(--red-bright);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+  animation: game-timeout-pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.game-timeout-notice strong { font-family: 'Anton', var(--font-ui); font-size: calc(40px * var(--font-scale)); letter-spacing: 1px; text-transform: uppercase; }
+.game-timeout-notice span { font-size: calc(15px * var(--font-scale)); font-weight: 700; color: rgba(255, 255, 255, 0.85); }
+.game-timeout-notice-red { border-color: var(--game-red); }
+.game-timeout-notice-blue { border-color: var(--game-blue); }
+.game-timeout-notice-green { border-color: var(--game-green); }
+@keyframes game-timeout-pop {
+  from { transform: translate(-50%, -50%) scale(0.6); opacity: 0; }
+  to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+/* Fim de jogo: cartas que ninguem revelou viram tambem, mas meio apagadas. */
+.game-cell-unrevealed-end .game-cell-back { opacity: 0.6; filter: saturate(0.7); }
+
+/* Coluna da esquerda do tabuleiro: paineis dos times em cima e o seletor
+   de fundo (preto/branco) embaixo, alinhado com o fim do tabuleiro. */
+.game-side-col { display: flex; flex-direction: column; align-self: stretch; gap: 16px; }
+.game-board-bg-toggle {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+.game-bg-swatch {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  box-shadow: none;
+  cursor: pointer;
+}
+/* #codenames-view na frente: ganha do estilo geral de botao (inclusive o do modo Serio, que pinta todo botao de vermelho e arredonda) */
+#codenames-view .game-bg-swatch { border-radius: 8px; border: 2px solid var(--border); box-shadow: none; filter: none; }
+#codenames-view .game-bg-swatch-dark { background: #000; }
+#codenames-view .game-bg-swatch-light { background: #fff; }
+#codenames-view .game-bg-swatch.selected { border-color: var(--red-bright); box-shadow: 0 0 0 2px rgba(var(--red-rgb), 0.35); }
+
+/* Aviso de "atualizando, vai reiniciar" (ver onUpdating no renderer.js) */
+.app-update-toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  padding: 14px 24px;
+  border-radius: 12px;
+  background: rgba(15, 15, 15, 0.95);
+  border: 2px solid var(--red-bright);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: calc(14px * var(--font-scale));
+  font-weight: 800;
 }

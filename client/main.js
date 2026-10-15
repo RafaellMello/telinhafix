@@ -654,36 +654,30 @@ function setupAutoUpdater() {
     }
   });
 
+  // Decisao do Rafael: versao nova baixada = avisa na tela e reinicia
+  // sozinho em 5s, sem perguntar (vale tambem pra quem esta com o app
+  // aberto ha horas - ver checagem periodica abaixo).
+  let restartScheduled = false;
   autoUpdater.on('update-downloaded', (info) => {
-    console.log(`[updater] atualizacao ${info.version} baixada - pronta pra instalar`);
-    dialog
-      .showMessageBox({
-        type: 'info',
-        title: 'Atualização disponível',
-        message: `Uma versão nova do TelinhaFix (${info.version}) foi baixada. Reiniciar agora para instalar?`,
-        buttons: ['Reiniciar agora', 'Depois'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-      })
-      .then((result) => {
-        // quitAndInstall() sem argumentos usa isSilent=false por padrao
-        // (biblioteca electron-updater) - isso abre o instalador NSIS
-        // completo (tela de boas-vindas, escolher pasta, botao Instalar,
-        // Concluir), que fica esperando clique e pode passar despercebido
-        // (minimizado/atras de outra janela) - a pessoa acha que "o update
-        // sumiu" quando na verdade ele ta parado esperando ela mesma clicar
-        // em "Instalar". isSilent=true reaproveita o MESMO instalador ja
-        // baixado, so que com a flag /S do NSIS (instala sem mostrar nada),
-        // e isForceRunAfter=true reabre o app sozinho no final - do jeito
-        // que o texto do dialogo ("Reiniciar agora") promete.
-        if (result.response === 0) autoUpdater.quitAndInstall(true, true);
-      });
+    console.log(`[updater] atualizacao ${info.version} baixada - reiniciando pra instalar`);
+    if (restartScheduled) return;
+    restartScheduled = true;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app-updating', info.version);
+    // isSilent=true: reaproveita o instalador ja baixado com /S do NSIS (sem
+    // telas pra clicar); isForceRunAfter=true: reabre o app no final.
+    setTimeout(() => autoUpdater.quitAndInstall(true, true), 5000);
   });
 
   autoUpdater.checkForUpdates().catch((err) => {
     console.error('Falha ao checar atualizacao:', err);
   });
+
+  // Checagem periodica: assim uma release nova chega em quem ja esta com o
+  // app aberto (a checagem de cima so roda quando o app abre).
+  setInterval(() => {
+    if (restartScheduled) return;
+    autoUpdater.checkForUpdates().catch((err) => console.error('[updater] checagem periodica falhou:', err));
+  }, 5 * 60 * 1000);
 }
 
 // Menu nativo do app (some sozinho por causa do autoHideMenuBar - aparece
