@@ -490,6 +490,32 @@ function publicGameState(roomId) {
 
 function broadcastGameState(roomId) {
   io.to(roomId).emit('game-state', publicGameState(roomId));
+  broadcastRoomsToAdmins(); // painel de admin mostra os jogos ao vivo
+}
+
+// Resumo de um Codenames pro painel de admin - INCLUI o mapa secreto
+// (cor de todas as cartas), so vai pra socket de admin.
+function codenamesAdminView(roomId) {
+  const game = codenamesGames.get(roomId);
+  if (!game) return null;
+  const pub = publicGameState(roomId);
+  const room = rooms.get(roomId);
+  return {
+    status: pub.status,
+    mode: pub.mode,
+    round: pub.round,
+    currentTeam: pub.currentTeam,
+    phase: pub.phase,
+    clue: pub.clue,
+    remaining: pub.remaining,
+    eliminated: pub.eliminated,
+    winner: pub.winner,
+    teams: pub.teams,
+    phaseEndsInMs: pub.phaseEndsInMs,
+    hostName: (game.hostId && room && room.get(game.hostId) && room.get(game.hostId).name) || null,
+    board: game.board.map((c) => ({ word: c.word, team: c.team, revealed: c.revealed })),
+    log: game.log.slice(-8),
+  };
 }
 
 // ============================================================================
@@ -786,19 +812,29 @@ const spectatorsByRoom = new Map();
 const adminSockets = new Set();
 
 const serverStartedAt = Date.now();
+// Entradas/saidas de sala pro painel de admin. Fica so na memoria: some
+// quando o Render reinicia (deploy ou "dormir") - o cliente de admin guarda
+// uma copia no PC dele a cada vez que busca (ver admin-history).
+const presenceLog = [];
+let presenceSeq = 0;
+function logPresence(type, name, roomId, version) {
+  presenceLog.push({ id: `${serverStartedAt}-${++presenceSeq}`, t: Date.now(), type, name, roomId, version: version || null });
+  if (presenceLog.length > 5000) presenceLog.splice(0, presenceLog.length - 5000);
+}
 let peakRooms = 0;
 let peakParticipants = 0;
 
 function getPeersInRoom(roomId) {
   const room = rooms.get(roomId);
   if (!room) return [];
-  return Array.from(room.entries()).map(([id, info]) => ({ id, name: info.name, shareMode: info.shareMode || null }));
+  return Array.from(room.entries()).map(([id, info]) => ({ id, name: info.name, shareMode: info.shareMode || null, version: info.version || null, joinedAt: info.joinedAt || null }));
 }
 
 function getRoomsSnapshot() {
   return Array.from(rooms.keys()).map((roomId) => ({
     roomId,
     participants: getPeersInRoom(roomId),
+    codenames: codenamesAdminView(roomId),
   }));
 }
 
@@ -863,6 +899,79 @@ io.on('connection', (socket) => {
   // Remove uma pessoa de uma sala direto (sem o admin precisar entrar nela)
   // - so desconecta o socket dela, o resto (avisar os outros, limpar a sala)
   // reaproveita exatamente a mesma logica do disconnect normal abaixo.
+  socket.on('admin-history', (_data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    if (ack) ack({ ok: true, serverStartedAt, events: presenceLog });
+  });
+
+  socket.on('admin-server-health', (_data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    const mem = process.memoryUsage();
+    let playing = 0;
+    codenamesGames.forEach((g) => { if (g.status === 'playing') playing += 1; });
+    if (ack) ack({
+      ok: true,
+      now: Date.now(),
+      serverStartedAt,
+      uptimeMs: Date.now() - serverStartedAt,
+      connections: io.engine.clientsCount,
+      admins: adminSockets.size,
+      rooms: rooms.size,
+      people: Array.from(rooms.values()).reduce((n, r) => n + r.size, 0),
+      codenamesPlaying: playing,
+      rssMb: Math.round(mem.rss / 1048576),
+      heapMb: Math.round(mem.heapUsed / 1048576),
+      node: process.version,
+    });
+  });
+
+  // Aviso que aparece como faixa na tela das pessoas (todas, ou de uma sala).
+  socket.on('admin-notice', (data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    const text = String((data && data.text) || '').trim().slice(0, 300);
+    const roomId = data && data.roomId ? String(data.roomId) : null;
+    if (!text) { if (ack) ack({ ok: false, error: 'Escreva o aviso' }); return; }
+    let count = 0;
+    io.sockets.sockets.forEach((s) => {
+      if (s.data.isAdmin) return;
+      if (roomId && !(rooms.get(roomId) && rooms.get(roomId).has(s.id))) return;
+      s.emit('admin-notice', { text });
+      count += 1;
+    });
+    if (ack) ack({ ok: true, count });
+  });
+
+  // "Pedir pra atualizar": cada app aberto (3.5.6+) confere se tem versao
+  // nova e, se tiver, baixa e PERGUNTA se quer reiniciar - nunca reinicia sozinho.
+  socket.on('admin-request-update', (_data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    let count = 0;
+    io.sockets.sockets.forEach((s) => { if (!s.data.isAdmin) { s.emit('update-prompt'); count += 1; } });
+    if (ack) ack({ ok: true, count });
+  });
+
+  socket.on('admin-game-reset', (data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    const roomId = data && data.roomId;
+    const old = codenamesGames.get(roomId);
+    if (!old) { if (ack) ack({ ok: false, error: 'Sem partida nessa sala' }); return; }
+    clearAnswerTimer(old);
+    codenamesGames.set(roomId, createCodenamesGame(roomId));
+    broadcastGameState(roomId);
+    if (ack) ack({ ok: true });
+  });
+
+  socket.on('admin-game-skip-turn', (data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    const roomId = data && data.roomId;
+    const game = codenamesGames.get(roomId);
+    if (!game || game.status !== 'playing') { if (ack) ack({ ok: false, error: 'Nenhuma partida rolando' }); return; }
+    game.log.push(`Admin passou a vez da Equipe ${TEAM_LABEL[game.currentTeam]}`);
+    endGameTurn(game);
+    broadcastGameState(roomId);
+    if (ack) ack({ ok: true });
+  });
+
   socket.on('admin-kick', (data, ack) => {
     const { socketId } = data || {};
     if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
@@ -908,7 +1017,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join-room', (data, ack) => {
-    const { roomId, name } = data || {};
+    const { roomId, name, version } = data || {};
+    const appVersion = typeof version === 'string' ? version.slice(0, 20) : null; // apps antigos (<= 3.5.5) nao mandam
     if (!roomId || typeof roomId !== 'string') {
       if (ack) ack({ ok: false, error: 'roomId invalido' });
       return;
@@ -919,7 +1029,8 @@ io.on('connection', (socket) => {
 
     const existingPeers = getPeersInRoom(roomId);
 
-    room.set(socket.id, { name: name || 'Anonimo', shareMode: null });
+    room.set(socket.id, { name: name || 'Anonimo', shareMode: null, version: appVersion, joinedAt: Date.now() });
+    logPresence('join', name || 'Anonimo', roomId, appVersion);
     socket.join(roomId);
 
     if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers });
@@ -1460,6 +1571,7 @@ io.on('connection', (socket) => {
 
     if (currentRoom && rooms.has(currentRoom)) {
       const leavingName = rooms.get(currentRoom).get(socket.id)?.name || 'Alguém';
+      logPresence('leave', leavingName, currentRoom, rooms.get(currentRoom).get(socket.id)?.version);
       rooms.get(currentRoom).delete(socket.id);
       const specs = spectatorsByRoom.get(currentRoom);
       if (rooms.get(currentRoom).size === 0) {

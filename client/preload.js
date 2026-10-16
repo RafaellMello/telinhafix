@@ -48,7 +48,7 @@ contextBridge.exposeInMainWorld('rtc', {
   joinRoom(roomId, name) {
     return new Promise((resolve, reject) => {
       if (!socket) return reject(new Error('Não conectado'));
-      socket.emit('join-room', { roomId, name }, (res) => {
+      socket.emit('join-room', { roomId, name, version: require('./package.json').version }, (res) => {
         if (res && res.ok) resolve(res);
         else reject(new Error((res && res.error) || 'Falha ao entrar na sala'));
       });
@@ -83,6 +83,16 @@ contextBridge.exposeInMainWorld('rtc', {
   onPeerShareMode(cb) {
     if (!socket) return;
     socket.on('peer-share-mode', (data) => cb(data));
+  },
+
+  // Painel de admin: aviso em faixa pra todo mundo, e "pedir pra atualizar".
+  onAdminNotice(cb) {
+    if (!socket) return;
+    socket.on('admin-notice', (data) => cb(data));
+  },
+  onUpdatePrompt(cb) {
+    if (!socket) return;
+    socket.on('update-prompt', () => cb());
   },
 
   // Painel de admin (ver server/index.js): quando o dono do app entra numa
@@ -333,8 +343,14 @@ contextBridge.exposeInMainWorld('appInfo', {
   checkForUpdates() {
     return ipcRenderer.invoke('check-for-updates');
   },
-  onUpdating(cb) {
-    ipcRenderer.on('app-updating', (_event, version) => cb(version));
+  getUpdateStatus() {
+    return ipcRenderer.invoke('get-update-status');
+  },
+  promptUpdate() {
+    return ipcRenderer.invoke('update-prompt');
+  },
+  onUpdateStatus(cb) {
+    ipcRenderer.on('update-status', (_event, status) => cb(status));
   },
 });
 

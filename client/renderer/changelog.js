@@ -4,6 +4,17 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.5.6',
+    date: '16/10/2026',
+    title: 'Senha automática e atualização sem susto',
+    items: [
+      'A senha global agora já vem preenchida no app: é só colocar seu nome e a sala e entrar.',
+      'O app não reinicia mais sozinho pra atualizar: quando você abre, ele avisa da versão nova e pergunta se quer reiniciar agora ou depois.',
+      'Quando sair versão nova com o app aberto, o botão "Procurar atualizações" da tela inicial fica piscando.',
+      'Avisos importantes (tipo "vou reiniciar o servidor") agora aparecem numa faixa no topo da tela.',
+    ],
+  },
+  {
     version: '3.5.5',
     date: '14/10/2026',
     title: 'Aba de Novidades',
