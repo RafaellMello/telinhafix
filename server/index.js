@@ -92,9 +92,97 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // Pagina de convite: https://.../convite/<sala>. Links telinhafix:// nao
+  // ficam clicaveis no Discord/WhatsApp (so http/https), entao o botao
+  // "Convidar" do app copia ESTE link - a pagina abre o TelinhaFix ja com a
+  // sala (telinhafix://join?room=X) e mostra o codigo + o download pra quem
+  // ainda nao tem o app.
+  if (req.method === 'GET' && req.url.startsWith('/convite/')) {
+    let raw = '';
+    try { raw = decodeURIComponent(req.url.slice('/convite/'.length).split(/[?#]/)[0]); } catch { raw = ''; }
+    const roomId = normalizeRoomId(raw);
+    const valid = !!roomId && roomId.length <= MAX_ROOM_ID_LEN;
+    res.writeHead(valid ? 200 : 404, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; img-src https://raw.githubusercontent.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+    });
+    res.end(renderInvitePage(valid ? roomId : null));
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('TelinhaFix signaling server ok');
 });
+
+const INVITE_LOGO_URL = 'https://raw.githubusercontent.com/RafaellMello/telinhafix/master/client/renderer/assets/logo.png';
+const DOWNLOAD_URL = 'https://github.com/RafaellMello/telinhafix/releases/latest';
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderInvitePage(roomId) {
+  const title = roomId ? `Convite pra sala "${roomId}" no TelinhaFix` : 'Convite inválido - TelinhaFix';
+  const deepLink = roomId ? `telinhafix://join?room=${encodeURIComponent(roomId)}` : '';
+  const room = roomId ? escapeHtml(roomId) : '';
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<meta property="og:title" content="${escapeHtml(title)}">
+<meta property="og:description" content="${roomId ? 'Clique pra entrar na sala com a galera no TelinhaFix.' : 'Esse link de convite não é válido.'}">
+<meta property="og:image" content="${INVITE_LOGO_URL}">
+<meta property="og:site_name" content="TelinhaFix">
+<meta name="theme-color" content="#e0262f">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+    background: #060607; color: #f2f2f2; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .card { width: 100%; max-width: 420px; text-align: center; background: #121214; border: 1px solid #26262a;
+    border-radius: 16px; padding: 32px 24px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+  img { width: 72px; height: 72px; border-radius: 16px; }
+  h1 { font-size: 20px; margin: 16px 0 6px; }
+  p { color: #a7a7ad; margin: 0 0 20px; line-height: 1.45; }
+  .code { display: inline-block; font-size: 22px; font-weight: 800; letter-spacing: .5px; padding: 8px 16px;
+    border-radius: 10px; background: #1d1d21; border: 1px dashed #e0262f; margin-bottom: 20px; word-break: break-all; }
+  a.btn, button { display: block; width: 100%; padding: 13px; border-radius: 10px; font-size: 15px; font-weight: 700;
+    text-decoration: none; border: 0; cursor: pointer; margin-top: 10px; font-family: inherit; }
+  .primary { background: #e0262f; color: #fff; }
+  .secondary { background: #1d1d21; color: #f2f2f2; border: 1px solid #2c2c31; }
+  small { display: block; margin-top: 18px; color: #77777d; }
+</style>
+</head>
+<body>
+<main class="card">
+  <img src="${INVITE_LOGO_URL}" alt="">
+${roomId ? `  <h1>Você foi convidado pro TelinhaFix</h1>
+  <p>Sala</p>
+  <div class="code" id="code">${room}</div>
+  <a class="btn primary" href="${escapeHtml(deepLink)}">Abrir no TelinhaFix</a>
+  <button class="secondary" id="copy" type="button">Copiar código da sala</button>
+  <a class="btn secondary" href="${DOWNLOAD_URL}">Não tenho o TelinhaFix - baixar</a>
+  <small>Se o app não abrir sozinho, abra o TelinhaFix e digite o código da sala.</small>
+<script>
+  setTimeout(function () { window.location.href = ${JSON.stringify(deepLink).replace(/</g, '\\u003c')}; }, 400);
+  document.getElementById('copy').addEventListener('click', function () {
+    var btn = this;
+    navigator.clipboard.writeText(document.getElementById('code').textContent).then(function () {
+      btn.textContent = 'Código copiado!';
+      setTimeout(function () { btn.textContent = 'Copiar código da sala'; }, 2000);
+    });
+  });
+</script>` : `  <h1>Convite inválido</h1>
+  <p>Esse link de convite não é válido. Peça um novo pra quem te convidou.</p>
+  <a class="btn secondary" href="${DOWNLOAD_URL}">Baixar o TelinhaFix</a>`}
+</main>
+</body>
+</html>`;
+}
 
 const io = new Server(httpServer, {
   cors: { origin: '*' },
@@ -929,6 +1017,16 @@ io.use((socket, next) => {
 
 // Tamanho maximo do codigo da sala e do nome de exibicao.
 const MAX_ROOM_ID_LEN = 20;
+
+// "Paygorn", "paygorn " e "paygorn/" sao a MESMA sala: sem diferenca de
+// maiuscula/minuscula, sem espaco nas pontas e sem barra no fim (alguns
+// navegadores/apps colocam uma "/" no fim do link telinhafix://join?room=X
+// e a pessoa caia sozinha numa sala "X/"). Feito aqui no servidor pra
+// valer ate pra quem esta com versao antiga do app.
+function normalizeRoomId(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.trim().replace(/\/+$/, '').trim().toLowerCase();
+}
 const MAX_NAME_LEN = 20;
 
 // Limite de acoes por conexao ("balde de fichas"): cada evento gasta 1
@@ -1106,9 +1204,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join-room', (data, ack) => {
-    const { roomId, version } = data || {};
+    const { version } = data || {};
     const appVersion = typeof version === 'string' ? version.slice(0, 20) : null; // apps antigos (<= 3.5.5) nao mandam
-    if (!roomId || typeof roomId !== 'string') {
+    const roomId = normalizeRoomId(data && data.roomId);
+    if (!roomId) {
       if (ack) ack({ ok: false, error: 'roomId invalido' });
       return;
     }
