@@ -4,6 +4,14 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.5.8',
+    date: '16/10/2026',
+    title: 'Aviso de atualização mais rápido',
+    items: [
+      'Com o app aberto, ele confere se saiu versão nova a cada 1 minuto: o botão "Procurar atualizações" começa a piscar quase na hora.',
+    ],
+  },
+  {
     version: '3.5.7',
     date: '16/10/2026',
     title: 'Tema dos agentes no Codenames',

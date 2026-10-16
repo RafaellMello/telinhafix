@@ -709,7 +709,7 @@ function setupAutoUpdater() {
   });
 
   runUpdateCheck('startup');
-  setInterval(() => runUpdateCheck('background'), 10 * 60 * 1000);
+  setInterval(() => runUpdateCheck('background'), 60 * 1000);
 }
 
 // Menu nativo do app (some sozinho por causa do autoHideMenuBar - aparece
