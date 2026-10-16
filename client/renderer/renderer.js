@@ -781,8 +781,8 @@ restoreSavedRoomId();
 
 // Link de convite: o botao "Convidar" copia https://.../convite/X (ver
 // renderInvitePage no server/index.js), que abre telinhafix://join?room=X
-// (ver main.js). Na tela de login so preenche o codigo da sala; ja numa
-// sala, pergunta antes de trocar (ver pendingInviteRoom abaixo).
+// (ver main.js). Na tela de login entra direto na sala; ja numa sala,
+// pergunta antes de trocar (ver pendingInviteRoom abaixo).
 // Mesma regra do servidor (normalizeRoomId em server/index.js): sem
 // diferenca de maiuscula/minuscula, sem espaco nas pontas e sem barra no fim
 // - alguns navegadores/apps abrem o link como "...?room=X/" e a pessoa caia
@@ -800,10 +800,16 @@ window.appLinks.onInviteRoom((rawRoomId) => {
   const roomId = normalizeRoomId(rawRoomId);
   if (!roomId) return;
   if (roomScreen.classList.contains('hidden')) {
-    const input = document.getElementById('room-id');
-    input.value = roomId;
-    input.focus();
-    setLoginError(`Convite pra sala "${roomId}" - é só clicar em Entrar.`, true);
+    // Tela de login: entra direto na sala do convite. So se a pessoa ainda
+    // nao tem nome salvo (primeira vez no app) pede o nome antes.
+    document.getElementById('room-id').value = roomId;
+    const nameInput = document.getElementById('display-name');
+    if (!nameInput.value.trim()) {
+      nameInput.focus();
+      setLoginError(`Convite pra sala "${roomId}" - digite seu nome e clique em Entrar.`, true);
+      return;
+    }
+    if (!btnJoin.disabled) btnJoin.click();
     return;
   }
   if (normalizeRoomId(roomLabel.textContent) === roomId) return; // ja esta nessa sala

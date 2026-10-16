@@ -4,6 +4,14 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.6.2',
+    date: '16/10/2026',
+    title: 'Convite entra direto na sala',
+    items: [
+      'Abrir um link de convite agora já entra na sala - não precisa mais clicar em Entrar (se for a primeira vez no app, ele só pede seu nome antes).',
+    ],
+  },
+  {
     version: '3.6.1',
     date: '16/10/2026',
     title: 'Convites que funcionam sempre',
