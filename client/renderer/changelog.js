@@ -4,6 +4,17 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.5.9',
+    date: '16/10/2026',
+    title: 'Conexão para todo mundo e mais segurança',
+    items: [
+      'Quem não conseguia ver a tela de alguém (internet com CGNAT, firewall, 4G) agora conecta: quando a ligação direta não fecha, o vídeo passa por um servidor intermediário (TURN).',
+      'Na lista de participantes aparece "via servidor" quando a conexão com alguém está passando pelo intermediário, e "sem conexão" quando não deu para ligar.',
+      'Nome e código da sala agora têm no máximo 20 caracteres.',
+      'O servidor ficou mais protegido contra abuso: limita ações em excesso e só deixa a conexão de vídeo acontecer entre quem está na mesma sala.',
+    ],
+  },
+  {
     version: '3.5.8',
     date: '16/10/2026',
     title: 'Aviso de atualização mais rápido',

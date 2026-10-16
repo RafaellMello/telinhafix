@@ -1048,6 +1048,20 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   gap: 8px;
 }
 
+#participants-list li .conn-status {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+#participants-list li .conn-status.conn-status-failed {
+  background: rgba(255, 77, 77, 0.18);
+  color: #ff4d4d;
+}
+
 #btn-toggle-chat { position: relative; }
 
 .chat-unread-badge {
