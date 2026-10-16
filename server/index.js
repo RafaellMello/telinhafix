@@ -13,6 +13,61 @@ const APP_PASSWORD = process.env.APP_PASSWORD || '';
 // admin fica completamente desligado (nenhuma senha vira admin).
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
+// --- TURN (plano B quando a conexao direta P2P nao fecha) -------------------
+// Quando a rede dos dois lados nao deixa os PCs se ligarem direto (CGNAT,
+// NAT simetrico, firewall), o video passa por um servidor TURN. As
+// credenciais NUNCA ficam no codigo (o repositorio e publico) - vem das
+// variaveis de ambiente do Render e sao mandadas pro app no join-room:
+//   TURN_ICE_SERVERS  JSON com servidores fixos, ex. ExpressTURN:
+//                     [{"urls":["turn:SERVIDOR:3478","turn:SERVIDOR:3478?transport=tcp"],"username":"...","credential":"..."}]
+//   METERED_TURN_URL  URL de credenciais da Metered (Open Relay), ex.
+//                     https://NOMEDOAPP.metered.live/api/v1/turn/credentials?apiKey=CHAVE
+// Sem nenhuma das duas, o app continua so com STUN (como antes).
+const STUN_SERVER = { urls: 'stun:stun.l.google.com:19302' };
+const METERED_TURN_URL = process.env.METERED_TURN_URL || '';
+const METERED_REFRESH_MS = 30 * 60 * 1000;
+
+function sanitizeIceServers(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((s) => s && (typeof s.urls === 'string' || Array.isArray(s.urls)))
+    .map((s) => {
+      const urls = (Array.isArray(s.urls) ? s.urls : [s.urls]).filter((u) => typeof u === 'string' && /^turns?:/.test(u));
+      const out = { urls };
+      if (typeof s.username === 'string') out.username = s.username;
+      if (typeof s.credential === 'string') out.credential = s.credential;
+      return out;
+    })
+    .filter((s) => s.urls.length > 0);
+}
+
+let staticTurnServers = [];
+try {
+  staticTurnServers = sanitizeIceServers(JSON.parse(process.env.TURN_ICE_SERVERS || '[]'));
+} catch (err) {
+  console.error('[turn] TURN_ICE_SERVERS nao e um JSON valido - ignorando:', err.message);
+}
+let meteredTurnServers = [];
+
+async function refreshMeteredTurn() {
+  if (!METERED_TURN_URL) return;
+  try {
+    const res = await fetch(METERED_TURN_URL, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const list = sanitizeIceServers(await res.json());
+    if (list.length) meteredTurnServers = list;
+  } catch (err) {
+    console.error('[turn] falha ao buscar credenciais da Metered:', err.message);
+  }
+}
+refreshMeteredTurn();
+if (METERED_TURN_URL) setInterval(refreshMeteredTurn, METERED_REFRESH_MS).unref();
+
+function getIceServers() {
+  return [STUN_SERVER, ...staticTurnServers, ...meteredTurnServers];
+}
+console.log(`[turn] ${staticTurnServers.length} servidor(es) TURN fixo(s), Metered ${METERED_TURN_URL ? 'ligada' : 'desligada'}`);
+
 const httpServer = http.createServer((req, res) => {
   // Endpoint do teste de qualidade (opcional, roda no app): o cliente manda
   // um payload de tamanho conhecido e cronometra quanto tempo demora pra
@@ -872,7 +927,41 @@ io.use((socket, next) => {
   next(new Error('senha invalida'));
 });
 
+// Tamanho maximo do codigo da sala e do nome de exibicao.
+const MAX_ROOM_ID_LEN = 20;
+const MAX_NAME_LEN = 20;
+
+// Limite de acoes por conexao ("balde de fichas"): cada evento gasta 1
+// ficha; o balde enche RATE_REFILL_PER_SEC por segundo ate RATE_BUCKET.
+// A folga cobre o pico normal de quando alguem entra numa call (muitos
+// sinais WebRTC de uma vez). Passou disso: o evento e ignorado (e quem
+// esperava resposta recebe um erro); quem continuar inundando e desconectado.
+const RATE_BUCKET = 150;
+const RATE_REFILL_PER_SEC = 50;
+const RATE_DROPS_BEFORE_KICK = 300;
+
 io.on('connection', (socket) => {
+  let rateTokens = RATE_BUCKET;
+  let rateLastRefill = Date.now();
+  let rateDrops = 0;
+  socket.use((packet, next) => {
+    const now = Date.now();
+    rateTokens = Math.min(RATE_BUCKET, rateTokens + ((now - rateLastRefill) / 1000) * RATE_REFILL_PER_SEC);
+    rateLastRefill = now;
+    if (rateTokens >= 1) {
+      rateTokens -= 1;
+      rateDrops = Math.max(0, rateDrops - 1);
+      return next();
+    }
+    rateDrops += 1;
+    const ack = packet[packet.length - 1];
+    if (typeof ack === 'function') ack({ ok: false, error: 'Muitas ações seguidas - espera um pouquinho' });
+    if (rateDrops >= RATE_DROPS_BEFORE_KICK) {
+      console.warn(`[rate-limit] desconectando ${socket.id} (inundando o servidor)`);
+      socket.disconnect(true);
+    }
+  });
+
   let currentRoom = null;
   let spectatingRoom = null;
 
@@ -1012,17 +1101,23 @@ io.on('connection', (socket) => {
     spectatorsByRoom.get(roomId).add(socket.id);
 
     const existingPeers = getPeersInRoom(roomId);
-    if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers });
+    if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers, iceServers: getIceServers() });
     socket.to(roomId).emit('spectator-joined', { id: socket.id });
   });
 
   socket.on('join-room', (data, ack) => {
-    const { roomId, name, version } = data || {};
+    const { roomId, version } = data || {};
     const appVersion = typeof version === 'string' ? version.slice(0, 20) : null; // apps antigos (<= 3.5.5) nao mandam
     if (!roomId || typeof roomId !== 'string') {
       if (ack) ack({ ok: false, error: 'roomId invalido' });
       return;
     }
+    if (roomId.length > MAX_ROOM_ID_LEN) {
+      if (ack) ack({ ok: false, error: `O código da sala pode ter no máximo ${MAX_ROOM_ID_LEN} caracteres` });
+      return;
+    }
+    // nome: so texto, ate MAX_NAME_LEN caracteres (o resto e cortado)
+    const name = (typeof data.name === 'string' ? data.name : '').trim().slice(0, MAX_NAME_LEN) || 'Anonimo';
     currentRoom = roomId;
     if (!rooms.has(roomId)) rooms.set(roomId, new Map());
     const room = rooms.get(roomId);
@@ -1033,7 +1128,7 @@ io.on('connection', (socket) => {
     logPresence('join', name || 'Anonimo', roomId, appVersion);
     socket.join(roomId);
 
-    if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers });
+    if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers, iceServers: getIceServers() });
 
     socket.to(roomId).emit('peer-joined', { id: socket.id, name: name || 'Anonimo' });
     // Espectadores invisiveis tambem precisam saber de gente nova pra
@@ -1064,9 +1159,17 @@ io.on('connection', (socket) => {
     broadcastRoomsToAdmins();
   });
 
+  // So repassa pra quem esta na MESMA sala (ou, pro modo espectador do
+  // admin, entre o espectador e os participantes daquela sala) - antes
+  // dava pra mandar sinal pra qualquer conexao do servidor sabendo o id.
   socket.on('signal', (payload) => {
     const { to, data } = payload || {};
-    if (!to || (!currentRoom && !spectatingRoom)) return;
+    if (!to || typeof to !== 'string') return;
+    const myRoom = currentRoom ? rooms.get(currentRoom) : null;
+    const mySpecs = currentRoom ? spectatorsByRoom.get(currentRoom) : null;
+    const memberToMemberOrSpectator = !!myRoom && (myRoom.has(to) || (!!mySpecs && mySpecs.has(to)));
+    const spectatorToMember = !!spectatingRoom && !!rooms.get(spectatingRoom) && rooms.get(spectatingRoom).has(to);
+    if (!memberToMemberOrSpectator && !spectatorToMember) return;
     io.to(to).emit('signal', { from: socket.id, data });
   });
 

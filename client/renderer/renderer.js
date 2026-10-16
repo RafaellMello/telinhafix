@@ -651,7 +651,14 @@ setupInputSpotlights();
 setupPasswordToggle();
 triggerLoginReveal();
 
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// STUN sempre; os servidores TURN (plano B quando a conexao direta nao
+// fecha - CGNAT, NAT simetrico, firewall) vem do servidor no join-room, com
+// credenciais que nao ficam no codigo (ver "TURN" no server/index.js).
+let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+function setIceServersFromServer(list) {
+  if (Array.isArray(list) && list.length > 0) iceServers = list;
+}
 
 const loginScreen = document.getElementById('login-screen');
 const roomScreen = document.getElementById('room-screen');
@@ -936,6 +943,62 @@ function addParticipantRow(id, name, isSelf) {
   li.appendChild(avatar);
   li.appendChild(label);
   participantsList.appendChild(li);
+}
+
+// Etiqueta ao lado do nome na lista de participantes, pra dar pra ver sem
+// abrir nada quando a conexao com alguem nao fecha: nada = conexao direta
+// (normal), "via servidor" = passou pelo TURN, "sem conexao" = falhou.
+const CONN_FAIL_AFTER_MS = 20000;
+
+function setParticipantConnStatus(peerId, status) {
+  const li = document.getElementById(`participant-${peerId}`);
+  if (!li) return;
+  let tag = li.querySelector('.conn-status');
+  if (status !== 'relay' && status !== 'failed') {
+    if (tag) tag.remove();
+    return;
+  }
+  if (!tag) {
+    tag = document.createElement('span');
+    tag.className = 'conn-status';
+    li.appendChild(tag);
+  }
+  tag.classList.toggle('conn-status-failed', status === 'failed');
+  tag.textContent = status === 'relay' ? 'via servidor' : 'sem conexão';
+  tag.title = status === 'relay'
+    ? 'A rede de voces nao deixou ligar direto - o video esta passando por um servidor intermediario (TURN)'
+    : 'Nao foi possivel ligar com essa pessoa - a rede de um dos dois esta bloqueando (VPN, firewall ou internet com CGNAT)';
+}
+
+// Descobre pelo getStats se a conexao que fechou e direta ou via TURN.
+async function detectConnRoute(peerId, pc) {
+  try {
+    const stats = await pc.getStats();
+    let pair = null;
+    stats.forEach((r) => {
+      if (r.type === 'transport' && r.selectedCandidatePairId) pair = stats.get(r.selectedCandidatePairId) || pair;
+    });
+    if (!pair) {
+      stats.forEach((r) => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = r; });
+    }
+    if (!pair) return;
+    const local = stats.get(pair.localCandidateId);
+    const remote = stats.get(pair.remoteCandidateId);
+    const viaRelay = (local && local.candidateType === 'relay') || (remote && remote.candidateType === 'relay');
+    if (pc.connectionState === 'connected') setParticipantConnStatus(peerId, viaRelay ? 'relay' : 'ok');
+  } catch (err) {
+    console.error('Falha ao ler a rota da conexao:', err);
+  }
+}
+
+function watchConnFailure(peerId, state) {
+  if (state.connFailTimer) clearTimeout(state.connFailTimer);
+  state.connFailTimer = setTimeout(() => {
+    state.connFailTimer = null;
+    if (peers.get(peerId) === state && state.pc.connectionState !== 'connected') {
+      setParticipantConnStatus(peerId, 'failed');
+    }
+  }, CONN_FAIL_AFTER_MS);
 }
 
 function removeParticipantRow(id) {
@@ -2817,13 +2880,15 @@ function castSketchVote(choice) {
 function createPeerConnection(peerId) {
   const polite = selfId < peerId; // regra combinada dos dois lados
 
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const pc = new RTCPeerConnection({ iceServers });
   const state = {
     pc, polite, makingOffer: false, ignoreOffer: false,
     reconnecting: false, reconnectInterval: null,
-    chatChannel: null,
+    chatChannel: null, connFailTimer: null,
   };
   peers.set(peerId, state);
+  // Se em 20s nao ligar nunca, marca "sem conexao" na lista de participantes.
+  watchConnFailure(peerId, state);
 
   // Chat de texto: so o lado "impolite" cria o canal (senao os dois lados
   // criariam um cada, duplicando) - o outro lado recebe via ondatachannel.
@@ -2878,10 +2943,13 @@ function createPeerConnection(peerId) {
     if (cs === 'connected') {
       clearReconnectTimers(state);
       setTileReconnecting(peerId, false);
+      if (state.connFailTimer) { clearTimeout(state.connFailTimer); state.connFailTimer = null; }
+      detectConnRoute(peerId, pc);
       return;
     }
 
     if (cs === 'closed') {
+      if (state.connFailTimer) { clearTimeout(state.connFailTimer); state.connFailTimer = null; }
       // So fica 'closed' quando ALGUEM chama pc.close() de proposito (saiu
       // da sala, parou de compartilhar) - nunca por instabilidade de rede,
       // entao aqui pode remover na hora, sem esperar.
@@ -2893,6 +2961,7 @@ function createPeerConnection(peerId) {
     if ((cs === 'disconnected' || cs === 'failed') && !state.reconnecting) {
       state.reconnecting = true;
       setTileReconnecting(peerId, true);
+      watchConnFailure(peerId, state);
       console.error(`Conexao com ${peerId} caiu (${cs}) - tentando reconectar ate voltar, a tile fica na tela.`);
 
       state.reconnectInterval = setInterval(() => {
@@ -3953,12 +4022,17 @@ btnJoin.addEventListener('click', async () => {
   setLoginError('');
   const serverUrl = DEFAULT_SERVER_URL;
   const password = BUILT_IN_SERVER_PASSWORD;
-  const rawName = document.getElementById('display-name').value.trim();
+  const rawName = document.getElementById('display-name').value.trim().slice(0, 20);
   const name = rawName || 'Anonimo';
   const roomId = document.getElementById('room-id').value.trim();
 
   if (!roomId) {
     setLoginError('Preencha o código da sala.');
+    return;
+  }
+  // mesmos limites do servidor (convite/historico podem trazer codigo maior)
+  if (roomId.length > 20) {
+    setLoginError('O código da sala pode ter no máximo 20 caracteres.');
     return;
   }
 
@@ -3968,8 +4042,9 @@ btnJoin.addEventListener('click', async () => {
     await window.rtc.connect(serverUrl, password);
     setLoginError('');
     saveWorkingDisplayName(rawName);
-    const { selfId: id, peers: existingPeers } = await window.rtc.joinRoom(roomId, name);
+    const { selfId: id, peers: existingPeers, iceServers: serverIceServers } = await window.rtc.joinRoom(roomId, name);
     selfId = id;
+    setIceServersFromServer(serverIceServers);
     saveRoomToHistory(roomId);
     existingPeers.forEach((p) => peerShareModes.set(p.id, p.shareMode || null));
 
