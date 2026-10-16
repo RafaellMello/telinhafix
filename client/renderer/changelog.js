@@ -4,6 +4,17 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.6.1',
+    date: '16/10/2026',
+    title: 'Convites que funcionam sempre',
+    items: [
+      'O botão "Convidar" agora copia um link normal (https) que fica clicável no Discord e no WhatsApp: ele abre o TelinhaFix já na sala, e quem ainda não tem o app vê o botão de baixar.',
+      'Corrigido: abrir um link de convite às vezes jogava a pessoa sozinha numa sala com uma "/" no fim do nome.',
+      'O código da sala não diferencia mais maiúsculas de minúsculas: "Paygorn" e "paygorn" são a mesma sala.',
+      'Clicar num convite estando em outra sala agora mostra um aviso com o botão "Entrar" (antes não acontecia nada).',
+    ],
+  },
+  {
     version: '3.6.0',
     date: '16/10/2026',
     title: 'Ouvir os outros enquanto compartilha',

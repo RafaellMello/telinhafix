@@ -779,16 +779,54 @@ function restoreSavedRoomId() {
 
 restoreSavedRoomId();
 
-// Link de convite (telinhafix://join?room=X, ver btn-copy-invite mais
-// abaixo e main.js) - so preenche o codigo da sala se a pessoa ainda
-// estiver na tela de login; clicar num link de convite enquanto ja esta
-// numa call nao faz nada sozinho (nao da pra trocar de sala no meio de
-// uma chamada sem avisar - mais seguro so ignorar que interromper algo).
-window.appLinks.onInviteRoom((roomId) => {
-  if (!roomId || !roomScreen.classList.contains('hidden')) return; // ja esta numa sala - ignora
-  const input = document.getElementById('room-id');
-  input.value = roomId;
-  input.focus();
+// Link de convite: o botao "Convidar" copia https://.../convite/X (ver
+// renderInvitePage no server/index.js), que abre telinhafix://join?room=X
+// (ver main.js). Na tela de login so preenche o codigo da sala; ja numa
+// sala, pergunta antes de trocar (ver pendingInviteRoom abaixo).
+// Mesma regra do servidor (normalizeRoomId em server/index.js): sem
+// diferenca de maiuscula/minuscula, sem espaco nas pontas e sem barra no fim
+// - alguns navegadores/apps abrem o link como "...?room=X/" e a pessoa caia
+// sozinha numa sala "X/".
+function normalizeRoomId(raw) {
+  return String(raw || '').trim().replace(/\/+$/, '').trim().toLowerCase();
+}
+
+// Ja numa sala: em vez de ignorar o convite em silencio (a pessoa ficava
+// presa na sala dela achando que o link nao funcionava), mostra um aviso com
+// "Entrar" - so troca de sala se ela confirmar.
+let pendingInviteRoom = null;
+
+window.appLinks.onInviteRoom((rawRoomId) => {
+  const roomId = normalizeRoomId(rawRoomId);
+  if (!roomId) return;
+  if (roomScreen.classList.contains('hidden')) {
+    const input = document.getElementById('room-id');
+    input.value = roomId;
+    input.focus();
+    setLoginError(`Convite pra sala "${roomId}" - é só clicar em Entrar.`, true);
+    return;
+  }
+  if (normalizeRoomId(roomLabel.textContent) === roomId) return; // ja esta nessa sala
+  pendingInviteRoom = roomId;
+  document.getElementById('invite-banner-text').textContent =
+    `Você foi convidado pra sala "${roomId}". Sair da sala atual e entrar nela?`;
+  document.getElementById('invite-banner').classList.remove('hidden');
+  playChatSound();
+});
+
+document.getElementById('btn-invite-close').addEventListener('click', () => {
+  pendingInviteRoom = null;
+  document.getElementById('invite-banner').classList.add('hidden');
+});
+
+document.getElementById('btn-invite-accept').addEventListener('click', async () => {
+  const roomId = pendingInviteRoom;
+  pendingInviteRoom = null;
+  document.getElementById('invite-banner').classList.add('hidden');
+  if (!roomId) return;
+  if (!roomScreen.classList.contains('hidden')) await leaveRoom();
+  document.getElementById('room-id').value = roomId;
+  btnJoin.click();
 });
 
 const AVATAR_FILES = [
@@ -3813,7 +3851,9 @@ document.getElementById('btn-copy-invite').addEventListener('click', async () =>
   const btn = document.getElementById('btn-copy-invite');
   const roomId = roomLabel.textContent;
   if (!roomId) return;
-  const link = `telinhafix://join?room=${encodeURIComponent(roomId)}`;
+  // Link https (fica clicavel no Discord/WhatsApp, ao contrario do
+  // telinhafix://) - a pagina do servidor abre o app ja com a sala.
+  const link = `${DEFAULT_SERVER_URL}/convite/${encodeURIComponent(normalizeRoomId(roomId))}`;
   try {
     await window.appLinks.copyText(link);
   } catch (err) {
@@ -4053,7 +4093,8 @@ btnJoin.addEventListener('click', async () => {
   const password = BUILT_IN_SERVER_PASSWORD;
   const rawName = document.getElementById('display-name').value.trim().slice(0, 20);
   const name = rawName || 'Anonimo';
-  const roomId = document.getElementById('room-id').value.trim();
+  const roomId = normalizeRoomId(document.getElementById('room-id').value);
+  document.getElementById('room-id').value = roomId;
 
   if (!roomId) {
     setLoginError('Preencha o código da sala.');
