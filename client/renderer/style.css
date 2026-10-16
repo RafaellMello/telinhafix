@@ -2786,3 +2786,15 @@ input.locked-input { cursor: not-allowed; opacity: 0.6; user-select: none; }
 #admin-notice-text { white-space: pre-wrap; word-break: break-word; }
 .admin-notice-close { flex-shrink: 0; width: 28px; height: 28px; padding: 0; border-radius: 8px; font-size: 18px; line-height: 1; }
 @keyframes admin-notice-in { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+/* "Tema do tabuleiro" e "Tema dos agentes" lado a lado no lobby */
+.game-theme-row { display: flex; flex-wrap: wrap; gap: 8px 40px; }
+
+/* Tema dos agentes = Normal: carta revelada so com a cor do time e a
+   palavra (sem a foto). */
+#codenames-view.codenames-agents-plain .game-cell-photo,
+#codenames-view.codenames-agents-plain .game-cell-tint,
+#codenames-view.codenames-agents-plain .game-cell-back::after { display: none; }
+#codenames-view.codenames-agents-plain .game-cell-back { background: var(--tint); }
+#codenames-view.codenames-agents-plain .game-cell-back .game-cell-word { display: flex; }
+#codenames-view.codenames-agents-plain .game-cell-revealed-photo { cursor: default; }

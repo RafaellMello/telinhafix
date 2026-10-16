@@ -15,6 +15,10 @@ const THEME_STORAGE_KEY = 'telinhafix-theme';
 // resto do app (ver DEFAULT_THEME acima), preferencia de cada pessoa na
 // propria maquina, nao sincroniza com a sala.
 const CODENAMES_BOARD_THEME_STORAGE_KEY = 'telinhafix-codenames-board-theme';
+// "Tema dos agentes": como a carta aparece depois de revelada - "latadelixo"
+// (foto da galera com a cor por cima, padrao) ou "normal" (so a cor + a
+// palavra). Tambem e preferencia local de cada pessoa.
+const CODENAMES_AGENTS_THEME_STORAGE_KEY = 'telinhafix-codenames-agents-theme';
 const DEFAULT_KEYBINDS = { stopShare: 'Control+Alt+S', toggleMute: 'Control+Alt+M', quickShare: 'Control+Alt+Q' };
 const DEFAULT_VOLUMES = { join: 1, leave: 1, chat: 1, connection: 1, buttons: 1 };
 const DEFAULT_THEME = {
@@ -3827,6 +3831,25 @@ function applyGameBoardTheme(theme) {
 
 document.querySelectorAll('[data-game-theme]').forEach((btn) => {
   btn.addEventListener('click', () => applyGameBoardTheme(btn.dataset.gameTheme));
+});
+
+function applyGameAgentsTheme(theme) {
+  const normal = theme === 'normal';
+  document.getElementById('codenames-view').classList.toggle('codenames-agents-plain', normal);
+  document.querySelectorAll('[data-agents-theme]').forEach((btn) => {
+    btn.classList.toggle('selected', btn.dataset.agentsTheme === (normal ? 'normal' : 'latadelixo'));
+  });
+  try { localStorage.setItem(CODENAMES_AGENTS_THEME_STORAGE_KEY, normal ? 'normal' : 'latadelixo'); } catch (err) {}
+}
+
+(() => {
+  let saved = 'latadelixo';
+  try { saved = localStorage.getItem(CODENAMES_AGENTS_THEME_STORAGE_KEY) || 'latadelixo'; } catch (err) {}
+  applyGameAgentsTheme(saved);
+})();
+
+document.querySelectorAll('[data-agents-theme]').forEach((btn) => {
+  btn.addEventListener('click', () => applyGameAgentsTheme(btn.dataset.agentsTheme));
 });
 
 document.querySelectorAll('.game-pick-btn').forEach((btn) => {
