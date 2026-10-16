@@ -4,6 +4,14 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.5.7',
+    date: '16/10/2026',
+    title: 'Tema dos agentes no Codenames',
+    items: [
+      'Nova opção "Tema dos agentes" no lobby do Codenames: "Lata de lixo" mostra as fotos da galera nas cartas viradas (como antes) e "Normal" mostra só a cor do time com a palavra.',
+    ],
+  },
+  {
     version: '3.5.6',
     date: '16/10/2026',
     title: 'Senha automática e atualização sem susto',
