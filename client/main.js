@@ -59,14 +59,29 @@ function listRunningApps() {
   });
 }
 
+// Avisa o renderer se a captura de audio do sistema pode estar pegando o som
+// que o proprio TelinhaFix toca (o audio de quem voce esta ouvindo) - nesse
+// caso ele precisa mutar os outros enquanto voce compartilha, senao volta
+// eco pra eles. Com o helper novo (--self-pid) o TelinhaFix fica de fora da
+// captura e o helper avisa "ECHO_SAFE" - ai ninguem precisa ser mutado.
+function sendAudioEchoRisk(win, risk) {
+  if (win && !win.isDestroyed()) win.webContents.send('audio-echo-risk', risk);
+}
+
 function startAudioCapture(win, audioConfig) {
   if (audioHelperProcess) return;
 
   const config = audioConfig || { mode: 'exclude', target: 'Discord' };
   const helperArgs = config.mode === 'system' ? ['system'] : [config.mode, config.target];
+  // So "include" (audio de UM programa) nao pega o som do TelinhaFix - nos
+  // outros modos, ate o helper confirmar ECHO_SAFE, assume que ha risco.
+  const capturesWholeSystem = config.mode !== 'include';
+  if (capturesWholeSystem) helperArgs.push('--self-pid', String(process.pid));
+  sendAudioEchoRisk(win, capturesWholeSystem);
 
   audioLeftover = Buffer.alloc(0);
   audioHelperProcess = spawn(getAudioHelperPath(), helperArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const thisHelper = audioHelperProcess;
 
   // Float32 estereo: 2 canais * 4 bytes = 8 bytes por frame. Os pedacos que
   // chegam do stdout nao respeitam esse alinhamento, entao remontamos aqui.
@@ -82,24 +97,33 @@ function startAudioCapture(win, audioConfig) {
   });
 
   audioHelperProcess.stderr.on('data', (chunk) => {
-    console.log('[audio-helper]', chunk.toString().trim());
+    const text = chunk.toString();
+    console.log('[audio-helper]', text.trim());
+    if (/^ECHO_SAFE\s*$/m.test(text) && audioHelperProcess === thisHelper) sendAudioEchoRisk(win, false);
   });
 
   audioHelperProcess.on('error', (err) => {
     console.error('Falha ao iniciar o helper de audio:', err);
-    audioHelperProcess = null;
+    if (audioHelperProcess === thisHelper) {
+      audioHelperProcess = null;
+      sendAudioEchoRisk(win, false);
+    }
   });
 
   audioHelperProcess.on('exit', () => {
-    audioHelperProcess = null;
+    if (audioHelperProcess === thisHelper) {
+      audioHelperProcess = null;
+      sendAudioEchoRisk(win, false);
+    }
   });
 }
 
-function stopAudioCapture() {
+function stopAudioCapture(win) {
   if (audioHelperProcess) {
     audioHelperProcess.kill();
     audioHelperProcess = null;
   }
+  sendAudioEchoRisk(win, false);
 }
 
 // --- Captura de tela nativa sem cursor (modo "beta") ----------------------
@@ -464,8 +488,8 @@ function createWindow() {
     startAudioCapture(BrowserWindow.fromWebContents(event.sender), lastPickedAudioConfig);
   });
 
-  ipcMain.handle('audio-capture-stop', () => {
-    stopAudioCapture();
+  ipcMain.handle('audio-capture-stop', (event) => {
+    stopAudioCapture(BrowserWindow.fromWebContents(event.sender));
   });
 
   ipcMain.handle('native-screen-list', () => listNativeScreens());

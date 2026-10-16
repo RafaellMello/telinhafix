@@ -4,6 +4,16 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.6.0',
+    date: '16/10/2026',
+    title: 'Ouvir os outros enquanto compartilha',
+    items: [
+      'Agora dá pra ouvir a tela dos seus amigos enquanto você também está compartilhando a sua - antes o app mutava todo mundo pra evitar eco.',
+      'O áudio do sistema que você transmite deixa de fora o próprio TelinhaFix (e o Discord), então quem te assiste não ouve eco da própria tela.',
+      'Corrigido: quem começava a compartilhar depois de outra pessoa ficava sem o limite de qualidade de vídeo escolhido.',
+    ],
+  },
+  {
     version: '3.5.9',
     date: '16/10/2026',
     title: 'Conexão para todo mundo e mais segurança',

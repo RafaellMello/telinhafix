@@ -269,6 +269,11 @@ contextBridge.exposeInMainWorld('audioCapture', {
   onChunk(cb) {
     ipcRenderer.on('telinhafix-audio-chunk', (event, chunk) => cb(chunk));
   },
+  // true = a captura pode estar pegando o som do proprio TelinhaFix (precisa
+  // mutar os outros enquanto compartilha); false = sem risco de eco.
+  onEchoRisk(cb) {
+    ipcRenderer.on('audio-echo-risk', (event, risk) => cb(!!risk));
+  },
 });
 
 // Qualidade (resolucao + fps) escolhida na ultima vez que o seletor de

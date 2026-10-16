@@ -862,11 +862,25 @@ function updatePeerTileMirror(peerId) {
 // checagem garante que a UI nunca mostra nada mesmo nesse caso.
 const spectatorPeerIds = new Set();
 
-async function applyBitrateToSender(sender, quality) {
+// Quando o outro lado ja esta transmitindo, o addTrack reaproveita o
+// transceiver que veio da oferta dele - e ate a renegociacao terminar o
+// sender desse transceiver nao tem "encodings" (mexer nisso da
+// InvalidModificationError e o limite de qualidade nunca era aplicado:
+// acontecia com quem comecava a compartilhar por SEGUNDO). Entao espera
+// os encodings aparecerem antes de ajustar.
+const BITRATE_RETRY_MS = 300;
+const BITRATE_MAX_TRIES = 40;
+
+async function applyBitrateToSender(sender, quality, tries = 0) {
   if (!sender || !quality) return;
   try {
     const params = sender.getParameters();
-    if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+    if (!params.encodings || params.encodings.length === 0) {
+      if (tries < BITRATE_MAX_TRIES && sender.track) {
+        setTimeout(() => applyBitrateToSender(sender, quality, tries + 1), BITRATE_RETRY_MS);
+      }
+      return;
+    }
     params.encodings[0].maxBitrate = quality.maxBitrate;
     await sender.setParameters(params);
   } catch (err) {
@@ -1215,16 +1229,31 @@ function wireRemoteAudioGain(peerId, video, audioTrack) {
   applyGain(peerId);
 }
 
+// Enquanto voce compartilha com audio do sistema, o som que o TelinhaFix
+// toca (quem voce esta ouvindo) podia entrar na sua captura e voltar pra
+// eles em eco - por isso o app mutava todo mundo. O helper de audio agora
+// deixa o TelinhaFix de fora da captura e avisa (audio-echo-risk = false);
+// so mutamos se ele NAO conseguir (Windows antigo, captura caiu pro modo
+// simples). Modo camera e audio de um programa so nao tem esse risco.
+let audioEchoRisk = false;
+
+function isRemoteAudioSuppressedForEcho() {
+  return !!localStream && shareMode !== 'camera' && audioEchoRisk;
+}
+
+window.audioCapture.onEchoRisk((risk) => {
+  audioEchoRisk = risk;
+  refreshAllGainsForSharingState();
+});
+
 function applyGain(peerId) {
   const entry = remoteGainNodes.get(peerId);
   if (!entry) return;
-  // Enquanto voce compartilha capturando audio do sistema, suprime o audio
-  // dos outros pra nao vazar eco na sua propria transmissao. No modo camera
-  // isso nao se aplica: nao capturamos audio do sistema nesse modo, entao
-  // nao ha risco de eco e a pessoa continua ouvindo os outros normalmente.
+  // So suprime o audio dos outros quando a sua captura de audio do sistema
+  // pegaria o som deles (eco) - ver isRemoteAudioSuppressedForEcho.
   // E corta de vez quando a transmissao esta oculta (botao direito na tile).
   const hiddenFactor = hiddenPeers.has(peerId) ? 0 : 1;
-  const suppressForEcho = !!localStream && shareMode !== 'camera';
+  const suppressForEcho = isRemoteAudioSuppressedForEcho();
   const muteFactor = masterMuted ? 0 : 1;
   entry.gainNode.gain.value = (suppressForEcho ? 0 : entry.sliderValue / 100) * hiddenFactor * muteFactor;
 }
@@ -1234,7 +1263,7 @@ function applyGain(peerId) {
 // sem isso parece um controle quebrado, mexe e o volume de quem voce ta
 // ouvindo nao muda nadinha.
 function updateVolumeControlsSuppressedState() {
-  const suppressed = !!localStream && shareMode !== 'camera';
+  const suppressed = isRemoteAudioSuppressedForEcho();
   document.querySelectorAll('.volume-control').forEach((el) => {
     el.classList.toggle('volume-control-suppressed', suppressed);
     el.title = suppressed
@@ -1418,7 +1447,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
     // a tile ainda nao foi inserida na arvore do documento nesse ponto
     // (isso so acontece mais abaixo, em videoGrid.appendChild), entao uma
     // busca no document nao encontraria esse elemento ainda.
-    const suppressedNow = !!localStream && shareMode !== 'camera';
+    const suppressedNow = isRemoteAudioSuppressedForEcho();
     volumeRow.classList.toggle('volume-control-suppressed', suppressedNow);
     volumeRow.title = suppressedNow
       ? 'Desativado enquanto você compartilha com áudio do sistema (evita eco pra quem assiste)'
