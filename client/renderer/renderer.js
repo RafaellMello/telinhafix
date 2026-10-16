@@ -688,29 +688,12 @@ startNamePlaceholderCycle();
 // de digitacao/configuracao e simplificar a tela de login.
 const DEFAULT_SERVER_URL = 'https://screenbunny.onrender.com';
 
-// Lembra a senha global, mas so depois que ela realmente funcionou (conectou
-// de verdade) - assim um typo nao fica salvo e preenchido de novo na proxima
-// vez, fazendo a pessoa achar que a senha mudou sozinha.
-const SERVER_PASSWORD_STORAGE_KEY = 'telinhafix-server-password';
-
-function restoreSavedServerPassword() {
-  try {
-    const saved = localStorage.getItem(SERVER_PASSWORD_STORAGE_KEY);
-    if (saved) document.getElementById('server-password').value = saved;
-  } catch (err) {
-    // localStorage indisponivel - segue sem lembrar a senha.
-  }
-}
-
-function saveWorkingServerPassword(password) {
-  try {
-    localStorage.setItem(SERVER_PASSWORD_STORAGE_KEY, password);
-  } catch (err) {
-    // localStorage indisponivel - segue sem lembrar a senha.
-  }
-}
-
-restoreSavedServerPassword();
+// Senha global do servidor (APP_PASSWORD no Render) ja vem no app: o campo
+// aparece preenchido e travado (readonly no HTML), e o login usa SEMPRE esta
+// constante - nao o que estiver no campo. Se a APP_PASSWORD mudar no Render,
+// precisa mudar aqui e lancar uma versao nova.
+const BUILT_IN_SERVER_PASSWORD = 'md1';
+document.getElementById('server-password').value = BUILT_IN_SERVER_PASSWORD;
 
 // Lembra o nome da ultima vez que a pessoa entrou numa sala de verdade (nao
 // salva a cada letra digitada - so quando realmente usou pra entrar, igual
@@ -3913,18 +3896,40 @@ document.getElementById('btn-check-updates').addEventListener('click', () => {
   window.appInfo.checkForUpdates();
 });
 
-// Versao nova baixada: o processo principal reinicia o app em 5s (ver
-// update-downloaded no main.js) - avisa antes pra ninguem levar susto.
-window.appInfo.onUpdating((version) => {
-  const el = document.getElementById('app-update-toast');
-  el.textContent = `Atualizando o TelinhaFix pra versão ${version}... o app vai reiniciar em 5 segundos.`;
+// Aviso mandado pelo painel de admin: faixa no topo da tela (texto puro),
+// some sozinha em 30s ou no X.
+let adminNoticeTimer = null;
+function showAdminNotice(text) {
+  const el = document.getElementById('admin-notice-banner');
+  document.getElementById('admin-notice-text').textContent = String(text || '');
   el.classList.remove('hidden');
+  playChatSound();
+  clearTimeout(adminNoticeTimer);
+  adminNoticeTimer = setTimeout(() => el.classList.add('hidden'), 30000);
+}
+document.getElementById('btn-admin-notice-close').addEventListener('click', () => {
+  clearTimeout(adminNoticeTimer);
+  document.getElementById('admin-notice-banner').classList.add('hidden');
 });
+
+// App desatualizado (o processo principal confere de tempos em tempos, ver
+// setupAutoUpdater no main.js): o botao "Procurar atualizacoes" fica
+// piscando e mostra a versao nova. Nada instala sozinho - so quando a
+// pessoa clicar ou abrir o app de novo.
+function applyUpdateStatus(status) {
+  const btn = document.getElementById('btn-check-updates');
+  const available = !!(status && status.available);
+  btn.classList.toggle('update-available', available);
+  btn.textContent = available ? `Atualização disponível (v${status.version})` : 'Procurar atualizações';
+  btn.title = available ? 'Tem versão nova do TelinhaFix - clique pra baixar e instalar' : '';
+}
+window.appInfo.onUpdateStatus(applyUpdateStatus);
+window.appInfo.getUpdateStatus().then(applyUpdateStatus).catch(() => {});
 
 btnJoin.addEventListener('click', async () => {
   setLoginError('');
   const serverUrl = DEFAULT_SERVER_URL;
-  const password = document.getElementById('server-password').value;
+  const password = BUILT_IN_SERVER_PASSWORD;
   const rawName = document.getElementById('display-name').value.trim();
   const name = rawName || 'Anonimo';
   const roomId = document.getElementById('room-id').value.trim();
@@ -3939,7 +3944,6 @@ btnJoin.addEventListener('click', async () => {
   try {
     await window.rtc.connect(serverUrl, password);
     setLoginError('');
-    saveWorkingServerPassword(password);
     saveWorkingDisplayName(rawName);
     const { selfId: id, peers: existingPeers } = await window.rtc.joinRoom(roomId, name);
     selfId = id;
@@ -3971,6 +3975,9 @@ btnJoin.addEventListener('click', async () => {
       addChatSystemMessage(`${leftName} saiu da sala`);
       playLeaveSound();
     });
+
+    window.rtc.onAdminNotice(({ text }) => showAdminNotice(text));
+    window.rtc.onUpdatePrompt(() => { window.appInfo.promptUpdate().catch(() => {}); });
 
     window.rtc.onPeerShareMode(({ id: peerId, mode }) => {
       peerShareModes.set(peerId, mode || null);

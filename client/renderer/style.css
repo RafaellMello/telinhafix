@@ -2548,21 +2548,16 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 #codenames-view .game-bg-swatch-light { background: #fff; }
 #codenames-view .game-bg-swatch.selected { border-color: var(--red-bright); box-shadow: 0 0 0 2px rgba(var(--red-rgb), 0.35); }
 
-/* Aviso de "atualizando, vai reiniciar" (ver onUpdating no renderer.js) */
-.app-update-toast {
-  position: fixed;
-  top: 18px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
-  padding: 14px 24px;
-  border-radius: 12px;
-  background: rgba(15, 15, 15, 0.95);
-  border: 2px solid var(--red-bright);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+/* "Procurar atualizacoes" piscando quando o app esta desatualizado */
+#btn-check-updates.update-available {
+  border-color: var(--red-bright);
   color: #fff;
-  font-size: calc(14px * var(--font-scale));
-  font-weight: 800;
+  background: rgba(var(--red-rgb), 0.25);
+  animation: update-blink 1.4s ease-in-out infinite;
+}
+@keyframes update-blink {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--red-rgb), 0.0); background: rgba(var(--red-rgb), 0.15); }
+  50% { box-shadow: 0 0 0 4px rgba(var(--red-rgb), 0.35), 0 0 18px rgba(var(--red-rgb), 0.6); background: rgba(var(--red-rgb), 0.55); }
 }
 
 /* Tabuleiro do 2x2x2 (37 cartas): 8 por linha, a ultima (com 5) fica
@@ -2753,3 +2748,41 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .changelog-date { margin-left: auto; font-size: calc(11px * var(--font-scale)); color: var(--text-muted); }
 .changelog-entry ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .changelog-entry li { font-size: calc(13px * var(--font-scale)); line-height: 1.4; color: var(--text); }
+
+/* Senha global: vem preenchida no app e nao da pra editar */
+input.locked-input { cursor: not-allowed; opacity: 0.6; user-select: none; }
+
+/* Aviso do painel de admin (ver showAdminNotice) */
+.admin-notice-banner {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(760px, calc(100vw - 32px));
+  padding: 12px 14px 12px 16px;
+  border-radius: 12px;
+  background: rgba(15, 15, 15, 0.96);
+  border: 2px solid var(--red-bright);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: calc(14px * var(--font-scale));
+  font-weight: 700;
+  animation: admin-notice-in 0.3s ease-out;
+}
+.admin-notice-label {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--red-bright);
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+#admin-notice-text { white-space: pre-wrap; word-break: break-word; }
+.admin-notice-close { flex-shrink: 0; width: 28px; height: 28px; padding: 0; border-radius: 8px; font-size: 18px; line-height: 1; }
+@keyframes admin-notice-in { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }

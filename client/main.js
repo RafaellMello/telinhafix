@@ -514,6 +514,14 @@ function createWindow() {
     checkForUpdatesManually();
   });
 
+  ipcMain.handle('get-update-status', () => ({ available: !!availableUpdateVersion, version: availableUpdateVersion }));
+
+  // Admin apertou "Pedir pra atualizar": se tiver versao nova, baixa e
+  // pergunta "Reiniciar agora / Depois"; se ja estiver em dia, nao aparece nada.
+  ipcMain.handle('update-prompt', () => {
+    if (app.isPackaged) runUpdateCheck('prompt');
+  });
+
   // Tela cheia da janela (usada ao entrar no Codenames) - retorna se ja
   // estava em tela cheia antes, pro renderer saber se deve desfazer depois.
   ipcMain.handle('window-set-fullscreen', (event, on) => {
@@ -572,11 +580,45 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
-// "Procurar atualizacoes" no menu do app (ver buildAppMenu) chama a MESMA
-// checagem automatica de sempre, so que com esse flag ligado - os handlers
-// abaixo usam ele pra decidir se mostram um dialogo pra pessoa (checagem
-// manual) ou so logam no console (checagem silenciosa no boot do app).
-let manualUpdateCheckPending = false;
+// Atualizacao - decisao do Rafael: NUNCA reiniciar o app de ninguem sozinho
+// (tem gente usando). Fluxo:
+// - ao abrir o app: se tiver versao nova, baixa e pergunta "Reiniciar agora /
+//   Depois" (Depois = instala quando a pessoa fechar o app);
+// - "Procurar atualizacoes" (botao do login / menu Ajuda): o mesmo, com avisos;
+// - com o app aberto: so CONFERE de tempos em tempos se tem versao nova (sem
+//   baixar, sem perguntar) e avisa a tela pra fazer o botao piscar.
+let updateCheckMode = null; // 'startup' | 'manual' | 'background' - quem pediu a checagem em andamento
+let updateDownloadStarted = false;
+let availableUpdateVersion = null;
+
+function setAvailableUpdate(version) {
+  if (availableUpdateVersion === version) return;
+  availableUpdateVersion = version;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-status', { available: !!version, version });
+  }
+  buildAppMenu();
+}
+
+function runUpdateCheck(mode) {
+  // checagem manual "vence" uma automatica que ja estava rodando (mostra os avisos)
+  if (updateCheckMode && mode !== 'manual' && mode !== 'prompt') return;
+  updateCheckMode = mode;
+  autoUpdater.checkForUpdates().catch((err) => {
+    console.error(`[updater] Falha ao checar atualizacao (${mode}):`, err);
+    if (mode === 'manual') showUpdateError(err);
+    updateCheckMode = null;
+  });
+}
+
+function showUpdateError(err) {
+  dialog.showMessageBox({
+    type: 'error',
+    title: 'Falha ao procurar atualizações',
+    message: `Não foi possível checar atualizações agora.\n\n${(err && err.message) || err}`,
+    buttons: ['OK'],
+  });
+}
 
 function checkForUpdatesManually() {
   if (!app.isPackaged) {
@@ -588,36 +630,22 @@ function checkForUpdatesManually() {
     });
     return;
   }
-  manualUpdateCheckPending = true;
-  autoUpdater.checkForUpdates().catch((err) => {
-    manualUpdateCheckPending = false;
-    console.error('[updater] Falha ao checar atualizacao (manual):', err);
-    dialog.showMessageBox({
-      type: 'error',
-      title: 'Falha ao procurar atualizações',
-      message: `Não foi possível checar atualizações agora.\n\n${err.message || err}`,
-      buttons: ['OK'],
-    });
-  });
+  runUpdateCheck('manual');
 }
 
-// Checa por versao nova no GitHub Releases (metadados gerados pelo proprio
-// electron-builder no build) e baixa sozinho em segundo plano. So avisa a
-// pessoa quando ja esta pronta pra instalar - reiniciar sem avisar no meio
-// de uma transmissao seria pior que nao ter atualizacao nenhuma.
 function setupAutoUpdater() {
   if (!app.isPackaged) return; // em dev nao tem app-update.yml, ia so dar erro
 
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = false; // quem decide baixar e o fluxo acima, nao a biblioteca
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('checking-for-update', () => {
-    console.log('[updater] checando por atualizacao...');
-  });
   autoUpdater.on('update-available', (info) => {
-    console.log(`[updater] atualizacao disponivel: ${info.version} - baixando...`);
-    if (manualUpdateCheckPending) {
-      manualUpdateCheckPending = false;
+    const mode = updateCheckMode;
+    updateCheckMode = null;
+    console.log(`[updater] atualizacao disponivel: ${info.version} (${mode})`);
+    setAvailableUpdate(info.version);
+    if (mode === 'background') return; // so faz o botao piscar
+    if (mode === 'manual') {
       dialog.showMessageBox({
         type: 'info',
         title: 'Atualização encontrada',
@@ -625,15 +653,25 @@ function setupAutoUpdater() {
         buttons: ['OK'],
       });
     }
+    if (!updateDownloadStarted) {
+      updateDownloadStarted = true;
+      autoUpdater.downloadUpdate().catch((err) => {
+        updateDownloadStarted = false;
+        console.error('[updater] Falha ao baixar atualizacao:', err);
+        if (mode === 'manual') showUpdateError(err);
+      });
+    }
   });
   autoUpdater.on('update-not-available', (info) => {
+    const mode = updateCheckMode;
+    updateCheckMode = null;
     console.log(`[updater] ja esta na versao mais recente (${info.version})`);
-    if (manualUpdateCheckPending) {
-      manualUpdateCheckPending = false;
+    setAvailableUpdate(null);
+    if (mode === 'manual') {
       dialog.showMessageBox({
         type: 'info',
         title: 'Sem atualizações',
-        message: `Você já está na versão mais recente (${info.version}).`,
+        message: `Você já está na versão mais recente (${app.getVersion()}).`,
         buttons: ['OK'],
       });
     }
@@ -642,53 +680,50 @@ function setupAutoUpdater() {
     console.log(`[updater] baixando: ${Math.round(progress.percent)}%`);
   });
   autoUpdater.on('error', (err) => {
+    const mode = updateCheckMode;
+    updateCheckMode = null;
+    updateDownloadStarted = false;
     console.error('[updater] Falha ao checar/baixar atualizacao:', err);
-    if (manualUpdateCheckPending) {
-      manualUpdateCheckPending = false;
-      dialog.showMessageBox({
-        type: 'error',
-        title: 'Falha ao procurar atualizações',
-        message: `Não foi possível checar atualizações agora.\n\n${err.message || err}`,
-        buttons: ['OK'],
-      });
-    }
+    if (mode === 'manual') showUpdateError(err);
   });
 
-  // Decisao do Rafael: versao nova baixada = avisa na tela e reinicia
-  // sozinho em 5s, sem perguntar (vale tambem pra quem esta com o app
-  // aberto ha horas - ver checagem periodica abaixo).
-  let restartScheduled = false;
   autoUpdater.on('update-downloaded', (info) => {
-    console.log(`[updater] atualizacao ${info.version} baixada - reiniciando pra instalar`);
-    if (restartScheduled) return;
-    restartScheduled = true;
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app-updating', info.version);
-    // isSilent=true: reaproveita o instalador ja baixado com /S do NSIS (sem
-    // telas pra clicar); isForceRunAfter=true: reabre o app no final.
-    setTimeout(() => autoUpdater.quitAndInstall(true, true), 5000);
+    updateDownloadStarted = false;
+    console.log(`[updater] atualizacao ${info.version} baixada - pronta pra instalar`);
+    dialog
+      .showMessageBox({
+        type: 'info',
+        title: 'Atualização disponível',
+        message: `Uma versão nova do TelinhaFix (${info.version}) foi baixada. Reiniciar agora para instalar?`,
+        detail: 'Se escolher "Depois", ela é instalada quando você fechar o app.',
+        buttons: ['Reiniciar agora', 'Depois'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+      .then((result) => {
+        // isSilent=true: usa o instalador ja baixado sem telas pra clicar;
+        // isForceRunAfter=true: reabre o app no final.
+        if (result.response === 0) autoUpdater.quitAndInstall(true, true);
+      });
   });
 
-  autoUpdater.checkForUpdates().catch((err) => {
-    console.error('Falha ao checar atualizacao:', err);
-  });
-
-  // Checagem periodica: assim uma release nova chega em quem ja esta com o
-  // app aberto (a checagem de cima so roda quando o app abre).
-  setInterval(() => {
-    if (restartScheduled) return;
-    autoUpdater.checkForUpdates().catch((err) => console.error('[updater] checagem periodica falhou:', err));
-  }, 5 * 60 * 1000);
+  runUpdateCheck('startup');
+  setInterval(() => runUpdateCheck('background'), 10 * 60 * 1000);
 }
 
 // Menu nativo do app (some sozinho por causa do autoHideMenuBar - aparece
 // com Alt) - a unica entrada que precisa existir por enquanto e a checagem
 // manual de atualizacao.
 function buildAppMenu() {
+  const label = availableUpdateVersion
+    ? `Procurar atualizações (nova versão ${availableUpdateVersion}!)`
+    : 'Procurar atualizações';
   const template = [
     {
-      label: 'Ajuda',
+      label: availableUpdateVersion ? 'Ajuda ●' : 'Ajuda',
       submenu: [
-        { label: 'Procurar atualizações', click: () => checkForUpdatesManually() },
+        { label, click: () => checkForUpdatesManually() },
       ],
     },
   ];

@@ -6,7 +6,11 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app-update-toast" class="app-update-toast hidden" role="status"></div>
+  <div id="admin-notice-banner" class="admin-notice-banner hidden" role="alert">
+    <span class="admin-notice-label">Aviso</span>
+    <span id="admin-notice-text"></span>
+    <button type="button" id="btn-admin-notice-close" class="admin-notice-close" aria-label="Fechar aviso">&times;</button>
+  </div>
   <div id="login-screen" class="screen">
     <canvas id="login-background-canvas"></canvas>
     <button id="btn-settings" title="Aparencia"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle><circle cx="12" cy="12" r="8.2" stroke-dasharray="2 2.15"></circle></svg></button>
@@ -47,7 +51,7 @@
         <div class="box-reveal-content">
           <label>Senha global (Pergunte ao Bunny)</label>
           <div class="input-spotlight password-field">
-            <input id="server-password" type="password" placeholder="" />
+            <input id="server-password" type="password" placeholder="" readonly tabindex="-1" class="locked-input" title="Senha preenchida automaticamente" />
             <button type="button" id="btn-toggle-password" class="input-eye-toggle" title="Mostrar/esconder senha" aria-label="Mostrar senha">
               <svg class="eye-icon eye-icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
               <svg class="eye-icon eye-icon-hide hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 11s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>
