@@ -4,6 +4,15 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.6.3',
+    date: '17/10/2026',
+    title: 'Ajustes visuais',
+    items: [
+      'Nomes dos minijogos em branco, mais fáceis de ler.',
+      'Nas configurações, só a aba selecionada fica em branco - as outras ficam em cinza.',
+    ],
+  },
+  {
     version: '3.6.2',
     date: '16/10/2026',
     title: 'Convite entra direto na sala',

@@ -1,6 +1,6 @@
 {
   "name": "telinhafix",
-  "version": "3.6.2",
+  "version": "3.6.3",
   "description": "App local para compartilhamento de tela entre amigos, estilo Discord",
   "main": "main.js",
   "scripts": {
@@ -54,7 +54,7 @@
       "perMachine": false,
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "artifactName": "${productName}-Setup.${ext}"
     },
     "publish": {
       "provider": "github",
