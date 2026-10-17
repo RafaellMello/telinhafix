@@ -1787,6 +1787,30 @@ function myGameRole() {
   return null;
 }
 
+// Minha entrada em Espectadores ({ id, name, withMap }) ou null.
+function mySpectatorEntry() {
+  if (!gameState || !selfId) return null;
+  return (gameState.spectators || []).find((s) => s.id === selfId) || null;
+}
+
+// Quem ve o mapa secreto: o Mestre-Espiao (se o time dele nao caiu) ou o
+// espectador que escolheu "assistir com mapa".
+function canSeeSecretMap() {
+  const role = myGameRole();
+  if (role) {
+    return role.role === 'spymaster'
+      && !(gameState.status === 'playing' && gameState.eliminated?.includes(role.team));
+  }
+  const spec = mySpectatorEntry();
+  return !!(spec && spec.withMap);
+}
+
+function spectatorNamesHtml() {
+  const specs = gameState.spectators || [];
+  if (!specs.length) return '<li class="game-agents-empty">Ninguém assistindo</li>';
+  return specs.map((s) => `<li>${escapeHtml(s.name)}${s.id === selfId ? ' (você)' : ''}<span class="game-spectator-tag">${s.withMap ? 'com mapa' : 'sem mapa'}</span></li>`).join('');
+}
+
 function setGameError(msg) {
   const el = document.getElementById('game-lobby-error');
   if (!el) return;
@@ -1818,10 +1842,8 @@ function closeGameOverlay() {
 }
 
 function ensureSecretMap() {
-  const role = myGameRole();
-  if (!role || role.role !== 'spymaster') return;
-  if (gameState && gameState.status === 'playing' && gameState.eliminated?.includes(role.team)) return;
   if (!gameState || (gameState.status !== 'playing' && gameState.status !== 'over')) return;
+  if (!canSeeSecretMap()) return;
   if (secretMapIsCurrent()) return;
   window.game.getSecretMap().then((res) => {
     mySecretMap = res.map;
@@ -1854,6 +1876,11 @@ function renderGameLobby() {
 
   document.querySelectorAll('.game-mode-option[data-mode]').forEach((btn) => {
     btn.classList.toggle('selected', btn.dataset.mode === gameState.mode);
+  });
+  // Servidor antigo nao manda "category" - ai as palavras sao sempre as normais.
+  const category = gameState.category || 'normal';
+  document.querySelectorAll('.game-mode-option[data-category]').forEach((btn) => {
+    btn.classList.toggle('selected', btn.dataset.category === category);
   });
 
   // Carta da equipe Verde so existe no modo ffa3 - as outras duas (vermelha/
@@ -1898,7 +1925,20 @@ function renderGameLobby() {
     }
   });
 
-  document.getElementById('btn-game-leave-role').classList.toggle('hidden', !role);
+  const spec = mySpectatorEntry();
+  document.querySelector('[data-slot="spectators"]').innerHTML = spectatorNamesHtml();
+  document.querySelectorAll('.game-spectate-btn').forEach((btn) => {
+    const withMap = btn.dataset.withMap === '1';
+    const isMine = !!(spec && spec.withMap === withMap);
+    btn.classList.toggle('selected', isMine);
+    btn.textContent = isMine
+      ? `Você está assistindo ${withMap ? 'com' : 'sem'} mapa`
+      : `Assistir ${withMap ? 'com' : 'sem'} mapa`;
+  });
+
+  const leaveBtn = document.getElementById('btn-game-leave-role');
+  leaveBtn.classList.toggle('hidden', !role && !spec);
+  leaveBtn.textContent = spec ? 'Parar de assistir' : 'Sair da equipe';
 
   const bothReady = activeTeams.every((team) => gameState.teams[team].spymaster && gameState.teams[team].agents.length >= 1);
   const amIHost = !gameState.hostId || gameState.hostId === selfId;
@@ -2307,7 +2347,22 @@ function renderGameSidePanels() {
   const logEl = document.getElementById('game-log');
   rightEl.innerHTML = rightTeamsHtml;
   rightEl.appendChild(logEl);
+  rightEl.insertAdjacentHTML('beforeend', gameSpectatorsPanelHtml());
   refreshGameAvatarVideos();
+}
+
+// Quem esta assistindo, durante a partida. Quem nao esta num time ganha o
+// botao de ver/esconder o mapa (vira espectador com/sem mapa na hora).
+function gameSpectatorsPanelHtml() {
+  const role = myGameRole();
+  const spec = mySpectatorEntry();
+  let toggle = '';
+  if (!role && gameState.status === 'playing') {
+    const turnOn = !(spec && spec.withMap);
+    toggle = `<button type="button" class="ghost game-spectate-toggle" data-with-map="${turnOn ? '1' : '0'}">${turnOn ? 'Mostrar mapa' : 'Esconder mapa'}</button>`;
+  }
+  if (!(gameState.spectators || []).length && !toggle) return '';
+  return `<div class="game-spectators-panel"><div class="game-clue-history-title">Espectadores</div><ul class="game-spectators-list">${spectatorNamesHtml()}</ul>${toggle}</div>`;
 }
 
 // --- Camera no avatar do Codenames ---------------------------------------
@@ -2384,6 +2439,7 @@ function renderGameBoard() {
   const mySpymasterClueTurn = gameState.status === 'playing' && gameState.phase === 'clue'
     && role && role.role === 'spymaster' && role.team === gameState.currentTeam;
   if (!mySpymasterClueTurn && clueTargets.size) clueTargets.clear();
+  const seesMap = canSeeSecretMap();
 
   gameState.board.forEach((cell, i) => {
     const { root, inner, front, back, photo } = boardCellEls[i];
@@ -2395,8 +2451,7 @@ function renderGameBoard() {
     root.classList.toggle('game-cell-unrevealed-end', showBack && !cell.revealed);
 
     front.className = 'game-cell-face game-cell-front';
-    const myTeamEliminated = role && gameState.status === 'playing' && gameState.eliminated?.includes(role.team);
-    if (!cell.revealed && role && role.role === 'spymaster' && !myTeamEliminated && secretMapIsCurrent()) {
+    if (!cell.revealed && seesMap && secretMapIsCurrent()) {
       front.classList.add(`game-cell-spy-${mySecretMap[i]}`);
     }
 
@@ -3957,6 +4012,14 @@ document.querySelectorAll('.game-mode-option[data-mode]').forEach((btn) => {
   });
 });
 
+document.querySelectorAll('.game-mode-option[data-category]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (gameState && (gameState.category || 'normal') === btn.dataset.category) return;
+    setGameError('');
+    window.game.setCategory(btn.dataset.category).catch((err) => setGameError(err.message));
+  });
+});
+
 function applyGameBoardTheme(theme) {
   const codenamesView = document.getElementById('codenames-view');
   codenamesView.classList.toggle('codenames-theme-light', theme === 'light');
@@ -4001,6 +4064,21 @@ document.querySelectorAll('.game-pick-btn').forEach((btn) => {
     setGameError('');
     window.game.setRole(btn.dataset.team, btn.dataset.role).catch((err) => setGameError(err.message));
   });
+});
+
+document.querySelectorAll('.game-spectate-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    setGameError('');
+    window.game.setSpectator(btn.dataset.withMap === '1').catch((err) => setGameError(err.message));
+  });
+});
+
+// Botao "Mostrar mapa / Esconder mapa" do painel de espectadores (o painel
+// e refeito a cada render, entao o clique e tratado por delegacao).
+document.getElementById('game-panels-right').addEventListener('click', (e) => {
+  const btn = e.target.closest('.game-spectate-toggle');
+  if (!btn) return;
+  window.game.setSpectator(btn.dataset.withMap === '1').catch((err) => console.error('Falha ao trocar o modo de espectador:', err));
 });
 
 document.getElementById('btn-game-leave-role').addEventListener('click', () => {

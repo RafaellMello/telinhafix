@@ -375,7 +375,7 @@
         <div id="codenames-view" class="hidden">
         <div id="game-lobby-view" class="game-lobby">
           <p class="game-whats-new">Codenames chegou com tudo: agora dá pra jogar Livre, 2x2, 3x3 ou 2x2x2 Todos contra todos (3 equipes na mesma partida)!</p>
-          <p class="settings-hint">Escolham uma equipe e um papel. Cada equipe precisa de 1 Mestre-Espião e pelo menos 1 Agente pra começar. Quem não escolher fica só assistindo.</p>
+          <p class="settings-hint">Escolham uma equipe e um papel. Cada equipe precisa de 1 Mestre-Espião e pelo menos 1 Agente pra começar. Quem só quer assistir entra em Espectadores.</p>
 
           <div class="settings-group">
             <label>Modo</label>
@@ -386,6 +386,14 @@
               <button type="button" class="game-mode-option" data-mode="ffa3">2x2x2 Todos contra todos</button>
             </div>
             <p class="settings-hint">Trocar o modo reinicia as equipes escolhidas até agora.</p>
+          </div>
+
+          <div class="settings-group">
+            <label>Palavras</label>
+            <div id="game-category-options" class="game-mode-options">
+              <button type="button" class="game-mode-option" data-category="normal">Normal</button>
+              <button type="button" class="game-mode-option" data-category="cs">Counter-Strike</button>
+            </div>
           </div>
 
           <div class="game-theme-row">
@@ -448,6 +456,18 @@
                 <ul class="game-agents-list" data-slot="green-agents"></ul>
               </div>
               <button type="button" class="ghost game-pick-btn" data-team="green" data-role="agent">Entrar como agente</button>
+            </div>
+          </div>
+
+          <div class="game-spectators-card">
+            <div class="game-spectators-head">
+              <h3>Espectadores</h3>
+              <span class="settings-hint">Só assistem e ficam de fora do "Sortear times". Com mapa, vê a cor de todas as cartas como os mestres-espiões (sem soprar, hein).</span>
+            </div>
+            <ul class="game-spectators-list" data-slot="spectators"></ul>
+            <div class="game-spectators-actions">
+              <button type="button" class="ghost game-spectate-btn" data-with-map="1">Assistir com mapa</button>
+              <button type="button" class="ghost game-spectate-btn" data-with-map="0">Assistir sem mapa</button>
             </div>
           </div>
 

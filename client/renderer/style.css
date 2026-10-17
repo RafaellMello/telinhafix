@@ -2010,11 +2010,61 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .game-slot-value { font-size: calc(14px * var(--font-scale)); font-weight: 700; }
 
 .game-agents-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+
+/* "Time" Espectadores: card neutro (cinza) embaixo dos times no lobby e
+   painel pequeno na coluna direita durante a partida. */
+.game-spectators-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 3px solid var(--text-muted);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.game-spectators-head { display: flex; flex-direction: column; gap: 2px; }
+.game-spectators-head h3 {
+  margin: 0;
+  font-size: calc(13px * var(--font-scale));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+.game-spectators-head .settings-hint { margin: 0; }
+.game-spectators-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.game-spectators-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 700;
+}
+.game-spectators-list li.game-agents-empty { background: none; padding: 0; font-weight: 400; }
+.game-spectator-tag { font-size: calc(10px * var(--font-scale)); font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.game-spectators-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.game-spectators-panel {
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+.game-spectate-toggle { align-self: flex-start; padding: 4px 10px; font-size: calc(12px * var(--font-scale)); }
 .game-agents-list li { font-size: calc(13px * var(--font-scale)); }
 .game-agents-empty { color: var(--text-muted); font-style: italic; }
 
-.game-pick-btn { font-size: calc(11px * var(--font-scale)); padding: 8px 10px; }
-.game-pick-btn.selected { border-color: var(--red-bright); color: var(--red-bright); }
+.game-pick-btn,
+.game-spectate-btn { font-size: calc(11px * var(--font-scale)); padding: 8px 10px; }
+.game-pick-btn.selected,
+.game-spectate-btn.selected { border-color: var(--red-bright); color: var(--red-bright); }
 
 .game-lobby-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
 .game-error { color: var(--red-bright); }
