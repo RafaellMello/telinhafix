@@ -4,6 +4,17 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.7.0',
+    date: '17/10/2026',
+    title: 'Codenames: palavras de Counter-Strike e Espectadores',
+    items: [
+      'Nova escolha de "Palavras" no lobby do Codenames: Normal ou Counter-Strike (armas, mapas, gírias, patentes, jogadores e callouts da Mirage).',
+      'Novo "time" Espectadores no lobby do Codenames, pra quem só quer assistir.',
+      'O espectador escolhe assistir com mapa (vê a cor de todas as cartas, como os mestres-espiões) ou sem mapa - e pode trocar no meio da partida.',
+      'Espectadores ficam de fora do "Sortear times" e só entram num time pelo lobby.',
+    ],
+  },
+  {
     version: '3.6.3',
     date: '17/10/2026',
     title: 'Ajustes visuais',

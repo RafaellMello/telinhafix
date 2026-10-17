@@ -320,6 +320,28 @@ const CODENAMES_WORDS = [
   'MILIONÁRIO', 'CAPITÃO', 'PARAQUEDAS', 'LATA', 'JULGAMENTO', 'GARRA', 'BACON',
 ];
 
+// Categoria "Counter-Strike" (escolhida no lobby): armas, mapas, girias,
+// patentes, jogadores e callouts da Mirage. A "Normal" e a CODENAMES_WORDS.
+const CODENAMES_CS_WORDS = [
+  'AK-47', 'M4A4', 'M4A1-S', 'AWP', 'DEAGLE', 'GLOCK', 'USP-S', 'P250', 'FIVE-SEVEN', 'TEC-9', 'CZ75',
+  'BERETAS', 'P2000', 'FAMAS', 'GALIL', 'AUG', 'SG553', 'SSG08', 'TECO-TECO', 'MP9', 'MAC-10', 'MP7',
+  'MP5-SD', 'UMP45', 'P90', 'PP-BIZON', 'NOVA', 'XM1014', 'MAG-7', 'SAWED-OFF', 'M249', 'NEGEV', 'ZEUS',
+  'KEVLAR', 'CAPACETE', 'GRANADA', 'FLASHBANG', 'SMOKE', 'MOLOTOV', 'C4', 'DEFUSE', 'KIT', 'HEADSHOT',
+  'VARADO', 'PREFIRE', 'SPRAY', 'FLICK', 'CLUTCH', 'ACE', 'ONE-TAP', 'NOSCOPE', 'RELOAD', 'PISTOL',
+  'OVERPASS', 'MIRAGE', 'INFERNO', 'DUST2', 'NUKE', 'ANCIENT', 'ANUBIS', 'VERTIGO', 'TRAIN', 'CACHE',
+  'COBBLESTONE', 'OFFICE', 'SHORTDUST', 'FACEIT', 'PREMIER', 'WINGMAN', 'DEATHMATCH', 'RETAKES',
+  'CORRIDA-ARMADA', 'MM', 'ELO', 'RATING', 'RANK', 'GLOBAL', 'ÁGUIA', 'XERIFE', 'PRATA', 'OURO', 'SMURF',
+  'PEZINHO', 'HACKER', 'BAN', 'REPORT', 'DEMO', 'PING', 'LAG', 'FPS', 'IGL', 'ENTRYFRAGGER', 'AWPER',
+  'LURKER', 'SUPPORT', 'COACH', 'BAITER', 'TOPFRAG', 'BOTTOMFRAG', 'MVP', 'KDA', 'BOT', 'NOOB', 'TRYHARD',
+  'AFK', 'DISCONNECT', 'KICK', 'FALLEN', 'COLDZERA', 'FER', 'KSCERATO', 'BOLTZ', 'TAPETE', 'VAN', 'FOREST',
+  'NINJA', 'B', 'SOMBRA', 'COZINHA', 'MERCADO', 'TV', 'L', 'RATO', 'MOSCOW', 'ESQUINA', 'CARROÇA', 'JANELÃO',
+  'BANCO', 'CADEIRA', 'BASE TR', 'LIGA', 'CABECINHA', 'SANDUÍCHE', 'TETRIS', 'CAVERNA', 'AREIA',
+  'CAIXA FOGO', 'A', 'NEWBA', 'BASE CT',
+];
+
+const CODENAMES_CATEGORIES = { normal: CODENAMES_WORDS, cs: CODENAMES_CS_WORDS };
+const DEFAULT_CODENAMES_CATEGORY = 'normal';
+
 // roomId -> estado do minijogo "Codigo Secreto" (ver mais abaixo). So existe
 // enquanto a sala em si existir - criado sob demanda, apagado junto com ela.
 const codenamesGames = new Map();
@@ -363,6 +385,7 @@ function createCodenamesGame(roomId) {
     status: 'lobby', // lobby | playing | over
     round: 0,
     mode: DEFAULT_GAME_MODE,
+    category: DEFAULT_CODENAMES_CATEGORY, // de onde vem as palavras (ver CODENAMES_CATEGORIES)
     board: [], // [{ word, team: 'red'|'blue'|'green'|'neutral'|'assassin', revealed }]
     currentTeam: null,
     eliminated: [], // times que caíram num assassino no modo ffa3 - fora da rodada, mas o jogo continua pros outros
@@ -383,6 +406,10 @@ function createCodenamesGame(roomId) {
     vacated: [], // [{ name, team, role }] de quem caiu com a partida rolando - volta pro lugar se reconectar
     marks: {}, // socketId do agente -> indice da carta que ele esta apontando (o time todo ve)
     clueHistory: [], // [{ team, word, number, hits, targets }] - targets so aparece no fim da partida
+    // "Time" Espectadores: so assiste, fica fora do "Sortear times".
+    // socketId -> true (assiste COM o mapa secreto, como os mestres-espioes)
+    // ou false (sem mapa, so as cartas reveladas, como um agente).
+    spectators: {},
   };
 }
 
@@ -460,7 +487,7 @@ function removeFromGameTeams(game, socketId) {
   }
 }
 
-function generateBoard(mode, startingTeam) {
+function generateBoard(mode, startingTeam, category) {
   let counts;
   if (mode === 'ffa3') {
     // 2x2x2 (pedido do Rafael): 9 do time que comeca, 8 de cada um dos
@@ -475,7 +502,7 @@ function generateBoard(mode, startingTeam) {
   Object.entries(counts).forEach(([team, count]) => {
     for (let i = 0; i < count; i++) teamsArr.push(team);
   });
-  const words = shuffle(CODENAMES_WORDS).slice(0, teamsArr.length);
+  const words = shuffle(CODENAMES_CATEGORIES[category] || CODENAMES_WORDS).slice(0, teamsArr.length);
   const shuffledTeams = shuffle(teamsArr);
   // Foto que aparece na carta quando ela e revelada - sorteada aqui pra
   // todo mundo ver a MESMA foto na mesma carta. Numeros 0-24 embaralhados
@@ -533,7 +560,7 @@ function startNewGameRound(game) {
   clearAnswerTimer(game);
   const teams = GAME_MODES[game.mode].teams;
   const startingTeam = teams[Math.floor(Math.random() * teams.length)];
-  game.board = generateBoard(game.mode, startingTeam);
+  game.board = generateBoard(game.mode, startingTeam, game.category);
   // Identifica ESTE tabuleiro. O "round" volta pra 1 quando a sala volta
   // pro lobby (jogo novo), entao nao serve pra saber se um mapa secreto
   // guardado no app e deste tabuleiro ou de uma partida anterior.
@@ -572,10 +599,11 @@ function publicGameState(roomId) {
   const game = codenamesGames.get(roomId);
   if (!game) {
     return {
-      status: 'lobby', round: 0, mode: DEFAULT_GAME_MODE, board: [], currentTeam: null, eliminated: [], phase: null, clue: null,
+      status: 'lobby', round: 0, mode: DEFAULT_GAME_MODE, category: DEFAULT_CODENAMES_CATEGORY, board: [], currentTeam: null, eliminated: [], phase: null, clue: null,
       teams: emptyTeams(DEFAULT_GAME_MODE),
       winner: null, winReason: null, remaining: { red: 0, blue: 0 }, log: [],
       clueGivenAt: null, answerTimeMs: null, phaseEndsInMs: null, timeoutSeq: 0, lastTimeout: null, hostId: null, marks: {}, clueHistory: [],
+      spectators: [],
     };
   }
   const teams = GAME_MODES[game.mode].teams;
@@ -588,6 +616,7 @@ function publicGameState(roomId) {
     round: game.round,
     boardId: game.boardId || null,
     mode: game.mode,
+    category: game.category,
     // No fim da partida todo mundo ve a cor de todas as cartas.
     board: game.board.map((c) => {
       const visible = c.revealed || game.status === 'over';
@@ -628,6 +657,12 @@ function publicGameState(roomId) {
     })),
     lastTimeout: game.lastTimeout,
     hostId: game.hostId,
+    spectators: (() => {
+      const room = rooms.get(roomId);
+      return Object.entries(game.spectators)
+        .filter(([id]) => room && room.has(id))
+        .map(([id, withMap]) => ({ id, name: room.get(id).name || 'Jogador', withMap }));
+    })(),
   };
 }
 
@@ -654,6 +689,7 @@ function codenamesAdminView(roomId) {
     eliminated: pub.eliminated,
     winner: pub.winner,
     teams: pub.teams,
+    spectators: pub.spectators,
     phaseEndsInMs: pub.phaseEndsInMs,
     hostName: (game.hostId && room && room.get(game.hostId) && room.get(game.hostId).name) || null,
     board: game.board.map((c) => ({ word: c.word, team: c.team, revealed: c.revealed })),
@@ -1143,7 +1179,10 @@ io.on('connection', (socket) => {
     const old = codenamesGames.get(roomId);
     if (!old) { if (ack) ack({ ok: false, error: 'Sem partida nessa sala' }); return; }
     clearAnswerTimer(old);
-    codenamesGames.set(roomId, createCodenamesGame(roomId));
+    const fresh = createCodenamesGame(roomId);
+    fresh.spectators = old.spectators;
+    fresh.category = old.category;
+    codenamesGames.set(roomId, fresh);
     broadcastGameState(roomId);
     if (ack) ack({ ok: true });
   });
@@ -1305,6 +1344,11 @@ io.on('connection', (socket) => {
       return;
     }
     const role = playerGameRole(game, socket.id);
+    // Espectador que escolheu "assistir com mapa" tambem recebe o mapa.
+    if (!role && game.spectators[socket.id] === true) {
+      if (ack) ack({ ok: true, round: game.round, boardId: game.boardId, map: game.board.map((c) => c.team) });
+      return;
+    }
     if (!role || role.role !== 'spymaster') {
       if (ack) ack({ ok: false, error: 'Só o Mestre-Espião vê o mapa secreto' });
       return;
@@ -1331,6 +1375,19 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
+  // Categoria das palavras (Normal / Counter-Strike) - mesma regra do modo:
+  // qualquer um troca, so fora da partida. Vale pro proximo tabuleiro.
+  socket.on('game-set-category', (data, ack) => {
+    const { category } = data || {};
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = getOrCreateGame(currentRoom);
+    if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra trocar as palavras com a partida em andamento' }); return; }
+    if (!CODENAMES_CATEGORIES[category]) { if (ack) ack({ ok: false, error: 'Categoria inválida' }); return; }
+    game.category = category;
+    broadcastGameState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
   socket.on('game-set-role', (data, ack) => {
     const { team, role } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
@@ -1350,6 +1407,7 @@ io.on('connection', (socket) => {
     }
     const lobbyWasEmpty = validTeams.every((t) => !game.teams[t].spymaster && game.teams[t].agents.length === 0);
     removeFromGameTeams(game, socket.id);
+    delete game.spectators[socket.id]; // escolheu um time: deixa de ser espectador
     if (role === 'spymaster') game.teams[team].spymaster = socket.id;
     else game.teams[team].agents.push(socket.id);
     if (!game.joinOrder.includes(socket.id)) game.joinOrder.push(socket.id);
@@ -1376,7 +1434,8 @@ io.on('connection', (socket) => {
       return;
     }
     const room = rooms.get(currentRoom);
-    const people = shuffle(Array.from(room ? room.keys() : []));
+    // Quem esta em Espectadores fica de fora do sorteio.
+    const people = shuffle(Array.from(room ? room.keys() : []).filter((id) => !(id in game.spectators)));
     const teams = GAME_MODES[game.mode].teams;
     const maxAgents = GAME_MODES[game.mode].maxAgents;
     game.teams = emptyTeams(game.mode);
@@ -1396,10 +1455,34 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true });
   });
 
+  // Entrar em Espectadores (com ou sem o mapa secreto). Da pra virar
+  // espectador ou trocar com/sem mapa a qualquer hora - mas quem esta num
+  // time so sai dele no lobby (com a partida rolando o time ficaria
+  // desfalcado), e espectador so entra num time no lobby (ver game-set-role).
+  socket.on('game-set-spectator', (data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const game = getOrCreateGame(currentRoom);
+    if (playerGameRole(game, socket.id)) {
+      if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra sair da equipe com a partida em andamento' }); return; }
+      removeFromGameTeams(game, socket.id);
+      delete game.marks[socket.id];
+    }
+    game.spectators[socket.id] = !!(data && data.withMap);
+    broadcastGameState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
   socket.on('game-leave-role', (_data, ack) => {
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = codenamesGames.get(currentRoom);
     if (!game) { if (ack) ack({ ok: true }); return; }
+    // Sair de Espectadores pode a qualquer hora (nao desfalca ninguem).
+    if (socket.id in game.spectators) {
+      delete game.spectators[socket.id];
+      broadcastGameState(currentRoom);
+      if (ack) ack({ ok: true });
+      return;
+    }
     if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra sair da equipe com a partida em andamento' }); return; }
     removeFromGameTeams(game, socket.id);
     broadcastGameState(currentRoom);
@@ -1454,7 +1537,12 @@ io.on('connection', (socket) => {
       return;
     }
     if (oldGame) clearAnswerTimer(oldGame);
-    codenamesGames.set(currentRoom, createCodenamesGame(currentRoom));
+    const fresh = createCodenamesGame(currentRoom);
+    if (oldGame) {
+      fresh.spectators = oldGame.spectators; // quem escolheu so assistir continua assistindo
+      fresh.category = oldGame.category; // e as palavras escolhidas continuam as mesmas
+    }
+    codenamesGames.set(currentRoom, fresh);
     broadcastGameState(currentRoom);
     if (ack) ack({ ok: true });
   });
@@ -1798,6 +1886,7 @@ io.on('connection', (socket) => {
           }
           removeFromGameTeams(game, socket.id);
           delete game.marks[socket.id];
+          delete game.spectators[socket.id];
           if (game.hostId === socket.id) game.hostId = pickNextHost(game, currentRoom, socket.id);
           // O time da vez ficou sem quem precisa agir AGORA (mestre-espiao na
           // fase de pista, ou nenhum agente): pula a vez na hora. Se so o

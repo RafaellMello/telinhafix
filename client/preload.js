@@ -155,11 +155,19 @@ contextBridge.exposeInMainWorld('game', {
   setMode(mode) {
     return emitAck('game-set-mode', { mode });
   },
+  // Categoria das palavras do tabuleiro: 'normal' | 'cs'.
+  setCategory(category) {
+    return emitAck('game-set-category', { category });
+  },
   setRole(team, role) {
     return emitAck('game-set-role', { team, role });
   },
   leaveRole() {
     return emitAck('game-leave-role', null);
+  },
+  // Entrar em Espectadores: withMap = ve o mapa secreto (como os mestres).
+  setSpectator(withMap) {
+    return emitAck('game-set-spectator', { withMap: !!withMap });
   },
   start() {
     return emitAck('game-start', null);
