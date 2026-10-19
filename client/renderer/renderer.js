@@ -1449,6 +1449,9 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
     hiddenOverlay.className = 'tile-hidden-overlay';
     hiddenOverlay.textContent = 'Transmissão oculta — clique com o botão direito para mostrar de novo';
     tile.appendChild(hiddenOverlay);
+    // Voce tinha ocultado essa pessoa e ela voltou a transmitir: a tile nova
+    // ja nasce oculta (o som tambem fica cortado - ver applyGain).
+    if (hiddenPeers.has(peerId)) tile.classList.add('content-hidden');
 
     tile.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -1553,9 +1556,15 @@ function removeVideoTile(peerId) {
     disconnectRemoteGain(gainEntry);
     remoteGainNodes.delete(peerId);
   }
+  // peerVolumes e hiddenPeers NAO sao apagados: se a pessoa parar e voltar a
+  // transmitir (ou trocar tela <-> camera), continua com o volume/mudo que
+  // voce escolheu e continua OCULTA (sem imagem e sem som) se voce ocultou.
+  // So esquece quando ela sai da sala (forgetPeerAudioPrefs) ou voce sai.
+}
+
+function forgetPeerAudioPrefs(peerId) {
+  peerVolumes.delete(peerId);
   hiddenPeers.delete(peerId);
-  // peerVolumes NAO e apagado: se a pessoa voltar a transmitir, continua com
-  // o volume (ou o mudo) que voce tinha escolhido pra ela.
 }
 
 // Mostra/esconde o aviso de "reconectando" numa tile - a pessoa continua
@@ -4260,6 +4269,7 @@ btnJoin.addEventListener('click', async () => {
       updateSelfAudienceLabel();
       removeParticipantRow(peerId);
       removeVideoTile(peerId);
+      forgetPeerAudioPrefs(peerId);
       addChatSystemMessage(`${leftName} saiu da sala`);
       playLeaveSound();
     });

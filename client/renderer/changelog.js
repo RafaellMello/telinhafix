@@ -4,6 +4,15 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.7.2',
+    date: '19/10/2026',
+    title: 'Ocultar transmissão de verdade',
+    items: [
+      'Transmissão oculta (botão direito) continua oculta e sem som mesmo se a pessoa parar e voltar a transmitir - só volta quando você mandar mostrar.',
+      'Com a transmissão oculta, o controle de volume continua clicável.',
+    ],
+  },
+  {
     version: '3.7.1',
     date: '19/10/2026',
     title: 'Mudo da live que sempre funciona',

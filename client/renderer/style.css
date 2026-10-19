@@ -1396,6 +1396,9 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 }
 
 .video-tile.content-hidden .tile-hidden-overlay { display: flex; }
+/* Com a transmissao oculta, o controle de volume fica POR CIMA do aviso -
+   antes ficava coberto e o mudo nao dava pra clicar. */
+.video-tile .volume-control { z-index: 6; }
 .video-tile.content-hidden video { visibility: hidden; }
 
 .tile-reconnecting-badge {
