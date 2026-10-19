@@ -398,21 +398,9 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .credit a:hover { text-decoration: underline; }
 
-/* "Dê uma sugestão ao dev" (embaixo do credito) e o modal dele */
-.credit .suggestion-link {
-  background: none;
-  border: none;
-  box-shadow: none;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.credit .suggestion-link:hover { color: var(--red-bright); filter: none; text-decoration: underline; }
+/* "Dê uma sugestão ao dev" (embaixo do credito) - mesmo formato do botao
+   "Procurar atualizações" (.login-check-updates) - e o modal dele */
+.login-suggestion { display: block; width: 100%; }
 .suggestion-panel { display: flex; flex-direction: column; gap: 6px; width: 440px; max-width: calc(100vw - 32px); }
 .suggestion-panel .settings-hint { margin: 0 0 4px; }
 .suggestion-panel textarea {
