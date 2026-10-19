@@ -664,6 +664,7 @@ function startNewGameRound(game) {
   game.boardId = require('crypto').randomBytes(8).toString('hex');
   game.round += 1;
   game.status = 'playing';
+  game.startedAt = Date.now(); // pra duracao da partida nos dashboards do admin
   game.currentTeam = startingTeam;
   game.eliminated = [];
   game.phase = 'clue';
@@ -764,6 +765,8 @@ function publicGameState(roomId) {
 }
 
 function broadcastGameState(roomId) {
+  const game = codenamesGames.get(roomId);
+  if (game && game.status === 'over') logCodenamesGame(game, false); // so registra 1x por tabuleiro
   io.to(roomId).emit('game-state', publicGameState(roomId));
   broadcastRoomsToAdmins(); // painel de admin mostra os jogos ao vivo
 }
@@ -932,6 +935,12 @@ function finalizeStopRound(roomId) {
   if (game.timer) { clearTimeout(game.timer); game.timer = null; }
   game.status = 'reveal';
   game.results = computeStopResults(game);
+  const now = Date.now();
+  logActivity({
+    type: 'stop', roomId, letter: game.letter, categories: game.categories.length,
+    players: game.results.perPlayer.map((p) => ({ name: p.name, total: p.total })),
+    start: game.startedAt || now, end: now, dur: now - (game.startedAt || now),
+  });
   broadcastStopState(roomId);
 }
 
@@ -1058,6 +1067,20 @@ function sketchPublicState(roomId) {
 }
 
 function broadcastSketchState(roomId) {
+  const game = sketchGames.get(roomId);
+  // Votacao encerrada: registra 1x por rodada pros dashboards do admin.
+  if (game && game.status === 'ended' && game.loggedRound !== game.round) {
+    game.loggedRound = game.round;
+    const room = rooms.get(roomId);
+    let votesA = 0; let votesB = 0;
+    const voters = [];
+    for (const [id, v] of game.votes) {
+      if (v === 'a') votesA += 1; else votesB += 1;
+      const n = room && room.get(id) && room.get(id).name;
+      if (n) voters.push(n);
+    }
+    logActivity({ type: 'sketch', roomId, author: game.authorName, optionA: game.optionA, optionB: game.optionB, votesA, votesB, voters });
+  }
   io.to(roomId).emit('sketch-state', sketchPublicState(roomId));
 }
 
@@ -1097,13 +1120,69 @@ function logPresence(type, name, roomId, version) {
   presenceLog.push({ id: `${serverStartedAt}-${++presenceSeq}`, t: Date.now(), type, name, roomId, version: version || null });
   if (presenceLog.length > 5000) presenceLog.splice(0, presenceLog.length - 5000);
 }
+
+// --- Atividade pros dashboards do painel admin --------------------------------
+// Eventos com duracao (sessao em call, transmissao) e resultados dos
+// minijogos. Ficam na memoria (o Render gratis apaga ao dormir/reiniciar),
+// entao cada evento tambem vai NA HORA pros paineis admin abertos, que
+// guardam no PC do admin (ver admin-client). Tipos:
+//   session   { name, roomId, version, start, end, dur, cut? }
+//   share     { name, roomId, mode: 'screen'|'screen-native'|'camera', start, end, dur, cut? }
+//   codenames { roomId, mode, category, winner, winReason, aborted, start, end, dur, players: [{ name, team, role }] }
+//   stop      { roomId, letter, categories, players: [{ name, total }], start, end, dur }
+//   sketch    { roomId, author, optionA, optionB, votesA, votesB, voters: [name] }
+// "cut" = o servidor desligou com a sessao/transmissao em andamento.
+const activityLog = [];
+let activitySeq = 0;
+const ACTIVITY_MAX = 20000;
+const SHARE_MODES = new Set(['screen', 'screen-native', 'camera']);
+
+function logActivity(event) {
+  const e = { id: `${serverStartedAt}-a${++activitySeq}`, t: Date.now(), ...event };
+  activityLog.push(e);
+  if (activityLog.length > ACTIVITY_MAX) activityLog.splice(0, activityLog.length - ACTIVITY_MAX);
+  adminSockets.forEach((s) => s.emit('admin-activity-event', e));
+  return e;
+}
+
+// Fecha a transmissao em andamento de alguem (se tiver) e registra a duracao.
+function endShareActivity(roomId, info, now, cut = false) {
+  if (!info || !info.shareMode || !info.shareStartedAt) return;
+  logActivity({ type: 'share', name: info.name, roomId, mode: info.shareMode, start: info.shareStartedAt, end: now, dur: now - info.shareStartedAt, ...(cut ? { cut: true } : {}) });
+  info.shareStartedAt = null;
+}
+
+function endSessionActivity(roomId, info, now, cut = false) {
+  if (!info || !info.joinedAt) return;
+  endShareActivity(roomId, info, now, cut);
+  logActivity({ type: 'session', name: info.name, roomId, version: info.version || null, start: info.joinedAt, end: now, dur: now - info.joinedAt, ...(cut ? { cut: true } : {}) });
+}
+
+function logCodenamesGame(game, aborted) {
+  if (!game || !game.boardId || game.loggedBoardId === game.boardId) return;
+  game.loggedBoardId = game.boardId;
+  const room = rooms.get(game.roomId);
+  const nameOf = (id) => (room && room.get(id) && room.get(id).name) || null;
+  const players = [];
+  for (const team of GAME_MODES[game.mode].teams) {
+    const t = game.teams[team];
+    if (t.spymaster && nameOf(t.spymaster)) players.push({ name: nameOf(t.spymaster), team, role: 'spymaster' });
+    t.agents.forEach((id) => { if (nameOf(id)) players.push({ name: nameOf(id), team, role: 'agent' }); });
+  }
+  const now = Date.now();
+  logActivity({
+    type: 'codenames', roomId: game.roomId, mode: game.mode, category: game.category || 'normal',
+    winner: aborted ? null : game.winner, winReason: aborted ? null : game.winReason, aborted: !!aborted,
+    start: game.startedAt || now, end: now, dur: now - (game.startedAt || now), players,
+  });
+}
 let peakRooms = 0;
 let peakParticipants = 0;
 
 function getPeersInRoom(roomId) {
   const room = rooms.get(roomId);
   if (!room) return [];
-  return Array.from(room.entries()).map(([id, info]) => ({ id, name: info.name, shareMode: info.shareMode || null, version: info.version || null, joinedAt: info.joinedAt || null }));
+  return Array.from(room.entries()).map(([id, info]) => ({ id, name: info.name, shareMode: info.shareMode || null, shareStartedAt: info.shareStartedAt || null, version: info.version || null, joinedAt: info.joinedAt || null }));
 }
 
 function getRoomsSnapshot() {
@@ -1224,6 +1303,14 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true, serverStartedAt, events: presenceLog });
   });
 
+  // Dashboards: tudo que o servidor registrou desde que ligou (since = so o
+  // que veio depois desse horario), pro painel guardar no PC do admin.
+  socket.on('admin-activity', (data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    const since = Number(data && data.since) || 0;
+    if (ack) ack({ ok: true, serverStartedAt, events: since ? activityLog.filter((e) => e.t > since) : activityLog });
+  });
+
   socket.on('admin-server-health', (_data, ack) => {
     if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
     const mem = process.memoryUsage();
@@ -1276,6 +1363,7 @@ io.on('connection', (socket) => {
     const old = codenamesGames.get(roomId);
     if (!old) { if (ack) ack({ ok: false, error: 'Sem partida nessa sala' }); return; }
     clearAnswerTimer(old);
+    if (old.status === 'playing') logCodenamesGame(old, true);
     const fresh = createCodenamesGame(roomId);
     fresh.spectators = old.spectators;
     fresh.category = old.category;
@@ -1414,9 +1502,17 @@ io.on('connection', (socket) => {
   // sala (inclusive espectadores invisiveis, mesmo padrao do join-room).
   socket.on('share-mode-changed', (data) => {
     if (!currentRoom) return;
-    const mode = (data && typeof data.mode === 'string') ? data.mode : null;
+    const mode = (data && typeof data.mode === 'string' && SHARE_MODES.has(data.mode)) ? data.mode : null;
     const room = rooms.get(currentRoom);
-    if (room && room.has(socket.id)) room.get(socket.id).shareMode = mode;
+    if (room && room.has(socket.id)) {
+      const info = room.get(socket.id);
+      // Trocou de modo (ou parou): fecha a transmissao anterior com a duracao.
+      if (info.shareMode !== mode) {
+        endShareActivity(currentRoom, info, Date.now());
+        info.shareStartedAt = mode ? Date.now() : null;
+      }
+      info.shareMode = mode;
+    }
     socket.to(currentRoom).emit('peer-share-mode', { id: socket.id, mode });
     const specs = spectatorsByRoom.get(currentRoom);
     if (specs) specs.forEach((id) => io.to(id).emit('peer-share-mode', { id: socket.id, mode }));
@@ -1634,6 +1730,7 @@ io.on('connection', (socket) => {
       return;
     }
     if (oldGame) clearAnswerTimer(oldGame);
+    if (oldGame && oldGame.status === 'playing') logCodenamesGame(oldGame, true); // encerrada antes do fim
     const fresh = createCodenamesGame(currentRoom);
     if (oldGame) {
       fresh.spectators = oldGame.spectators; // quem escolheu so assistir continua assistindo
@@ -1959,12 +2056,14 @@ io.on('connection', (socket) => {
     if (currentRoom && rooms.has(currentRoom)) {
       const leavingName = rooms.get(currentRoom).get(socket.id)?.name || 'Alguém';
       logPresence('leave', leavingName, currentRoom, rooms.get(currentRoom).get(socket.id)?.version);
+      endSessionActivity(currentRoom, rooms.get(currentRoom).get(socket.id), Date.now());
       rooms.get(currentRoom).delete(socket.id);
       const specs = spectatorsByRoom.get(currentRoom);
       if (rooms.get(currentRoom).size === 0) {
         rooms.delete(currentRoom);
         const deadGame = codenamesGames.get(currentRoom);
         if (deadGame) clearAnswerTimer(deadGame);
+        if (deadGame && deadGame.status === 'playing') logCodenamesGame(deadGame, true); // sala esvaziou no meio
         codenamesGames.delete(currentRoom);
         const stopGame = stopGames.get(currentRoom);
         if (stopGame && stopGame.timer) clearTimeout(stopGame.timer);
@@ -2022,3 +2121,20 @@ io.on('connection', (socket) => {
 httpServer.listen(PORT, () => {
   console.log(`Servidor de sinalizacao rodando na porta ${PORT}`);
 });
+
+// O Render manda SIGTERM antes de desligar (deploy novo ou o plano gratis
+// "dormindo"). Fecha as sessoes/transmissoes em andamento como "cut" e manda
+// pros paineis admin abertos guardarem - senao esse tempo se perderia.
+let shuttingDown = false;
+function flushActivityAndExit() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const now = Date.now();
+  for (const [roomId, room] of rooms) {
+    for (const info of room.values()) endSessionActivity(roomId, info, now, true);
+  }
+  for (const game of codenamesGames.values()) if (game.status === 'playing') logCodenamesGame(game, true);
+  setTimeout(() => process.exit(0), 1500).unref();
+}
+process.on('SIGTERM', flushActivityAndExit);
+process.on('SIGINT', flushActivityAndExit);
