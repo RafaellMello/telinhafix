@@ -438,10 +438,12 @@ function createWindow() {
     win.setFullScreen(false);
   });
 
-  // Libera o pedido de camera (getUserMedia) usado pela feature de webcam
-  // (bolinha composta por cima da tela).
+  // Libera so o que o app usa: camera (getUserMedia, bolinha da webcam) e
+  // tela cheia (botao de tela cheia / 2 cliques numa transmissao - no
+  // Electron isso tambem passa por aqui; negando, o requestFullscreen()
+  // ficava esperando pra sempre e o botao nao fazia nada).
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    callback(permission === 'media');
+    callback(permission === 'media' || permission === 'fullscreen');
   });
 
   // Trata os pedidos de navigator.mediaDevices.getDisplayMedia() feitos no

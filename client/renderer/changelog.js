@@ -4,6 +4,15 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.7.3',
+    date: '19/10/2026',
+    title: 'Tela cheia da transmissão de volta',
+    items: [
+      'Corrigido: o botão de tela cheia de uma transmissão (e os 2 cliques no vídeo) não fazia nada.',
+      'Esc sai da tela cheia da transmissão.',
+    ],
+  },
+  {
     version: '3.7.2',
     date: '19/10/2026',
     title: 'Ocultar transmissão de verdade',

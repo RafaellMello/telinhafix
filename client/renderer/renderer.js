@@ -1069,11 +1069,20 @@ function removeParticipantRow(id) {
 
 function toggleTileFullscreen(tile) {
   if (document.fullscreenElement === tile) {
-    document.exitFullscreen();
+    document.exitFullscreen().catch(() => {});
   } else {
     tile.requestFullscreen().catch((err) => console.error('Falha ao entrar em tela cheia:', err));
   }
 }
+
+// Esc sempre sai da tela cheia de uma transmissao - nao depende do Electron
+// tratar a tecla sozinho (a janela entra em tela cheia de verdade, ver
+// 'enter-html-full-screen' no main.js).
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.fullscreenElement && document.fullscreenElement.classList.contains('video-tile')) {
+    document.exitFullscreen().catch(() => {});
+  }
+});
 
 let focusedPeerId = null;
 
