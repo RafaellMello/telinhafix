@@ -4,15 +4,7 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
-    version: '3.8.1',
-    date: '19/10/2026',
-    title: 'Botão de sugestão com cara de botão',
-    items: [
-      '"Dê uma sugestão ao dev" agora é um botão igual ao "Procurar atualizações".',
-    ],
-  },
-  {
-    version: '3.8.0',
+    version: '3.8.2',
     date: '19/10/2026',
     title: 'Dê uma sugestão ao dev',
     items: [
