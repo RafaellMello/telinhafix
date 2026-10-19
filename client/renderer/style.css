@@ -398,6 +398,42 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .credit a:hover { text-decoration: underline; }
 
+/* "Dê uma sugestão ao dev" (embaixo do credito) e o modal dele */
+.credit .suggestion-link {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.credit .suggestion-link:hover { color: var(--red-bright); filter: none; text-decoration: underline; }
+.suggestion-panel { display: flex; flex-direction: column; gap: 6px; width: 440px; max-width: calc(100vw - 32px); }
+.suggestion-panel .settings-hint { margin: 0 0 4px; }
+.suggestion-panel textarea {
+  background: var(--bg);
+  border: 1px solid #2a2a2d;
+  color: var(--text);
+  padding: 9px 10px;
+  border-radius: var(--input-radius);
+  font-size: calc(14px * var(--font-scale));
+  font-family: var(--font-ui);
+  width: 100%;
+  resize: vertical;
+  min-height: 110px;
+}
+.suggestion-panel textarea:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(var(--red-rgb), 0.15); }
+.suggestion-meta { display: flex; justify-content: space-between; gap: 12px; min-height: 18px; font-size: calc(12px * var(--font-scale)); }
+.suggestion-count { color: var(--text-muted); flex-shrink: 0; }
+.suggestion-status { color: var(--text-muted); }
+.suggestion-status.suggestion-ok { color: #3ddc73; }
+.suggestion-status.suggestion-error { color: var(--red-bright); }
+
 /* Botao de configuracoes (engrenagem), fixo no canto da tela de login */
 #btn-settings {
   position: absolute;

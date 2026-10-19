@@ -97,6 +97,7 @@
       </div>
 
       <p class="credit">developed by: <a href="#" id="credit-link">bunny</a></p>
+      <p class="credit"><button type="button" id="btn-suggestion" class="suggestion-link">Dê uma sugestão ao dev</button></p>
     </div>
 
     <div id="members-right" class="members-col"></div>
@@ -639,6 +640,25 @@
         <button id="btn-camera-picker-cancel" class="ghost">Cancelar</button>
       </div>
     </div>
+  </div>
+
+  <div id="suggestion-overlay" class="settings-overlay hidden">
+    <form id="suggestion-form" class="settings-panel suggestion-panel" autocomplete="off">
+      <h2>Dê uma sugestão ao dev</h2>
+      <p class="settings-hint">Ideia, bug, reclamação, elogio - vai direto pro Bunny.</p>
+      <label for="suggestion-name">Nome</label>
+      <input id="suggestion-name" type="text" maxlength="20" placeholder="Seu nome" />
+      <label for="suggestion-text">Sugestão</label>
+      <textarea id="suggestion-text" maxlength="1000" rows="6" placeholder="Escreva sua sugestão..."></textarea>
+      <div class="suggestion-meta">
+        <span id="suggestion-status" class="suggestion-status" role="status"></span>
+        <span id="suggestion-count" class="suggestion-count">0/1000</span>
+      </div>
+      <div class="settings-footer">
+        <button id="btn-suggestion-cancel" type="button" class="ghost">Cancelar</button>
+        <button id="btn-suggestion-send" type="submit">Enviar</button>
+      </div>
+    </form>
   </div>
 
   <div id="native-monitor-picker-overlay" class="settings-overlay hidden">

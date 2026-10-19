@@ -4,6 +4,14 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.8.0',
+    date: '19/10/2026',
+    title: 'Dê uma sugestão ao dev',
+    items: [
+      'Novo botão "Dê uma sugestão ao dev" na tela de entrar, embaixo do "developed by": escreve seu nome e a sugestão e ela vai direto pro Bunny.',
+    ],
+  },
+  {
     version: '3.7.3',
     date: '19/10/2026',
     title: 'Tela cheia da transmissão de volta',

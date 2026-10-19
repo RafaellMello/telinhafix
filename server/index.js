@@ -92,6 +92,19 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // "De uma sugestao ao dev" (tela de entrar do app): POST /sugestao com
+  // { name, text, version } - repassa pro Google Forms do Bunny (ver
+  // SUGGESTION_FORM_PREFILL_URL). 1 por minuto por IP.
+  if (req.url === '/sugestao' && req.method === 'OPTIONS') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.end();
+    return;
+  }
+  if (req.url === '/sugestao' && req.method === 'POST') {
+    handleSuggestion(req, res);
+    return;
+  }
+
   // Pagina de convite: https://.../convite/<sala>. Links telinhafix:// nao
   // ficam clicaveis no Discord/WhatsApp (so http/https), entao o botao
   // "Convidar" do app copia ESTE link - a pagina abre o TelinhaFix ja com a
@@ -116,7 +129,91 @@ const httpServer = http.createServer((req, res) => {
   res.end('TelinhaFix signaling server ok');
 });
 
-const INVITE_LOGO_URL = 'https://raw.githubusercontent.com/RafaellMello/telinhafix/master/client/renderer/assets/logo.png';
+// --- Sugestoes -> Google Forms ----------------------------------------------
+// SUGGESTION_FORM_PREFILL_URL (variavel no Render) = o "link pre-preenchido"
+// do Google Forms, gerado com NOME no campo Nome e SUGESTAO no campo
+// Sugestao (e, se quiser, VERSAO num terceiro campo opcional). Daqui sai o
+// endereco de envio e o "entry.N" de cada campo - nada disso fica no codigo
+// (o repositorio e publico). Sem a variavel, /sugestao responde que nao
+// esta configurado. Toda sugestao tambem aparece no log do Render.
+function parseSuggestionForm(url) {
+  try {
+    const u = new URL(url);
+    const fields = {};
+    for (const [key, value] of u.searchParams) {
+      if (!key.startsWith('entry.')) continue;
+      const v = value.trim().toUpperCase();
+      if (v === 'NOME') fields.name = key;
+      else if (v === 'SUGESTAO' || v === 'SUGESTÃO') fields.text = key;
+      else if (v === 'VERSAO' || v === 'VERSÃO') fields.version = key;
+    }
+    if (!fields.name || !fields.text) return null;
+    return { action: u.origin + u.pathname.replace(/\/viewform$/, '/formResponse'), ...fields };
+  } catch {
+    return null;
+  }
+}
+const suggestionForm = parseSuggestionForm(process.env.SUGGESTION_FORM_PREFILL_URL || '');
+console.log(`[sugestao] Google Forms ${suggestionForm ? 'configurado' : 'NAO configurado'}`);
+const SUGGESTION_COOLDOWN_MS = 60 * 1000;
+const lastSuggestionByIp = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, at] of lastSuggestionByIp) if (now - at > SUGGESTION_COOLDOWN_MS) lastSuggestionByIp.delete(ip);
+}, 5 * 60 * 1000).unref();
+
+function sendJson(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+  res.end(JSON.stringify(body));
+}
+
+function handleSuggestion(req, res) {
+  let raw = '';
+  let tooBig = false;
+  req.on('data', (chunk) => {
+    raw += chunk;
+    if (raw.length > 8192) { tooBig = true; req.destroy(); }
+  });
+  req.on('end', async () => {
+    if (tooBig) return;
+    let body;
+    try { body = JSON.parse(raw); } catch { return sendJson(res, 400, { ok: false, error: 'Pedido inválido' }); }
+    const name = (typeof body.name === 'string' ? body.name : '').trim().slice(0, MAX_NAME_LEN) || 'Anônimo';
+    const text = (typeof body.text === 'string' ? body.text : '').trim().slice(0, 1000);
+    const version = (typeof body.version === 'string' ? body.version : '').slice(0, 20);
+    if (!text) return sendJson(res, 400, { ok: false, error: 'Escreve a sugestão antes de enviar.' });
+
+    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    const last = lastSuggestionByIp.get(ip) || 0;
+    const waitMs = last + SUGGESTION_COOLDOWN_MS - Date.now();
+    if (waitMs > 0) return sendJson(res, 429, { ok: false, error: `Calma! Dá pra mandar outra em ${Math.ceil(waitMs / 1000)}s.` });
+
+    console.log(`[sugestao] ${name} (v${version || '?'}): ${text.replace(/\s+/g, ' ')}`);
+    if (!suggestionForm) return sendJson(res, 503, { ok: false, error: 'As sugestões ainda não foram configuradas pelo dev.' });
+
+    lastSuggestionByIp.set(ip, Date.now());
+    const params = new URLSearchParams();
+    params.set(suggestionForm.name, name);
+    params.set(suggestionForm.text, text);
+    if (suggestionForm.version) params.set(suggestionForm.version, version);
+    try {
+      const r = await fetch(suggestionForm.action, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!r.ok) throw new Error(`Google Forms respondeu ${r.status}`);
+      sendJson(res, 200, { ok: true });
+    } catch (err) {
+      lastSuggestionByIp.delete(ip); // falhou do nosso lado: deixa tentar de novo
+      console.error('[sugestao] falha ao enviar pro Google Forms:', err.message);
+      sendJson(res, 502, { ok: false, error: 'Não deu pra enviar agora. Tenta de novo daqui a pouco.' });
+    }
+  });
+}
+
+const INVITE_LOGO_URL ='https://raw.githubusercontent.com/RafaellMello/telinhafix/master/client/renderer/assets/logo.png';
 const DOWNLOAD_URL = 'https://github.com/RafaellMello/telinhafix/releases/latest';
 
 function escapeHtml(text) {

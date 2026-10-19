@@ -4189,6 +4189,86 @@ document.getElementById('credit-link').addEventListener('click', (e) => {
   window.appLinks.openCredit();
 });
 
+// --- "Dê uma sugestão ao dev" ------------------------------------------------
+// Manda nome + sugestao pro servidor (POST /sugestao), que repassa pro Google
+// Forms do Bunny (ver server/index.js). Fica na tela de entrar, entao nao
+// usa o socket da sala - e uma chamada HTTP normal. 1 por minuto (o
+// servidor tambem confere).
+const SUGGESTION_COOLDOWN_MS = 60 * 1000;
+const SUGGESTION_MAX_LEN = 1000;
+let lastSuggestionSentAt = 0;
+let suggestionSending = false;
+const suggestionOverlay = document.getElementById('suggestion-overlay');
+const suggestionText = document.getElementById('suggestion-text');
+const suggestionName = document.getElementById('suggestion-name');
+
+function setSuggestionStatus(msg, kind) {
+  const el = document.getElementById('suggestion-status');
+  el.textContent = msg || '';
+  el.classList.toggle('suggestion-ok', kind === 'ok');
+  el.classList.toggle('suggestion-error', kind === 'error');
+}
+
+function updateSuggestionCount() {
+  document.getElementById('suggestion-count').textContent = `${suggestionText.value.length}/${SUGGESTION_MAX_LEN}`;
+}
+
+function openSuggestionModal() {
+  if (!suggestionName.value.trim()) {
+    suggestionName.value = (document.getElementById('display-name').value || '').trim().slice(0, 20);
+  }
+  setSuggestionStatus('');
+  updateSuggestionCount();
+  suggestionOverlay.classList.remove('hidden');
+  (suggestionName.value ? suggestionText : suggestionName).focus();
+}
+
+function closeSuggestionModal() {
+  if (suggestionSending) return;
+  suggestionOverlay.classList.add('hidden');
+}
+
+document.getElementById('btn-suggestion').addEventListener('click', openSuggestionModal);
+document.getElementById('btn-suggestion-cancel').addEventListener('click', closeSuggestionModal);
+suggestionOverlay.addEventListener('click', (e) => { if (e.target === suggestionOverlay) closeSuggestionModal(); });
+suggestionOverlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSuggestionModal(); });
+suggestionText.addEventListener('input', updateSuggestionCount);
+
+document.getElementById('suggestion-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (suggestionSending) return;
+  const name = suggestionName.value.trim().slice(0, 20);
+  const text = suggestionText.value.trim().slice(0, SUGGESTION_MAX_LEN);
+  if (!text) { setSuggestionStatus('Escreve a sugestão antes de enviar.', 'error'); suggestionText.focus(); return; }
+  const waitMs = lastSuggestionSentAt + SUGGESTION_COOLDOWN_MS - Date.now();
+  if (waitMs > 0) { setSuggestionStatus(`Calma! Dá pra mandar outra em ${Math.ceil(waitMs / 1000)}s.`, 'error'); return; }
+
+  const sendBtn = document.getElementById('btn-suggestion-send');
+  suggestionSending = true;
+  sendBtn.disabled = true;
+  setSuggestionStatus('Enviando... (pode demorar se o servidor estava dormindo)');
+  try {
+    const res = await fetch(`${DEFAULT_SERVER_URL}/sugestao`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, text, version: window.appInfo.version }),
+      signal: AbortSignal.timeout(90 * 1000),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || `Erro ${res.status}`);
+    lastSuggestionSentAt = Date.now();
+    suggestionText.value = '';
+    updateSuggestionCount();
+    setSuggestionStatus('Valeu! Sua sugestão foi enviada pro dev.', 'ok');
+  } catch (err) {
+    const msg = err && err.name === 'TimeoutError' ? 'O servidor demorou demais pra responder. Tenta de novo daqui a pouco.' : (err.message || 'Não deu pra enviar.');
+    setSuggestionStatus(msg, 'error');
+  } finally {
+    suggestionSending = false;
+    sendBtn.disabled = false;
+  }
+});
+
 document.getElementById('build-version').textContent = `build (${window.appInfo.version})`;
 
 document.getElementById('btn-check-updates').addEventListener('click', () => {
