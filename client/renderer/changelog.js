@@ -4,6 +4,16 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.7.1',
+    date: '19/10/2026',
+    title: 'Mudo da live que sempre funciona',
+    items: [
+      'Corrigido: depois de sair e entrar de novo numa sala (ou trocar de sala pelo convite), o mudo e o volume da live de alguém não faziam nada.',
+      'Se você mutar alguém e essa pessoa parar e voltar a transmitir, ela continua mutada (e com o volume que você escolheu).',
+      'O botão de mudo não fica mais "travado" enquanto o app silencia os outros pra evitar eco - o que você escolher vale quando parar de compartilhar.',
+    ],
+  },
+  {
     version: '3.7.0',
     date: '17/10/2026',
     title: 'Codenames: palavras de Counter-Strike e Espectadores',

@@ -1179,7 +1179,16 @@ function updateSelfAudienceLabel() {
 // enquanto VOCE esta compartilhando (senao o que toca nas suas caixas de
 // som entra na sua propria captura de sistema e vira eco pros outros).
 let sharedAudioCtx = null;
-const remoteGainNodes = new Map(); // peerId -> { gainNode, sliderValue, video }
+const remoteGainNodes = new Map(); // peerId -> { gainNode, sourceNode, track, sliderValue }
+// Volume que voce escolheu pra cada pessoa (0-200) - guardado a parte do
+// GainNode pra sobreviver a tile ser refeita (a pessoa parou e voltou a
+// transmitir) e pra valer mesmo se voce mexer antes do audio chegar.
+// Esquecido ao sair da sala.
+const peerVolumes = new Map(); // peerId -> { value, lastVolume }
+
+function peerVolumeOf(peerId) {
+  return peerVolumes.get(peerId) || { value: 100, lastVolume: 100 };
+}
 
 // Mudo geral (atalho global Ctrl+Alt+M) - corta o audio de todo mundo de uma
 // vez sem mexer nos sliders individuais de cada um, pra nao perder o volume
@@ -1260,17 +1269,40 @@ function getSharedAudioContext() {
 //
 // Como a track passa a ser consumida por DOIS lugares ao mesmo tempo (o
 // <video>, que mostra a imagem, e esse source node, que cuida do audio),
-// o <video> fica mudo (video.muted = true) pra nao tocar o audio dele
-// tambem por fora do nosso GainNode - senao ficaria dobrado.
+// o <video> fica SEMPRE mudo (ver getOrCreateVideoTile) - o audio so sai
+// pelo GainNode, entao o mudo/slider da tile sempre tem efeito.
+//
+// Se ja existe um GainNode pra essa pessoa mas ligado em OUTRA track (ela
+// voltou a transmitir, a conexao renegociou), refaz ligado na track nova -
+// antes ele so retornava e o controle ficava preso numa track velha: ao
+// sair e entrar de novo na sala, o audio tocava direto pelo <video> e o
+// mudo nao fazia nada.
 function wireRemoteAudioGain(peerId, video, audioTrack) {
-  if (remoteGainNodes.has(peerId)) return;
   video.muted = true;
+  const existing = remoteGainNodes.get(peerId);
+  if (existing && existing.track === audioTrack) { applyGain(peerId); return; }
+  if (existing) disconnectRemoteGain(existing);
   const audioCtx = getSharedAudioContext();
   const sourceNode = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
   const gainNode = audioCtx.createGain();
   sourceNode.connect(gainNode).connect(audioCtx.destination);
-  remoteGainNodes.set(peerId, { gainNode, sliderValue: 100 });
+  remoteGainNodes.set(peerId, { gainNode, sourceNode, track: audioTrack, sliderValue: peerVolumeOf(peerId).value });
   applyGain(peerId);
+}
+
+function disconnectRemoteGain(entry) {
+  try { entry.sourceNode && entry.sourceNode.disconnect(); } catch {}
+  try { entry.gainNode.disconnect(); } catch {}
+}
+
+// Ao sair da sala: desliga todos os controles de volume (senao, ao voltar,
+// os ids de quem continuou na sala sao os mesmos e o app achava que ja
+// estava tudo ligado) e esquece volumes/ocultacoes da sala anterior.
+function resetRemoteAudio() {
+  for (const entry of remoteGainNodes.values()) disconnectRemoteGain(entry);
+  remoteGainNodes.clear();
+  peerVolumes.clear();
+  hiddenPeers.clear();
 }
 
 // Enquanto voce compartilha com audio do sistema, o som que o TelinhaFix
@@ -1306,12 +1338,14 @@ function applyGain(peerId) {
 // voce compartilha com audio do sistema (ver suppressForEcho em applyGain) -
 // sem isso parece um controle quebrado, mexe e o volume de quem voce ta
 // ouvindo nao muda nadinha.
+const SUPPRESSED_VOLUME_TITLE = 'Você não está ouvindo os outros enquanto compartilha com áudio do sistema (evita eco). O volume e o mudo que você escolher valem quando parar.';
+
 function updateVolumeControlsSuppressedState() {
   const suppressed = isRemoteAudioSuppressedForEcho();
   document.querySelectorAll('.volume-control').forEach((el) => {
     el.classList.toggle('volume-control-suppressed', suppressed);
     el.title = suppressed
-      ? 'Desativado enquanto você compartilha com áudio do sistema (evita eco pra quem assiste)'
+      ? SUPPRESSED_VOLUME_TITLE
       : '';
   });
 }
@@ -1340,9 +1374,11 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
   const video = document.createElement('video');
   video.autoplay = true;
   video.playsInline = true;
-  // Sem isso, quem compartilha ouviria o proprio audio capturado tocando
-  // de volta pelas caixas de som dele mesmo (eco).
-  if (isSelf) video.muted = true;
+  // Sempre mudo: na sua tile, senao voce ouviria o proprio audio capturado
+  // (eco); nas dos outros, porque o audio deles toca SO pelo controle de
+  // volume (wireRemoteAudioGain) - se o <video> tocasse tambem, o mudo da
+  // tile nao teria efeito nenhum.
+  video.muted = true;
 
   const labelEl = document.createElement('div');
   labelEl.className = 'label';
@@ -1448,16 +1484,15 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
     slider.type = 'range';
     slider.min = '0';
     slider.max = '200';
-    slider.value = '100';
     slider.title = 'Ate 200% - passar de 100% amplifica alem do volume original';
     slider.className = 'volume-slider';
-    updateSliderFill(slider);
 
-    // Volume lembrado de antes de mutar pelo icone, pra restaurar o mesmo
-    // nivel ao desmutar (em vez de sempre voltar pra 100%).
-    let lastVolume = 100;
-
+    // O volume fica guardado por pessoa (peerVolumes), nao so no GainNode:
+    // vale mesmo se voce mutar antes do audio chegar, e continua igual se a
+    // pessoa parar e voltar a transmitir (a tile e refeita do zero).
     function setVolume(pct) {
+      const saved = peerVolumeOf(peerId);
+      peerVolumes.set(peerId, { value: pct, lastVolume: pct > 0 ? pct : saved.lastVolume });
       slider.value = String(pct);
       const entry = remoteGainNodes.get(peerId);
       if (entry) {
@@ -1469,18 +1504,16 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
       icon.title = muted ? 'Desmutar' : 'Mutar';
       updateSliderFill(slider);
     }
+    setVolume(peerVolumeOf(peerId).value);
 
-    slider.addEventListener('input', () => {
-      const pct = Number(slider.value);
-      if (pct > 0) lastVolume = pct;
-      setVolume(pct);
-    });
+    slider.addEventListener('input', () => setVolume(Number(slider.value)));
     slider.addEventListener('click', (e) => e.stopPropagation());
 
     icon.addEventListener('click', (e) => {
       e.stopPropagation();
       const isMuted = Number(slider.value) === 0;
-      setVolume(isMuted ? (lastVolume || 100) : 0);
+      // Volume de antes de mutar, pra voltar no mesmo nivel (nao sempre 100%).
+      setVolume(isMuted ? (peerVolumeOf(peerId).lastVolume || 100) : 0);
     });
 
     volumeRow.appendChild(icon);
@@ -1494,7 +1527,7 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
     const suppressedNow = isRemoteAudioSuppressedForEcho();
     volumeRow.classList.toggle('volume-control-suppressed', suppressedNow);
     volumeRow.title = suppressedNow
-      ? 'Desativado enquanto você compartilha com áudio do sistema (evita eco pra quem assiste)'
+      ? SUPPRESSED_VOLUME_TITLE
       : '';
   }
 
@@ -1517,10 +1550,12 @@ function removeVideoTile(peerId) {
   if (focusedPeerId === peerId) setFocus(peerId);
   const gainEntry = remoteGainNodes.get(peerId);
   if (gainEntry) {
-    gainEntry.gainNode.disconnect();
+    disconnectRemoteGain(gainEntry);
     remoteGainNodes.delete(peerId);
   }
   hiddenPeers.delete(peerId);
+  // peerVolumes NAO e apagado: se a pessoa voltar a transmitir, continua com
+  // o volume (ou o mudo) que voce tinha escolhido pra ela.
 }
 
 // Mostra/esconde o aviso de "reconectando" numa tile - a pessoa continua
@@ -3881,6 +3916,7 @@ async function leaveRoom() {
   peers.clear();
   peerNames.clear();
   assignedAvatars.clear();
+  resetRemoteAudio();
   masterMuted = false;
   updateMuteAllButton();
   videoGrid.innerHTML = '';

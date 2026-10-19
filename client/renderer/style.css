@@ -1329,16 +1329,13 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   pointer-events: auto;
 }
 
-/* Enquanto voce compartilha com audio do sistema, o ganho de todo mundo
-   fica forcado em 0 pra nao vazar eco (ver suppressForEcho em applyGain,
-   no renderer.js) - sem isso o slider continuava "mexivel" mas sem efeito
-   nenhum no som, parecendo quebrado. Ainda aparece ao passar o mouse
-   (pra dar pra ler o titulo explicando o motivo), so que sem reagir. */
+/* Enquanto o app silencia os outros por risco de eco (ver
+   isRemoteAudioSuppressedForEcho no renderer.js), o controle fica apagado
+   mas CONTINUA clicavel - antes ele nao reagia a clique nenhum e parecia
+   quebrado. O volume/mudo escolhido fica guardado e vale quando parar. */
 .volume-control.volume-control-suppressed .volume-icon,
 .volume-control.volume-control-suppressed .volume-slider {
-  opacity: 0.4;
-  pointer-events: none;
-  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .volume-icon {
