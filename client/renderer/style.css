@@ -791,7 +791,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   flex-wrap: wrap;
 }
 
-.mode-option, .border-option, .sound-option, .hotkeys-option, .priority-option, .background-option, .game-mode-option {
+.mode-option, .border-option, .sound-option, .hotkeys-option, .priority-option, .background-option, .game-mode-option, .volume-style-option {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 8px;
@@ -802,7 +802,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 700;
 }
 
-.mode-option.selected, .border-option.selected, .sound-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected, .game-mode-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.mode-option.selected, .border-option.selected, .sound-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected, .game-mode-option.selected, .volume-style-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 .game-mode-option:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .settings-hint {
@@ -1329,80 +1329,252 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   height: 100%;
 }
 
+/* Controle de volume de cada transmissao (createVolumeControl no renderer).
+   Dois visuais do MESMO controle, escolhidos em Configuracoes > Sons:
+   "abre" (padrao) = botao redondo que se abre mostrando uma linha fina;
+   "degraus" (.volume-style-degraus no <html>) = 10 barrinhas de 20%.
+   Linha e barrinhas na mesma escala 0-200%: branco ate 100%, ambar acima
+   (amplificando), com marca no 100%. Aparece ao passar o mouse na
+   transmissao - e fica sempre a vista quando a pessoa esta mutada. */
 .volume-control {
+  --vol-fill: #ffffff;
+  --vol-track: rgba(255, 255, 255, 0.18);
+  --vol-amp: #ffb547;
+  --vol-f: 0.5;
   position: absolute;
-  bottom: 6px;
-  right: 8px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 6; /* por cima do aviso de transmissao oculta */
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(20, 5, 5, 0.75);
-  border: 1px solid var(--border);
-  padding: 3px 10px;
-  border-radius: 3px;
-  /* Some por padrao - so aparece ao passar o mouse na tile, igual os
-     botoes de tela cheia/PiP/foco, pra nao ficar tampando o rosto de quem
-     esta transmitindo a webcam o tempo todo. */
+  height: 34px;
+  padding: 4px 10px 4px 4px;
+  border-radius: 999px;
+  background: rgba(12, 12, 14, 0.62);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  color: #fff;
   opacity: 0;
-  transition: opacity 0.15s;
   pointer-events: none;
+  /* sem selecao de texto: arrastar de novo em cima de um "150%" selecionado
+     virava "arrastar o texto" e o controle parava de seguir o mouse */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  transition: opacity 0.15s, width 0.22s cubic-bezier(0.2, 0.7, 0.2, 1), background 0.2s, border-color 0.2s;
 }
-
-.video-tile:hover .volume-control {
+.video-tile:hover .volume-control,
+.volume-control.is-muted,
+.volume-control:focus-within,
+.volume-control.vol-active {
   opacity: 1;
   pointer-events: auto;
 }
 
-/* Enquanto o app silencia os outros por risco de eco (ver
-   isRemoteAudioSuppressedForEcho no renderer.js), o controle fica apagado
-   mas CONTINUA clicavel - antes ele nao reagia a clique nenhum e parecia
-   quebrado. O volume/mudo escolhido fica guardado e vale quando parar. */
-.volume-control.volume-control-suppressed .volume-icon,
-.volume-control.volume-control-suppressed .volume-slider {
-  opacity: 0.45;
-}
-
-.volume-icon {
-  font-size: 12px;
-  background: none;
-  border: none;
-  box-shadow: none;
-  padding: 2px;
+:root .volume-control button.volume-icon.volume-icon {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
   margin: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
   color: #fff;
   cursor: pointer;
+}
+:root .volume-control button.volume-icon.volume-icon:hover { filter: none; background: rgba(255, 255, 255, 0.1); }
+:root .volume-control button.volume-icon.volume-icon:active { transform: none; }
+:root .volume-control button.volume-icon.volume-icon:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.volume-control .volume-icon .icon-svg { width: 17px; height: 17px; }
+
+.vol-readout {
+  min-width: 36px;
+  text-align: right;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: #fff;
+  white-space: nowrap;
+}
+.vol-over .vol-readout { color: var(--vol-amp); }
+.is-muted .vol-readout { color: rgba(255, 255, 255, 0.6); }
+
+/* Mudo geral / transmissao oculta / silencio anti-eco: o volume escolhido
+   continua valendo depois, mas agora nao toca - controle apagado (o motivo
+   aparece ao passar o mouse). Continua clicavel. */
+.volume-control.vol-overridden .vol-b,
+.volume-control.vol-overridden .vol-c,
+.volume-control.vol-overridden .vol-readout { opacity: 0.45; }
+
+/* --- "abre": linha fina --------------------------------------------------- */
+.vol-b {
+  position: relative;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  flex-shrink: 0;
 }
-.volume-icon:hover { filter: none; opacity: 0.8; }
-.volume-icon:active { transform: none; }
-
-.volume-slider {
-  width: 80px;
-  height: 4px;
-  cursor: pointer;
+/* marca do 100% - mesma conta da posicao da bolinha (6px = meia bolinha) */
+.vol-b::after {
+  content: "";
+  position: absolute;
+  left: calc(6px + (100% - 12px) * 0.5 - 1px);
+  top: 50%;
+  width: 2px;
+  height: 9px;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+}
+:root .volume-control .volume-slider {
   -webkit-appearance: none;
   appearance: none;
-  border-radius: 2px;
-  outline: none;
-  /* O background e um gradiente atualizado via JS a cada mudanca de valor
-     (updateSliderFill), pra pintar o trecho "preenchido" ate a bolinha -
-     sem isso o track nativo fica cinza chapado do inicio ao fim e nao da
-     nenhuma pista visual de quanto volume esta aplicado. */
-  background: linear-gradient(to right, var(--red-bright) 0%, var(--red-bright) 50%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.25) 100%);
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
-
+:root .volume-control .volume-slider:focus { outline: none; box-shadow: none; border: 0; }
+.volume-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 3px;
+  /* o preenchimento termina exatamente no centro da bolinha */
+  background: linear-gradient(90deg, var(--vol-fill) calc(6px + (100% - 12px) * var(--vol-f)), var(--vol-track) 0);
+}
+.vol-over .volume-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg,
+    var(--vol-fill) calc(6px + (100% - 12px) * 0.5),
+    var(--vol-amp) 0 calc(6px + (100% - 12px) * var(--vol-f)),
+    var(--vol-track) 0);
+}
 .volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 12px;
   height: 12px;
+  margin-top: -4.5px;
+  border: 0;
   border-radius: 50%;
   background: #fff;
-  border: 2px solid var(--red-bright);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
   cursor: pointer;
+  transition: transform 0.12s;
 }
+.volume-slider:hover::-webkit-slider-thumb,
+.volume-slider:active::-webkit-slider-thumb { transform: scale(1.25); }
+.volume-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35); }
+.is-muted .volume-slider { --vol-fill: rgba(255, 255, 255, 0.35); }
+.is-muted .volume-slider::-webkit-slider-thumb { background: #bdbdbd; }
+
+/* fechado = so o botao redondo; abre ao passar o mouse nele, ao arrastar
+   ou com foco do teclado */
+/* O controle fica preso no canto direito e cresce pra ESQUERDA - o
+   alto-falante fica na ponta direita (row-reverse), exatamente onde estava
+   o botao fechado, pra nao "fugir" do mouse quando abre. */
+:root:not(.volume-style-degraus) .volume-control {
+  flex-direction: row-reverse;
+  width: 34px;
+  padding: 3px;
+  overflow: hidden;
+}
+:root:not(.volume-style-degraus) .volume-control:hover,
+:root:not(.volume-style-degraus) .volume-control:focus-within,
+:root:not(.volume-style-degraus) .volume-control.vol-active {
+  width: 204px;
+  padding-left: 10px;
+}
+:root:not(.volume-style-degraus) .vol-readout { text-align: left; }
+:root:not(.volume-style-degraus) .volume-control .vol-b,
+:root:not(.volume-style-degraus) .volume-control .vol-readout {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+:root:not(.volume-style-degraus) .volume-control:hover .vol-b,
+:root:not(.volume-style-degraus) .volume-control:hover .vol-readout,
+:root:not(.volume-style-degraus) .volume-control:focus-within .vol-b,
+:root:not(.volume-style-degraus) .volume-control:focus-within .vol-readout,
+:root:not(.volume-style-degraus) .volume-control.vol-active .vol-b,
+:root:not(.volume-style-degraus) .volume-control.vol-active .vol-readout {
+  opacity: 1;
+  transition-delay: 0.08s;
+}
+:root:not(.volume-style-degraus) .volume-control.vol-overridden:hover .vol-b,
+:root:not(.volume-style-degraus) .volume-control.vol-overridden:hover .vol-readout { opacity: 0.45; }
+/* mutado: botao vermelho - da pra ver quem voce mutou sem passar o mouse */
+:root:not(.volume-style-degraus) .volume-control.is-muted {
+  background: rgba(var(--red-bright-rgb), 0.3);
+  border-color: rgba(var(--red-bright-rgb), 0.55);
+}
+:root:not(.volume-style-degraus) .vol-c { display: none; }
+
+/* --- "degraus": 10 barrinhas de 20% --------------------------------------- */
+.volume-style-degraus .vol-b { display: none; }
+.vol-c {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 24px;
+  padding: 0 4px;
+  cursor: pointer;
+  touch-action: none;
+  border-radius: 4px;
+}
+.vol-c:focus { outline: none; }
+.vol-c:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.vol-step {
+  --fill: 0;
+  width: 5px;
+  border-radius: 2px;
+  /* preenche de baixo pra cima: barrinha pela metade = volume no meio do degrau */
+  background: linear-gradient(to top, var(--vol-fill) calc(var(--fill) * 100%), var(--vol-track) 0);
+  transition: opacity 0.15s;
+}
+.vol-step.amp { background: linear-gradient(to top, var(--vol-amp) calc(var(--fill) * 100%), var(--vol-track) 0); }
+.vol-step.gap { margin-left: 4px; }
+.is-muted .vol-step { --vol-fill: rgba(255, 255, 255, 0.3); --vol-amp: rgba(255, 255, 255, 0.3); }
+/* som saindo de verdade (medido depois do volume): as acesas pulsam */
+.vol-playing .vol-step.on { animation: vol-pulse 0.9s ease-in-out infinite alternate; }
+@keyframes vol-pulse { from { opacity: 1; } to { opacity: 0.55; } }
+.volume-style-degraus .volume-control.is-muted { border-color: rgba(var(--red-bright-rgb), 0.55); }
+
+@media (prefers-reduced-motion: reduce) {
+  .volume-control { transition: opacity 0.15s; }
+  .vol-playing .vol-step.on { animation: none; }
+}
+
+/* Previa nas configuracoes (Sons): o mesmo controle, sempre visivel */
+.volume-style-options { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.volume-preview {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  min-height: 56px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(120% 120% at 15% 20%, #22324c 0%, transparent 60%),
+    linear-gradient(160deg, #11141b, #0b0c10);
+}
+.volume-preview-label { font-size: calc(11px * var(--font-scale)); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.volume-preview-slot { position: relative; height: 34px; display: flex; justify-content: flex-end; flex: 1; }
+.volume-preview-slot .volume-control { position: absolute; right: 0; bottom: 0; opacity: 1; pointer-events: auto; }
 
 /* Ocultar transmissao de alguem (botao direito na tile) */
 .tile-hidden-overlay {
@@ -1422,7 +1594,6 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .video-tile.content-hidden .tile-hidden-overlay { display: flex; }
 /* Com a transmissao oculta, o controle de volume fica POR CIMA do aviso -
    antes ficava coberto e o mudo nao dava pra clicar. */
-.video-tile .volume-control { z-index: 6; }
 .video-tile.content-hidden video { visibility: hidden; }
 
 .tile-reconnecting-badge {

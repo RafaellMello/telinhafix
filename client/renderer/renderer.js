@@ -24,6 +24,7 @@ const DEFAULT_VOLUMES = { join: 1, leave: 1, chat: 1, connection: 1, buttons: 1 
 const DEFAULT_THEME = {
   font: 'inter', scale: 1, color: '#e2231a', mode: 'serio', border: 'arredondada',
   sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS }, priority: 'nitidez',
+  volumeStyle: 'abre', // visual do controle de volume das transmissoes: 'abre' | 'degraus'
   background: 'particulas', loginOpacity: 0.25, volumes: { ...DEFAULT_VOLUMES },
   // false ate a pessoa mexer de proposito (clicar num modo, arrastar o
   // slider de transparencia) - diferencia "nunca escolheu" (recebe o
@@ -147,6 +148,8 @@ function applyTheme(theme) {
   // de tudo no app (ver .border-chama2k19 * no CSS), "arredondada" (default)
   // nao mexe em nada.
   document.documentElement.classList.toggle('border-chama2k19', theme.border === 'chama2k19');
+  // Visual do controle de volume das transmissoes (ver createVolumeControl).
+  document.documentElement.classList.toggle('volume-style-degraus', theme.volumeStyle === 'degraus');
 }
 
 function loadTheme() {
@@ -213,6 +216,7 @@ function setupSettingsPanel() {
   const colorCustom = document.getElementById('color-custom');
   const colorCustomHex = document.getElementById('color-custom-hex');
   const backgroundOptions = document.querySelectorAll('.background-option');
+  const volumeStyleOptions = document.querySelectorAll('.volume-style-option');
   const opacitySlider = document.getElementById('login-opacity-slider');
   const opacityValue = document.getElementById('login-opacity-value');
   const tabButtons = document.querySelectorAll('.settings-tab-btn');
@@ -238,6 +242,7 @@ function setupSettingsPanel() {
     colorCustom.value = currentTheme.color;
     if (colorCustomHex) colorCustomHex.textContent = currentTheme.color.toUpperCase();
     backgroundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.background === currentTheme.background));
+    volumeStyleOptions.forEach((el) => el.classList.toggle('selected', el.dataset.volumeStyle === (currentTheme.volumeStyle || 'abre')));
     if (opacitySlider) {
       const pct = Math.round((currentTheme.loginOpacity === undefined ? 1 : currentTheme.loginOpacity) * 100);
       opacitySlider.value = String(pct);
@@ -296,6 +301,19 @@ function setupSettingsPanel() {
   modeOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ mode: el.dataset.mode, modeExplicit: true }));
   });
+  volumeStyleOptions.forEach((el) => {
+    const choose = () => updateTheme({ volumeStyle: el.dataset.volumeStyle });
+    el.addEventListener('click', choose);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } });
+  });
+  // Previa: o mesmo controle das transmissoes, numa "pessoa" de mentira
+  // (sem audio) - da pra testar os dois visuais antes de entrar numa sala.
+  // (setTimeout: as definicoes do controle ficam mais abaixo no arquivo e so
+  // existem depois que o script inteiro carregou.)
+  setTimeout(() => {
+    const previewSlot = document.getElementById('volume-preview-slot');
+    if (previewSlot && !previewSlot.firstChild) previewSlot.appendChild(createVolumeControl('__volume-preview__'));
+  }, 0);
   borderOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ border: el.dataset.border }));
   });
@@ -1234,6 +1252,7 @@ function setTileContentHidden(peerId, tile, hidden) {
   else hiddenPeers.delete(peerId);
   tile.classList.toggle('content-hidden', hidden);
   applyGain(peerId);
+  tile.querySelectorAll('.volume-control[data-volume-peer]').forEach(paintVolumeControl);
 }
 
 function showTileContextMenu(x, y, peerId, tile) {
@@ -1350,14 +1369,178 @@ function applyGain(peerId) {
 const SUPPRESSED_VOLUME_TITLE = 'Você não está ouvindo os outros enquanto compartilha com áudio do sistema (evita eco). O volume e o mudo que você escolher valem quando parar.';
 
 function updateVolumeControlsSuppressedState() {
-  const suppressed = isRemoteAudioSuppressedForEcho();
-  document.querySelectorAll('.volume-control').forEach((el) => {
-    el.classList.toggle('volume-control-suppressed', suppressed);
-    el.title = suppressed
-      ? SUPPRESSED_VOLUME_TITLE
-      : '';
-  });
+  document.querySelectorAll('.volume-control[data-volume-peer]').forEach(paintVolumeControl);
 }
+
+// --- Controle de volume de cada transmissao --------------------------------
+// Dois visuais pro MESMO controle (Configuracoes > Sons > Controle de volume):
+//   "abre"    - botao redondo com o alto-falante que se abre pro lado e
+//               mostra uma linha fina (padrao);
+//   "degraus" - 10 barrinhas de 20% cada que sobem como medidor de sinal.
+// Os dois mostram exatamente o volume aplicado no audio: a porcentagem e o
+// ganho do GainNode x 100 (100% = volume original, ate 200% amplificando),
+// a linha e as barrinhas usam a mesma escala (0-200, com marca no 100%) e
+// uma barrinha pela metade e volume no meio daquele degrau. O estado e da
+// PESSOA (peerVolumes), entao trocar o visual nao mexe no volume.
+const VOLUME_MAX = 200;
+const VOLUME_STEP_PCT = 20;
+const VOLUME_STEP_COUNT = VOLUME_MAX / VOLUME_STEP_PCT;
+const VOLUME_KEY_STEP = 5;
+
+// Algo por cima do volume escolhido que faz a pessoa nao tocar agora.
+function volumeOverrideReason(peerId) {
+  if (masterMuted) return 'Mudo geral ligado - ninguém está tocando (Ctrl+Alt+M desliga).';
+  if (hiddenPeers.has(peerId)) return 'Transmissão oculta - sem som até você mostrar de novo.';
+  if (isRemoteAudioSuppressedForEcho()) return SUPPRESSED_VOLUME_TITLE;
+  return '';
+}
+
+function clampVolume(v) {
+  return Math.max(0, Math.min(VOLUME_MAX, Math.round(Number(v) || 0)));
+}
+
+function setPeerVolume(peerId, pct) {
+  const v = clampVolume(pct);
+  const saved = peerVolumeOf(peerId);
+  peerVolumes.set(peerId, { value: v, lastVolume: v > 0 ? v : saved.lastVolume });
+  const entry = remoteGainNodes.get(peerId);
+  if (entry) {
+    entry.sliderValue = v;
+    applyGain(peerId);
+  }
+  document.querySelectorAll(`.volume-control[data-volume-peer="${CSS.escape(peerId)}"]`).forEach(paintVolumeControl);
+}
+
+function togglePeerMute(peerId) {
+  const v = peerVolumeOf(peerId).value;
+  // Volume de antes de mutar, pra voltar no mesmo nivel (nao sempre 100%).
+  setPeerVolume(peerId, v === 0 ? (peerVolumeOf(peerId).lastVolume || 100) : 0);
+}
+
+function paintVolumeControl(row) {
+  const peerId = row.dataset.volumePeer;
+  const v = peerVolumeOf(peerId).value;
+  const muted = v === 0;
+  const reason = volumeOverrideReason(peerId);
+  row.classList.toggle('is-muted', muted);
+  row.classList.toggle('vol-over', v > 100);
+  row.classList.toggle('vol-overridden', !!reason);
+  row.classList.toggle('volume-control-suppressed', isRemoteAudioSuppressedForEcho());
+  row.title = reason;
+  row.style.setProperty('--vol-f', String(v / VOLUME_MAX));
+  const icon = row.querySelector('.volume-icon');
+  icon.innerHTML = muted ? ICONS.speakerMuted : ICONS.speakerOn;
+  icon.title = muted ? 'Desmutar' : 'Mutar';
+  icon.setAttribute('aria-label', icon.title);
+  const slider = row.querySelector('.volume-slider');
+  if (Number(slider.value) !== v) slider.value = String(v);
+  slider.setAttribute('aria-valuetext', muted ? 'mudo' : `${v}%`);
+  row.querySelectorAll('.vol-step').forEach((step, i) => {
+    const fill = Math.max(0, Math.min(1, (v - i * VOLUME_STEP_PCT) / VOLUME_STEP_PCT));
+    step.style.setProperty('--fill', String(fill));
+    step.classList.toggle('on', fill > 0);
+  });
+  const steps = row.querySelector('.vol-c');
+  steps.setAttribute('aria-valuenow', String(v));
+  steps.setAttribute('aria-valuetext', muted ? 'mudo' : `${v}%`);
+  row.querySelector('.vol-readout').textContent = muted ? 'mudo' : `${v}%`;
+}
+
+// Degraus: cada barrinha cobre 20% e o ponto exato dentro dela define o
+// volume (preenchimento parcial = volume no meio do degrau). No espaco entre
+// duas barrinhas, vale o limite entre elas.
+function volumeFromStepsPointer(stepsEl, clientX) {
+  const steps = Array.from(stepsEl.querySelectorAll('.vol-step'));
+  const first = steps[0].getBoundingClientRect();
+  if (clientX <= first.left) return 0;
+  for (let i = 0; i < steps.length; i++) {
+    const r = steps[i].getBoundingClientRect();
+    if (clientX < r.left) return i * VOLUME_STEP_PCT;
+    if (clientX <= r.right) return i * VOLUME_STEP_PCT + ((clientX - r.left) / r.width) * VOLUME_STEP_PCT;
+  }
+  return VOLUME_MAX;
+}
+
+function createVolumeControl(peerId) {
+  const row = document.createElement('div');
+  row.className = 'volume-control';
+  row.dataset.volumePeer = peerId;
+  const stepsHtml = Array.from({ length: VOLUME_STEP_COUNT }, (_, i) => {
+    const amp = i >= VOLUME_STEP_COUNT / 2;
+    const gap = i === VOLUME_STEP_COUNT / 2;
+    // alturas em pixels inteiros: borda de cima nitida (sem meio-pixel borrado)
+    return `<span class="vol-step${amp ? ' amp' : ''}${gap ? ' gap' : ''}" style="height:${6 + i * 2}px"></span>`;
+  }).join('');
+  row.innerHTML = `
+    <button type="button" class="volume-icon"></button>
+    <span class="vol-b"><input type="range" class="volume-slider" min="0" max="${VOLUME_MAX}" step="1" aria-label="Volume" title="Até 200% - passar de 100% amplifica. Duplo clique volta pra 100%."></span>
+    <span class="vol-c" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="${VOLUME_MAX}" title="Até 200% - as barrinhas depois do espaço amplificam. Duplo clique volta pra 100%.">${stepsHtml}</span>
+    <span class="vol-readout" aria-hidden="true"></span>`;
+  const icon = row.querySelector('.volume-icon');
+  const slider = row.querySelector('.volume-slider');
+  const steps = row.querySelector('.vol-c');
+
+  icon.addEventListener('click', (e) => { e.stopPropagation(); togglePeerMute(peerId); });
+  slider.addEventListener('input', () => setPeerVolume(peerId, slider.value));
+
+  // "vol-active": mantem o controle aberto enquanto arrasta, mesmo se o
+  // mouse sair de cima dele no meio do movimento.
+  row.addEventListener('pointerdown', () => {
+    row.classList.add('vol-active');
+    window.addEventListener('pointerup', () => row.classList.remove('vol-active'), { once: true });
+  });
+  steps.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); // nunca comeca selecao/arrasto de texto (ver user-select no CSS)
+    steps.focus({ preventScroll: true });
+    steps.setPointerCapture(e.pointerId);
+    setPeerVolume(peerId, volumeFromStepsPointer(steps, e.clientX));
+  });
+  steps.addEventListener('pointermove', (e) => {
+    if (steps.hasPointerCapture(e.pointerId)) setPeerVolume(peerId, volumeFromStepsPointer(steps, e.clientX));
+  });
+  steps.addEventListener('keydown', (e) => {
+    const v = peerVolumeOf(peerId).value;
+    const next = { ArrowRight: v + VOLUME_KEY_STEP, ArrowUp: v + VOLUME_KEY_STEP, ArrowLeft: v - VOLUME_KEY_STEP, ArrowDown: v - VOLUME_KEY_STEP,
+      PageUp: v + VOLUME_STEP_PCT, PageDown: v - VOLUME_STEP_PCT, Home: 0, End: VOLUME_MAX }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    setPeerVolume(peerId, next);
+  });
+  // Rodinha do mouse em cima do controle: +-5%.
+  row.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    setPeerVolume(peerId, peerVolumeOf(peerId).value + (e.deltaY < 0 ? VOLUME_KEY_STEP : -VOLUME_KEY_STEP));
+  }, { passive: false });
+  // Duplo clique na linha/barrinhas: volta pra 100%. Nunca deixa o duplo
+  // clique chegar na tile (que entraria em tela cheia).
+  row.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    if (e.target.closest('.vol-b, .vol-c')) setPeerVolume(peerId, 100);
+  });
+  row.addEventListener('click', (e) => e.stopPropagation());
+  paintVolumeControl(row);
+  return row;
+}
+
+// Degraus "pulsam" quando sai som de verdade dessa pessoa (medido DEPOIS do
+// volume, entao mutado/oculto nao pulsa). So roda com o visual degraus.
+const VOLUME_PLAYING_RMS = 0.01;
+setInterval(() => {
+  if (!document.documentElement.classList.contains('volume-style-degraus')) return;
+  for (const [peerId, entry] of remoteGainNodes) {
+    if (!entry.analyser) {
+      entry.analyser = entry.gainNode.context.createAnalyser();
+      entry.analyser.fftSize = 512;
+      entry.gainNode.connect(entry.analyser);
+      entry.analyserData = new Float32Array(entry.analyser.fftSize);
+    }
+    entry.analyser.getFloatTimeDomainData(entry.analyserData);
+    let sum = 0;
+    for (const x of entry.analyserData) sum += x * x;
+    const playing = Math.sqrt(sum / entry.analyserData.length) > VOLUME_PLAYING_RMS;
+    document.querySelectorAll(`.volume-control[data-volume-peer="${CSS.escape(peerId)}"]`).forEach((row) => row.classList.toggle('vol-playing', playing));
+  }
+}, 200);
 
 function refreshAllGainsForSharingState() {
   for (const peerId of remoteGainNodes.keys()) applyGain(peerId);
@@ -1482,66 +1665,11 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
   // source node no estado "sem stream" que existia no momento da criacao.
   // Telas extras nunca tem audio (so a principal carrega som) - sem slider
   // nelas, pra nao mostrar um controle que nao faz nada.
-  if (!isSelf && hasAudio) {
-    const volumeRow = document.createElement('div');
-    volumeRow.className = 'volume-control';
-
-    const icon = document.createElement('button');
-    icon.type = 'button';
-    icon.className = 'volume-icon';
-    icon.innerHTML = ICONS.speakerOn;
-    icon.title = 'Mutar';
-
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = '0';
-    slider.max = '200';
-    slider.title = 'Ate 200% - passar de 100% amplifica alem do volume original';
-    slider.className = 'volume-slider';
-
-    // O volume fica guardado por pessoa (peerVolumes), nao so no GainNode:
-    // vale mesmo se voce mutar antes do audio chegar, e continua igual se a
-    // pessoa parar e voltar a transmitir (a tile e refeita do zero).
-    function setVolume(pct) {
-      const saved = peerVolumeOf(peerId);
-      peerVolumes.set(peerId, { value: pct, lastVolume: pct > 0 ? pct : saved.lastVolume });
-      slider.value = String(pct);
-      const entry = remoteGainNodes.get(peerId);
-      if (entry) {
-        entry.sliderValue = pct;
-        applyGain(peerId);
-      }
-      const muted = pct === 0;
-      icon.innerHTML = muted ? ICONS.speakerMuted : ICONS.speakerOn;
-      icon.title = muted ? 'Desmutar' : 'Mutar';
-      updateSliderFill(slider);
-    }
-    setVolume(peerVolumeOf(peerId).value);
-
-    slider.addEventListener('input', () => setVolume(Number(slider.value)));
-    slider.addEventListener('click', (e) => e.stopPropagation());
-
-    icon.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isMuted = Number(slider.value) === 0;
-      // Volume de antes de mutar, pra voltar no mesmo nivel (nao sempre 100%).
-      setVolume(isMuted ? (peerVolumeOf(peerId).lastVolume || 100) : 0);
-    });
-
-    volumeRow.appendChild(icon);
-    volumeRow.appendChild(slider);
-    tile.appendChild(volumeRow);
-    // Aplica o estado "suprimido" direto nesse controle, sem depender de
-    // document.querySelectorAll (ver updateVolumeControlsSuppressedState) -
-    // a tile ainda nao foi inserida na arvore do documento nesse ponto
-    // (isso so acontece mais abaixo, em videoGrid.appendChild), entao uma
-    // busca no document nao encontraria esse elemento ainda.
-    const suppressedNow = isRemoteAudioSuppressedForEcho();
-    volumeRow.classList.toggle('volume-control-suppressed', suppressedNow);
-    volumeRow.title = suppressedNow
-      ? SUPPRESSED_VOLUME_TITLE
-      : '';
-  }
+  // O volume fica guardado por pessoa (peerVolumes), nao so no GainNode:
+  // vale mesmo se voce mutar antes do audio chegar, e continua igual se a
+  // pessoa parar e voltar a transmitir (a tile e refeita do zero). Ver
+  // createVolumeControl.
+  if (!isSelf && hasAudio) tile.appendChild(createVolumeControl(peerId));
 
   videoGrid.appendChild(tile);
   applyFocusClassesTo(tile, peerId);

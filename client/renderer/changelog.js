@@ -4,6 +4,17 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '3.9.0',
+    date: '19/10/2026',
+    title: 'Controle de volume novo',
+    items: [
+      'O controle de volume em cima da transmissão de cada pessoa foi redesenhado. Em Configurações > Sons você escolhe o visual: "Ícone que abre" (um botão que se abre mostrando uma linha fina) ou "Degraus" (barrinhas que sobem como um medidor de sinal, e pulsam quando a pessoa tem som tocando).',
+      'A porcentagem mostrada é sempre exatamente o volume aplicado: até 100% em branco, acima disso (amplificando, até 200%) em âmbar.',
+      'Rodinha do mouse ou setas do teclado ajustam de 5 em 5%, e duplo clique volta pra 100%.',
+      'Quem você mutou fica com o controle sempre à vista (no "Ícone que abre", o botão fica vermelho).',
+    ],
+  },
+  {
     version: '3.8.2',
     date: '19/10/2026',
     title: 'Dê uma sugestão ao dev',
