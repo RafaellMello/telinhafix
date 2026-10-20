@@ -45,10 +45,14 @@ contextBridge.exposeInMainWorld('rtc', {
     });
   },
 
-  joinRoom(roomId, name) {
+  // rejoinToken: so na volta automatica depois de cair (ver
+  // rejoinAfterReconnect no renderer.js) - o servidor devolve o lugar antigo.
+  joinRoom(roomId, name, rejoinToken) {
     return new Promise((resolve, reject) => {
       if (!socket) return reject(new Error('Não conectado'));
-      socket.emit('join-room', { roomId, name, version: require('./package.json').version }, (res) => {
+      const payload = { roomId, name, version: require('./package.json').version };
+      if (typeof rejoinToken === 'string') payload.rejoinToken = rejoinToken;
+      socket.emit('join-room', payload, (res) => {
         if (res && res.ok) resolve(res);
         else reject(new Error((res && res.error) || 'Falha ao entrar na sala'));
       });
@@ -115,9 +119,37 @@ contextBridge.exposeInMainWorld('rtc', {
     socket.on('signal', (msg) => cb(msg));
   },
 
+  // reason do socket.io: 'io server disconnect' = o servidor derrubou de
+  // proposito (admin expulsou) e NAO reconecta sozinho; 'io client
+  // disconnect' = o proprio app saiu; o resto (internet caiu, servidor
+  // reiniciou) o socket.io tenta reconectar sozinho, pra sempre.
   onDisconnected(cb) {
     if (!socket) return;
-    socket.on('disconnect', () => cb());
+    socket.on('disconnect', (reason) => cb(String(reason || '')));
+  },
+
+  // Voltou a conectar depois de cair (a conexao nova tem outro id - quem
+  // chama precisa entrar na sala de novo).
+  onReconnected(cb) {
+    if (!socket) return;
+    let wentDown = false;
+    socket.on('disconnect', () => { wentDown = true; });
+    socket.on('connect', () => {
+      if (!wentDown) return;
+      wentDown = false;
+      cb();
+    });
+  },
+
+  // Retrospectiva da pessoa nessa sala ('week' | 'month').
+  getWrapped(period) {
+    return emitAck('wrapped-get', { period });
+  },
+
+  // Copia de uma mensagem do chat pro historico da sala no servidor.
+  storeChat(text) {
+    if (!socket) return;
+    socket.emit('chat-store', { text });
   },
 
   disconnect() {
@@ -158,6 +190,16 @@ contextBridge.exposeInMainWorld('game', {
   // Categoria das palavras do tabuleiro: 'normal' | 'cs'.
   setCategory(category) {
     return emitAck('game-set-category', { category });
+  },
+  // Listas de palavras do pessoal (salvas por sala no servidor).
+  saveWordList(id, name, words) {
+    return emitAck('game-wordlist-save', { id: id || null, name, words });
+  },
+  getWordList(id) {
+    return emitAck('game-wordlist-get', { id });
+  },
+  deleteWordList(id) {
+    return emitAck('game-wordlist-delete', { id });
   },
   setRole(team, role) {
     return emitAck('game-set-role', { team, role });
@@ -330,6 +372,15 @@ contextBridge.exposeInMainWorld('nativeScreen', {
 contextBridge.exposeInMainWorld('appLinks', {
   openCredit() {
     return ipcRenderer.invoke('open-credit-link');
+  },
+  // Notificacao do Windows "Fulano comecou a transmitir" (ver main.js) -
+  // resolve 'shown' se apareceu ('focused' = a janela estava na frente).
+  notifyShare(title, body) {
+    return ipcRenderer.invoke('share-notify', { title, body });
+  },
+  // Print da live (PNG em data URL) pra area de transferencia.
+  copyImage(dataUrl) {
+    return ipcRenderer.invoke('copy-image', dataUrl);
   },
   // Link de convite (telinhafix://join?room=X) - clicar num link assim
   // (app ja aberto ou nao) manda esse evento com o codigo da sala. Ver

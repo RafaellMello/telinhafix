@@ -11,6 +11,12 @@
     <span id="admin-notice-text"></span>
     <button type="button" id="btn-admin-notice-close" class="admin-notice-close" aria-label="Fechar aviso">&times;</button>
   </div>
+  <div id="reconnect-banner" class="admin-notice-banner reconnect-banner hidden" role="status">
+    <span class="admin-notice-label">Conexão</span>
+    <span id="reconnect-banner-text"></span>
+    <button type="button" id="btn-reconnect-leave" class="invite-banner-accept hidden">Sair da sala</button>
+  </div>
+  <div id="snapshot-toast" class="snapshot-toast hidden" role="status"></div>
   <div id="invite-banner" class="admin-notice-banner hidden" role="alert">
     <span class="admin-notice-label">Convite</span>
     <span id="invite-banner-text"></span>
@@ -21,6 +27,7 @@
     <canvas id="login-background-canvas"></canvas>
     <button id="btn-settings" title="Aparencia"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle><circle cx="12" cy="12" r="8.2" stroke-dasharray="2 2.15"></circle></svg></button>
     <div id="build-version"></div>
+    <button type="button" id="btn-support" class="ghost support-btn">Apoie o Projeto do TelinhaFix. ❤️</button>
     <div id="members-left" class="members-col"></div>
 
     <div class="login-box">
@@ -121,6 +128,7 @@
         <button id="btn-toggle-chat" class="ghost" title="Chat">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg><span id="chat-unread-badge" class="chat-unread-badge hidden">0</span>
         </button>
+        <button id="btn-wrapped" class="ghost" title="Sua retrospectiva (semana/mês)"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg></button>
         <button id="btn-settings-room" class="ghost" title="Aparencia"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle><circle cx="12" cy="12" r="8.2" stroke-dasharray="2 2.15"></circle></svg></button>
         <button id="btn-leave" class="danger">Sair</button>
       </div>
@@ -251,6 +259,15 @@
               <div class="sound-option" data-sound="desligado">Desligadas</div>
             </div>
             <p class="settings-hint">Chave geral - desligando aqui, nenhum som do app toca, independente dos volumes abaixo.</p>
+          </div>
+
+          <div class="settings-group">
+            <label>Aviso quando alguém começa a transmitir</label>
+            <div id="share-notify-options" class="share-notify-options">
+              <div class="share-notify-option" data-share-notify="ligado">Ligado</div>
+              <div class="share-notify-option" data-share-notify="desligado">Desligado</div>
+            </div>
+            <p class="settings-hint">Notificação do Windows quando alguém da sala começa a compartilhar a tela ou a câmera - só aparece se o TelinhaFix não estiver na sua frente. Clicar nela abre o app.</p>
           </div>
 
           <div class="settings-group">
@@ -407,7 +424,10 @@
             <div id="game-category-options" class="game-mode-options">
               <button type="button" class="game-mode-option" data-category="normal">Normal</button>
               <button type="button" class="game-mode-option" data-category="cs">Counter-Strike</button>
+              <span id="game-custom-categories" class="game-custom-categories"></span>
+              <button type="button" id="btn-wordlist-new" class="game-mode-option game-wordlist-new">+ Criar lista</button>
             </div>
+            <p id="game-wordlist-info" class="settings-hint game-wordlist-info hidden"></p>
           </div>
 
           <div class="game-theme-row">
@@ -491,6 +511,13 @@
             <button type="button" id="btn-game-start">Iniciar partida</button>
           </div>
           <p id="game-lobby-error" class="settings-hint game-error hidden"></p>
+        </div>
+
+        <div id="game-join-view" class="game-join-view hidden">
+          <h3 class="game-join-title">Tem uma partida em andamento</h3>
+          <p class="settings-hint">Escolha como você quer participar.</p>
+          <div id="game-join-content"></div>
+          <p id="game-join-error" class="settings-hint game-error hidden"></p>
         </div>
 
         <div id="game-board-view" class="game-board-view hidden">
@@ -653,6 +680,63 @@
         <button id="btn-camera-picker-cancel" class="ghost">Cancelar</button>
       </div>
     </div>
+  </div>
+
+  <div id="support-overlay" class="settings-overlay support-overlay hidden">
+    <div class="settings-panel support-panel" role="dialog" aria-labelledby="support-title">
+      <button type="button" id="btn-support-close" class="ghost support-close" aria-label="Fechar">&times;</button>
+      <div class="support-qr">
+        <img src="assets/pix-qrcode.png" alt="QR code do Pix pra apoiar o TelinhaFix" width="220" height="220" />
+        <span>Pix</span>
+      </div>
+      <div class="support-text">
+        <h2 id="support-title">Ajude o Projeto do TelinhaFix!</h2>
+        <p>Todo o dinheiro arrecadado será convertido em prol de termos um servidor TURN próprio (Resolver de incompatibilidade e usuários) e melhoria da conexão das telas!</p>
+        <p class="support-account">Conta: <strong>Rafael Leal (Bunny xd)</strong></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="wrapped-overlay" class="settings-overlay wrapped-overlay hidden">
+    <div class="settings-panel wrapped-panel">
+      <div class="wrapped-head">
+        <h2>Sua retrospectiva</h2>
+        <div id="wrapped-period-options" class="game-mode-options">
+          <button type="button" class="game-mode-option" data-wrapped-period="week">Semana</button>
+          <button type="button" class="game-mode-option" data-wrapped-period="month">Mês</button>
+        </div>
+      </div>
+      <p id="wrapped-hint" class="settings-hint">Seu tempo e seus jogos nessa sala.</p>
+      <div class="wrapped-stage">
+        <canvas id="wrapped-canvas" width="1080" height="1350" aria-label="Card da retrospectiva"></canvas>
+        <div id="wrapped-empty" class="wrapped-empty hidden"></div>
+      </div>
+      <div class="settings-footer wrapped-footer">
+        <span id="wrapped-status" class="suggestion-status" role="status"></span>
+        <button id="btn-wrapped-close" type="button" class="ghost">Fechar</button>
+        <button id="btn-wrapped-copy" type="button">Copiar imagem</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="wordlist-overlay" class="settings-overlay wordlist-overlay hidden">
+    <form id="wordlist-form" class="settings-panel suggestion-panel wordlist-panel" autocomplete="off">
+      <h2 id="wordlist-title">Nova lista de palavras</h2>
+      <p class="settings-hint">Fica salva nessa sala pra próxima vez. Pelo menos 25 palavras diferentes (no 2x2x2, se tiver menos de 37, completa com palavras normais).</p>
+      <label for="wordlist-name">Nome da lista</label>
+      <input id="wordlist-name" type="text" maxlength="30" placeholder="Ex: Piadas internas" />
+      <label for="wordlist-words">Palavras (uma por linha ou separadas por vírgula)</label>
+      <textarea id="wordlist-words" rows="10" placeholder="PIZZA&#10;BUNNY&#10;CHURRASCO&#10;..."></textarea>
+      <div class="suggestion-meta">
+        <span id="wordlist-status" class="suggestion-status" role="status"></span>
+        <span id="wordlist-count" class="suggestion-count">0 palavras</span>
+      </div>
+      <div class="settings-footer">
+        <button id="btn-wordlist-delete" type="button" class="ghost danger-text hidden">Apagar lista</button>
+        <button id="btn-wordlist-cancel" type="button" class="ghost">Cancelar</button>
+        <button id="btn-wordlist-save" type="submit">Salvar</button>
+      </div>
+    </form>
   </div>
 
   <div id="suggestion-overlay" class="settings-overlay hidden">

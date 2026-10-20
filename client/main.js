@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, globalShortcut, screen, clipboard, Menu } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, globalShortcut, screen, clipboard, Menu, Notification, nativeImage } = require('electron');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const { autoUpdater } = require('electron-updater');
@@ -380,6 +380,29 @@ function sendInviteRoomToRenderer(roomId) {
 
 app.setAsDefaultProtocolClient(INVITE_PROTOCOL);
 
+// Sem isso o Windows nao mostra as notificacoes do app (precisa bater com o
+// appId do atalho que o instalador cria).
+if (process.platform === 'win32') app.setAppUserModelId('com.telinhafix.app');
+
+// Notificacao do Windows "Fulano comecou a transmitir" (o renderer decide
+// quando - ver notifyShareStarted). So aparece se a janela NAO estiver na
+// frente da pessoa; clicar nela traz o app pra frente.
+function showShareNotification({ title, body } = {}) {
+  if (!mainWindow || !Notification.isSupported()) return 'unsupported';
+  if (mainWindow.isFocused() && mainWindow.isVisible() && !mainWindow.isMinimized()) return 'focused';
+  // testes automaticos: decide tudo mas nao mostra nada na tela de ninguem
+  if (process.env.TELINHAFIX_TEST_DRYRUN) return 'dry-run';
+  const n = new Notification({
+    title: String(title || 'TelinhaFix').slice(0, 120),
+    body: String(body || '').slice(0, 200),
+    icon: nativeImage.createFromPath(path.join(__dirname, 'renderer', 'assets', 'icon.ico')),
+    silent: false,
+  });
+  n.on('click', () => focusMainWindow());
+  n.show();
+  return 'shown';
+}
+
 // So uma janela do TelinhaFix por vez - clicar num link de convite com o
 // app ja aberto deve focar a janela existente (e preencher a sala nela),
 // nunca abrir uma segunda instancia do zero.
@@ -532,6 +555,16 @@ function createWindow() {
   // de clipboard seria negada (testado: "NotAllowedError: Write permission
   // denied"). O modulo nativo nao passa pelo modelo de permissoes da web,
   // entao funciona direto.
+  ipcMain.handle('share-notify', (_event, payload) => showShareNotification(payload));
+  ipcMain.handle('copy-image', (_event, dataUrl) => {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,') || dataUrl.length > 80 * 1024 * 1024) return false;
+    const img = nativeImage.createFromDataURL(dataUrl);
+    if (img.isEmpty()) return false;
+    // testes automaticos: nao mexe na area de transferencia de quem roda
+    if (process.env.TELINHAFIX_TEST_DRYRUN) return img.getSize();
+    clipboard.writeImage(img);
+    return true;
+  });
   ipcMain.handle('copy-to-clipboard', (_event, text) => {
     clipboard.writeText(String(text || ''));
   });

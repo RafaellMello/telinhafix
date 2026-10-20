@@ -1,4 +1,5 @@
 const http = require('http');
+const crypto = require('crypto');
 const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 3000;
@@ -439,6 +440,128 @@ const CODENAMES_CS_WORDS = [
 const CODENAMES_CATEGORIES = { normal: CODENAMES_WORDS, cs: CODENAMES_CS_WORDS };
 const DEFAULT_CODENAMES_CATEGORY = 'normal';
 
+// --- Listas de palavras do pessoal (Codenames) --------------------------
+// Cada sala (codigo) tem as proprias listas, criadas por quem joga e
+// guardadas pra proxima vez (no Upstash quando ligado; senao so na memoria,
+// e somem quando o servidor reinicia). Categoria "custom:<id>" no jogo.
+const WORDLIST_MIN_WORDS = 25;
+const WORDLIST_MAX_WORDS = 500;
+const WORDLIST_MAX_WORD_LEN = 20;
+const WORDLIST_MAX_NAME_LEN = 30;
+const WORDLIST_MAX_PER_ROOM = 30;
+const WORDLISTS_DB_KEY = process.env.WORDLISTS_DB_KEY || 'telinhafix:wordlists'; // env so pros testes
+const wordListsByRoom = new Map(); // roomId -> [{ id, name, author, words, createdAt, updatedAt }]
+const wordListsLoading = new Map(); // roomId -> Promise
+
+// "a, b\nc" -> ['A', 'B', 'C'] (maiusculas, sem repetidas, sem espacos sobrando)
+function parseWordListText(raw) {
+  const words = [];
+  const seen = new Set();
+  const tooLong = [];
+  String(raw || '').split(/[\n,;]+/).forEach((w) => {
+    const word = w.replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
+    if (!word) return;
+    if (word.length > WORDLIST_MAX_WORD_LEN) { tooLong.push(word); return; }
+    if (seen.has(word)) return;
+    seen.add(word);
+    words.push(word);
+  });
+  return { words, tooLong };
+}
+
+function wordListMeta(list) {
+  return { id: list.id, name: list.name, author: list.author, count: list.words.length };
+}
+
+function customListsOf(roomId) {
+  return (wordListsByRoom.get(roomId) || []).map(wordListMeta);
+}
+
+// Carrega as listas da sala do banco (uma vez por sala enquanto o servidor
+// estiver ligado). Sem banco: comeca vazio.
+function loadRoomWordLists(roomId) {
+  if (wordListsByRoom.has(roomId)) return Promise.resolve(wordListsByRoom.get(roomId));
+  if (wordListsLoading.has(roomId)) return wordListsLoading.get(roomId);
+  const p = (async () => {
+    let lists = [];
+    if (activityDbEnabled) {
+      try {
+        const raw = await upstash(['HGET', WORDLISTS_DB_KEY, roomId]);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) lists = parsed.filter((l) => l && l.id && Array.isArray(l.words));
+      } catch (err) {
+        console.error('[listas] falha ao ler do banco:', err.message);
+      }
+    }
+    if (!wordListsByRoom.has(roomId)) wordListsByRoom.set(roomId, lists);
+    wordListsLoading.delete(roomId);
+    return wordListsByRoom.get(roomId);
+  })();
+  wordListsLoading.set(roomId, p);
+  return p;
+}
+
+// Gravacoes uma de cada vez e sempre com o estado mais novo da sala - duas
+// gravacoes ao mesmo tempo podiam chegar fora de ordem no banco e deixar
+// uma versao velha salva por cima da nova.
+const wordListsDirty = new Set();
+let wordListsWriting = false;
+let wordListsRetryTimer = null;
+function persistRoomWordLists(roomId) {
+  if (!activityDbEnabled) return;
+  wordListsDirty.add(roomId);
+  flushWordLists();
+}
+async function flushWordLists() {
+  if (wordListsWriting) return;
+  wordListsWriting = true;
+  try {
+    while (wordListsDirty.size) {
+      const roomId = wordListsDirty.values().next().value;
+      wordListsDirty.delete(roomId);
+      const lists = wordListsByRoom.get(roomId) || [];
+      const cmd = lists.length ? ['HSET', WORDLISTS_DB_KEY, roomId, JSON.stringify(lists)] : ['HDEL', WORDLISTS_DB_KEY, roomId];
+      try {
+        await upstash(cmd);
+      } catch (err) {
+        console.error('[listas] falha ao salvar no banco (tentando de novo em 10s):', err.message);
+        wordListsDirty.add(roomId);
+        if (!wordListsRetryTimer) {
+          wordListsRetryTimer = setTimeout(() => { wordListsRetryTimer = null; flushWordLists(); }, 10000);
+          wordListsRetryTimer.unref();
+        }
+        break;
+      }
+    }
+  } finally {
+    wordListsWriting = false;
+  }
+}
+
+// Palavras da categoria escolhida - lista do pessoal com menos palavras que
+// o tabuleiro (2x2x2 tem 37 cartas) completa com as normais.
+function wordsForCategory(roomId, category, needed) {
+  if (typeof category === 'string' && category.startsWith('custom:')) {
+    const list = (wordListsByRoom.get(roomId) || []).find((l) => `custom:${l.id}` === category);
+    if (list) {
+      const own = shuffle(list.words);
+      if (own.length >= needed) return own;
+      const extra = shuffle(CODENAMES_WORDS.filter((w) => !list.words.includes(w)));
+      return shuffle(own.concat(extra.slice(0, needed - own.length)));
+    }
+  }
+  return shuffle(CODENAMES_CATEGORIES[category] || CODENAMES_WORDS);
+}
+
+function categoryLabel(roomId, category) {
+  if (category === 'cs') return 'Counter-Strike';
+  if (typeof category === 'string' && category.startsWith('custom:')) {
+    const list = (wordListsByRoom.get(roomId) || []).find((l) => `custom:${l.id}` === category);
+    return list ? list.name : 'Lista do pessoal';
+  }
+  return 'Normal';
+}
+
 // roomId -> estado do minijogo "Codigo Secreto" (ver mais abaixo). So existe
 // enquanto a sala em si existir - criado sob demanda, apagado junto com ela.
 const codenamesGames = new Map();
@@ -500,7 +623,8 @@ function createCodenamesGame(roomId) {
     lastTimeout: null, // { team, phase } do ultimo tempo esgotado
     hostId: null,
     joinOrder: [], // ordem em que as pessoas entraram num time - define o proximo anfitriao
-    vacated: [], // [{ name, team, role }] de quem caiu com a partida rolando - volta pro lugar se reconectar
+    vacated: [], // [{ name, team, role }] de quem caiu com a partida rolando - o lugar aparece marcado pra ela voltar se quiser
+    mapViewers: new Set(), // quem viu o mapa assistindo NESTA partida (so pode entrar como Mestre-Espiao)
     marks: {}, // socketId do agente -> indice da carta que ele esta apontando (o time todo ve)
     clueHistory: [], // [{ team, word, number, hits, targets }] - targets so aparece no fim da partida
     // "Time" Espectadores: so assiste, fica fora do "Sortear times".
@@ -528,7 +652,7 @@ function startPhaseTimer(game) {
     if (game.status !== 'playing' || game.phaseToken !== token) return;
     const team = game.currentTeam;
     const who = game.phase === 'clue' ? 'o Mestre-Espião não deu a pista' : 'os agentes não escolheram';
-    game.log.push(`Tempo esgotado (${who}) - Equipe ${TEAM_LABEL[team]} perdeu a vez`);
+    game.log.push(`Tempo esgotado (${who}) - Equipe ${TEAM_LABEL_FEM[team]} perdeu a vez`);
     game.timeoutSeq += 1;
     game.lastTimeout = { team, phase: game.phase };
     endGameTurn(game);
@@ -584,7 +708,66 @@ function removeFromGameTeams(game, socketId) {
   }
 }
 
-function generateBoard(mode, startingTeam, category) {
+// Voltou sozinho depois da internet cair (o app reconecta e manda o token
+// de volta): a conexao nova herda tudo da antiga no Codenames - time,
+// espectador, anfitriao, carta apontada - como se nunca tivesse saido.
+function transferGameIdentity(game, oldId, newId) {
+  for (const team of GAME_MODES[game.mode].teams) {
+    const t = game.teams[team];
+    if (t.spymaster === oldId) t.spymaster = newId;
+    t.agents = t.agents.map((id) => (id === oldId ? newId : id));
+  }
+  if (oldId in game.spectators) { game.spectators[newId] = game.spectators[oldId]; delete game.spectators[oldId]; }
+  if (game.mapViewers.delete(oldId)) game.mapViewers.add(newId);
+  if (oldId in game.marks) { game.marks[newId] = game.marks[oldId]; delete game.marks[oldId]; }
+  game.joinOrder = game.joinOrder.map((id) => (id === oldId ? newId : id));
+  if (game.hostId === oldId) game.hostId = newId;
+}
+
+// Tokens de "voltar pra sala": cada join-room ganha um segredo (so o app
+// daquela pessoa recebe). Reconectando com ele, o servidor sabe que e a
+// MESMA pessoa (o id do socket muda a cada conexao) - sem token, qualquer
+// um que soubesse o id de outro poderia "roubar" o lugar dele.
+const REJOIN_TOKEN_TTL_MS = 10 * 60 * 1000;
+const rejoinTokens = new Map(); // token -> { sid, roomId, name, leftAt, spectator, mapViewer }
+function pruneRejoinTokens() {
+  const now = Date.now();
+  for (const [token, entry] of rejoinTokens) {
+    if (entry.leftAt && now - entry.leftAt > REJOIN_TOKEN_TTL_MS) rejoinTokens.delete(token);
+  }
+}
+setInterval(pruneRejoinTokens, 60 * 1000).unref();
+
+// Historico do chat: as ultimas mensagens de cada sala, pra quem chega
+// depois ver a conversa. A mensagem em si continua indo direto entre as
+// pessoas (canal do WebRTC, como sempre - apps antigos continuam
+// recebendo); o app so manda uma copia pra ca guardar. Fica so na memoria
+// (nunca vai pro banco) e some 2h depois que a sala esvazia.
+const CHAT_HISTORY_MAX = 50;
+const CHAT_HISTORY_KEEP_EMPTY_MS = 2 * 60 * 60 * 1000;
+const CHAT_TEXT_MAX = 500;
+const chatHistories = new Map(); // roomId -> { messages: [{ author, text, t }], emptySince }
+function chatHistoryFor(roomId) {
+  const h = chatHistories.get(roomId);
+  return h ? h.messages.slice() : [];
+}
+function storeChatMessage(roomId, author, text) {
+  if (!chatHistories.has(roomId)) chatHistories.set(roomId, { messages: [], emptySince: null });
+  const h = chatHistories.get(roomId);
+  h.emptySince = null;
+  h.messages.push({ author, text, t: Date.now() });
+  if (h.messages.length > CHAT_HISTORY_MAX) h.messages.splice(0, h.messages.length - CHAT_HISTORY_MAX);
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, h] of chatHistories) {
+    if (rooms.has(roomId)) { h.emptySince = null; continue; }
+    if (!h.emptySince) h.emptySince = now;
+    else if (now - h.emptySince > CHAT_HISTORY_KEEP_EMPTY_MS) chatHistories.delete(roomId);
+  }
+}, 5 * 60 * 1000).unref();
+
+function generateBoard(mode, startingTeam, category, roomId) {
   let counts;
   if (mode === 'ffa3') {
     // 2x2x2 (pedido do Rafael): 9 do time que comeca, 8 de cada um dos
@@ -599,7 +782,7 @@ function generateBoard(mode, startingTeam, category) {
   Object.entries(counts).forEach(([team, count]) => {
     for (let i = 0; i < count; i++) teamsArr.push(team);
   });
-  const words = shuffle(CODENAMES_CATEGORIES[category] || CODENAMES_WORDS).slice(0, teamsArr.length);
+  const words = wordsForCategory(roomId, category, teamsArr.length).slice(0, teamsArr.length);
   const shuffledTeams = shuffle(teamsArr);
   // Foto que aparece na carta quando ela e revelada - sorteada aqui pra
   // todo mundo ver a MESMA foto na mesma carta. Numeros 0-24 embaralhados
@@ -646,7 +829,7 @@ function endGameTurn(game) {
     skipped.push(candidate);
   }
   game.currentTeam = chosen || firstAlive || game.currentTeam;
-  if (chosen) skipped.forEach((t) => game.log.push(`Equipe ${TEAM_LABEL[t]} está desfalcada - vez pulada`));
+  if (chosen) skipped.forEach((t) => game.log.push(`Equipe ${TEAM_LABEL_FEM[t]} está desfalcada - vez pulada`));
   game.phase = 'clue';
   game.clue = null;
   game.marks = {};
@@ -657,7 +840,7 @@ function startNewGameRound(game) {
   clearAnswerTimer(game);
   const teams = GAME_MODES[game.mode].teams;
   const startingTeam = teams[Math.floor(Math.random() * teams.length)];
-  game.board = generateBoard(game.mode, startingTeam, game.category);
+  game.board = generateBoard(game.mode, startingTeam, game.category, game.roomId);
   // Identifica ESTE tabuleiro. O "round" volta pra 1 quando a sala volta
   // pro lobby (jogo novo), entao nao serve pra saber se um mapa secreto
   // guardado no app e deste tabuleiro ou de uma partida anterior.
@@ -675,6 +858,8 @@ function startNewGameRound(game) {
   game.lastTimeout = null;
   game.marks = {};
   game.clueHistory = [];
+  game.mapViewers = new Set(); // tabuleiro novo: ninguem viu esse mapa ainda
+  game.vacated = [];
   game.log = [`Nova partida! Equipe ${TEAM_LABEL_FEM[startingTeam]} comeca.`];
   startPhaseTimer(game);
 }
@@ -701,7 +886,7 @@ function publicGameState(roomId) {
       teams: emptyTeams(DEFAULT_GAME_MODE),
       winner: null, winReason: null, remaining: { red: 0, blue: 0 }, log: [],
       clueGivenAt: null, answerTimeMs: null, phaseEndsInMs: null, timeoutSeq: 0, lastTimeout: null, hostId: null, marks: {}, clueHistory: [],
-      spectators: [],
+      spectators: [], vacated: [], mapViewers: [], customLists: customListsOf(roomId),
     };
   }
   const teams = GAME_MODES[game.mode].teams;
@@ -715,6 +900,7 @@ function publicGameState(roomId) {
     boardId: game.boardId || null,
     mode: game.mode,
     category: game.category,
+    customLists: customListsOf(roomId),
     // No fim da partida todo mundo ve a cor de todas as cartas.
     board: game.board.map((c) => {
       const visible = c.revealed || game.status === 'over';
@@ -761,6 +947,10 @@ function publicGameState(roomId) {
         .filter(([id]) => room && room.has(id))
         .map(([id, withMap]) => ({ id, name: room.get(id).name || 'Jogador', withMap }));
     })(),
+    // lugares de quem caiu no meio da partida (aparecem como "lugar de Fulano")
+    vacated: game.status === 'playing' ? game.vacated.map((v) => ({ name: v.name, team: v.team, role: v.role })) : [],
+    // quem viu o mapa assistindo nesta partida (so pode entrar como Mestre-Espiao)
+    mapViewers: [...game.mapViewers],
   };
 }
 
@@ -794,6 +984,15 @@ function codenamesAdminView(roomId) {
     hostName: (game.hostId && room && room.get(game.hostId) && room.get(game.hostId).name) || null,
     board: game.board.map((c) => ({ word: c.word, team: c.team, revealed: c.revealed })),
     log: game.log.slice(-8),
+    // pro "Assistir partida" do painel (tabuleiro grande, ao vivo): quem
+    // esta apontando cada carta, pistas com as cartas que o mestre quis
+    // dizer (admin ve sempre) e o historico inteiro. Ninguem na sala sabe
+    // que o admin esta olhando - isso so vai pros sockets de admin.
+    boardId: game.boardId || null,
+    categoryName: categoryLabel(roomId, game.category),
+    marks: pub.marks,
+    clueHistory: game.clueHistory.map((c) => ({ team: c.team, word: c.word, number: c.number, hits: c.hits, targets: c.targets || null })),
+    fullLog: pub.log,
   };
 }
 
@@ -1223,8 +1422,10 @@ function waitActivityDbIdle(maxMs) {
   return new Promise((resolve) => {
     const t0 = Date.now();
     (function tick() {
-      if ((!activityDbQueue.length && !activityDbFlushing) || Date.now() - t0 > maxMs) return resolve();
+      const idle = !activityDbQueue.length && !activityDbFlushing && !wordListsDirty.size && !wordListsWriting;
+      if (idle || Date.now() - t0 > maxMs) return resolve();
       if (!activityDbFlushing) flushActivityDb();
+      if (!wordListsWriting && wordListsDirty.size) flushWordLists();
       setTimeout(tick, 100);
     }());
   });
@@ -1256,11 +1457,143 @@ function logCodenamesGame(game, aborted) {
   }
   const now = Date.now();
   logActivity({
-    type: 'codenames', roomId: game.roomId, mode: game.mode, category: game.category || 'normal',
+    type: 'codenames', roomId: game.roomId, mode: game.mode, category: (game.category || 'normal').startsWith('custom:') ? 'custom' : (game.category || 'normal'), categoryName: categoryLabel(game.roomId, game.category),
     winner: aborted ? null : game.winner, winReason: aborted ? null : game.winReason, aborted: !!aborted,
     start: game.startedAt || now, end: now, dur: now - (game.startedAt || now), players,
   });
 }
+// --- Retrospectiva ("TelinhaFix Wrapped") ----------------------------------
+// Resumo da semana/mes de UMA pessoa (pelo nome) NA SALA em que ela esta -
+// de proposito nao junta outras salas: o nome nao tem senha, e assim
+// ninguem descobre o codigo das outras salas de alguem so digitando o nome
+// dela. Vem do mesmo registro de atividade dos dashboards (banco + memoria),
+// mais o que esta rolando agora (sessoes/transmissoes ainda abertas).
+const WRAPPED_PERIODS = { week: 7 * 24 * 60 * 60 * 1000, month: 30 * 24 * 60 * 60 * 1000 };
+const WRAPPED_CACHE_MS = 2 * 60 * 1000;
+const BRT_OFFSET_MS = -3 * 60 * 60 * 1000; // horario de Brasilia (sem horario de verao desde 2019)
+const wrappedEventsCache = new Map(); // period -> { at, since, promise }
+
+function getActivitySince(since) {
+  const fromMemory = () => activityLog.filter((e) => e.t > since);
+  if (!activityDbEnabled) return Promise.resolve(fromMemory());
+  return readActivityFromDb(since).then((fromDb) => {
+    const seen = new Set(fromDb.map((e) => e.id));
+    return fromDb.concat(fromMemory().filter((e) => !seen.has(e.id)));
+  }).catch((err) => {
+    console.error('[wrapped] falha ao ler o banco:', err.message);
+    return fromMemory();
+  });
+}
+
+// Eventos do periodo (lidos 1x a cada 2 min no maximo, pra todo mundo -
+// nao gasta o limite de comandos do Upstash com cada clique).
+function getWrappedEvents(period) {
+  const now = Date.now();
+  const cached = wrappedEventsCache.get(period);
+  if (cached && now - cached.at < WRAPPED_CACHE_MS) return cached.promise;
+  const since = now - WRAPPED_PERIODS[period];
+  // (cada evento e gravado quando TERMINA - "t" - entao o que terminou antes
+  // do periodo nao tem nada dentro dele)
+  const promise = getActivitySince(since);
+  wrappedEventsCache.set(period, { at: now, promise });
+  promise.catch(() => wrappedEventsCache.delete(period));
+  return promise;
+}
+
+function computeWrapped(allEvents, roomId, name, since, now) {
+  const norm = (n) => String(n || '').trim().toLowerCase();
+  const me = norm(name);
+  const inRoom = allEvents.filter((e) => e.roomId === roomId);
+  // sessoes/transmissoes ainda abertas contam ate agora
+  const room = rooms.get(roomId);
+  const live = [];
+  if (room) {
+    for (const info of room.values()) {
+      if (info.joinedAt) live.push({ type: 'session', name: info.name, roomId, start: info.joinedAt, end: now });
+      if (info.shareMode && info.shareStartedAt) live.push({ type: 'share', name: info.name, roomId, mode: info.shareMode, start: info.shareStartedAt, end: now });
+    }
+  }
+  const events = inRoom.concat(live);
+  const clip = (e) => ({ ...e, start: Math.max(e.start || e.t, since), end: Math.min(e.end || e.t, now) });
+  const sessions = events.filter((e) => e.type === 'session').map(clip).filter((e) => e.end > e.start);
+  const mine = sessions.filter((e) => norm(e.name) === me);
+
+  const totalMs = mine.reduce((s, e) => s + (e.end - e.start), 0);
+  const longestMs = mine.reduce((m, e) => Math.max(m, e.end - e.start), 0);
+  const days = new Set();
+  const hourMs = new Array(24).fill(0);
+  for (const e of mine) {
+    for (let t = e.start; t < e.end;) {
+      const local = new Date(t + BRT_OFFSET_MS);
+      days.add(local.toISOString().slice(0, 10));
+      const nextHour = t - (local.getUTCMinutes() * 60000 + local.getUTCSeconds() * 1000 + local.getUTCMilliseconds()) + 3600000;
+      const until = Math.min(nextHour, e.end);
+      hourMs[local.getUTCHours()] += until - t;
+      t = until;
+    }
+  }
+  const peakHourMs = Math.max(...hourMs);
+  const peakHour = peakHourMs > 0 ? hourMs.indexOf(peakHourMs) : null;
+
+  // Com quem mais ficou em call ao mesmo tempo
+  const together = new Map(); // nome normalizado -> { name, ms }
+  for (const m of mine) {
+    for (const o of sessions) {
+      if (norm(o.name) === me) continue;
+      const overlap = Math.min(m.end, o.end) - Math.max(m.start, o.start);
+      if (overlap <= 0) continue;
+      const k = norm(o.name);
+      const cur = together.get(k) || { name: o.name, ms: 0 };
+      cur.ms += overlap;
+      cur.name = o.name;
+      together.set(k, cur);
+    }
+  }
+  const companions = Array.from(together.values()).sort((a, b) => b.ms - a.ms).slice(0, 3);
+
+  // Ranking de tempo em call na sala
+  const perPerson = new Map();
+  for (const e of sessions) perPerson.set(norm(e.name), (perPerson.get(norm(e.name)) || 0) + (e.end - e.start));
+  const ranking = Array.from(perPerson.entries()).sort((a, b) => b[1] - a[1]);
+  const rankIdx = ranking.findIndex(([k]) => k === me);
+
+  const shares = events.filter((e) => e.type === 'share' && norm(e.name) === me).map(clip).filter((e) => e.end > e.start);
+  const shareMs = shares.reduce((s, e) => s + (e.end - e.start), 0);
+  const cameraCount = shares.filter((e) => e.mode === 'camera').length;
+
+  const inPeriod = (e) => (e.end || e.t) >= since && (e.end || e.t) <= now;
+  const cn = events.filter((e) => e.type === 'codenames' && !e.aborted && inPeriod(e));
+  let cnPlayed = 0, cnWins = 0, cnSpy = 0;
+  for (const g of cn) {
+    const p = (g.players || []).find((x) => norm(x.name) === me);
+    if (!p) continue;
+    cnPlayed += 1;
+    if (g.winner && g.winner === p.team) cnWins += 1;
+    if (p.role === 'spymaster') cnSpy += 1;
+  }
+  const stops = events.filter((e) => e.type === 'stop' && inPeriod(e));
+  let stopPlayed = 0, stopWins = 0;
+  for (const r of stops) {
+    const p = (r.players || []).find((x) => norm(x.name) === me);
+    if (!p) continue;
+    stopPlayed += 1;
+    const best = Math.max(...r.players.map((x) => x.total || 0));
+    if (best > 0 && (p.total || 0) === best) stopWins += 1;
+  }
+  const sketches = events.filter((e) => e.type === 'sketch' && inPeriod(e) && norm(e.author) === me).length;
+
+  return {
+    name, roomId, since, until: now,
+    totalMs, sessions: mine.length, longestMs, daysActive: days.size, peakHour,
+    companions,
+    rank: rankIdx >= 0 ? rankIdx + 1 : null, rankOf: ranking.length,
+    shares: { count: shares.length, ms: shareMs, camera: cameraCount, screen: shares.length - cameraCount },
+    codenames: { played: cnPlayed, wins: cnWins, spymaster: cnSpy },
+    stop: { played: stopPlayed, wins: stopWins },
+    sketch: { authored: sketches },
+  };
+}
+
 let peakRooms = 0;
 let peakParticipants = 0;
 
@@ -1478,7 +1811,7 @@ io.on('connection', (socket) => {
     const roomId = data && data.roomId;
     const game = codenamesGames.get(roomId);
     if (!game || game.status !== 'playing') { if (ack) ack({ ok: false, error: 'Nenhuma partida rolando' }); return; }
-    game.log.push(`Admin passou a vez da Equipe ${TEAM_LABEL[game.currentTeam]}`);
+    game.log.push(`Admin passou a vez da Equipe ${TEAM_LABEL_FEM[game.currentTeam]}`);
     endGameTurn(game);
     broadcastGameState(roomId);
     if (ack) ack({ ok: true });
@@ -1542,45 +1875,117 @@ io.on('connection', (socket) => {
     }
     // nome: so texto, ate MAX_NAME_LEN caracteres (o resto e cortado)
     const name = (typeof data.name === 'string' ? data.name : '').trim().slice(0, MAX_NAME_LEN) || 'Anonimo';
+    if (currentRoom) { if (ack) ack({ ok: false, error: 'Você já está em uma sala' }); return; }
     currentRoom = roomId;
     if (!rooms.has(roomId)) rooms.set(roomId, new Map());
     const room = rooms.get(roomId);
 
-    const existingPeers = getPeersInRoom(roomId);
+    // Reconexao automatica (a internet caiu ou o servidor reiniciou): so vale
+    // com o token que essa pessoa recebeu ao entrar, e pra MESMA sala.
+    const rejoinToken = data && typeof data.rejoinToken === 'string' ? data.rejoinToken : null;
+    const rejoin = rejoinToken && rejoinTokens.get(rejoinToken);
+    const validRejoin = !!rejoin && rejoin.roomId === roomId;
+    if (rejoin) rejoinTokens.delete(rejoinToken); // token vale uma vez so
+    // A conexao antiga ainda nao caiu do lado do servidor (ele demora uns
+    // segundos pra perceber): a nova assume o lugar dela e a antiga sai em
+    // silencio, sem "fulano saiu"/"fulano entrou" pros outros.
+    const oldSocket = validRejoin && room.has(rejoin.sid) ? io.sockets.sockets.get(rejoin.sid) : null;
+
+    const existingPeers = getPeersInRoom(roomId).filter((p) => !oldSocket || p.id !== rejoin.sid);
 
     room.set(socket.id, { name: name || 'Anonimo', shareMode: null, version: appVersion, joinedAt: Date.now() });
     logPresence('join', name || 'Anonimo', roomId, appVersion);
     socket.join(roomId);
 
-    if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers, iceServers: getIceServers() });
+    const myToken = crypto.randomBytes(18).toString('hex');
+    rejoinTokens.set(myToken, { sid: socket.id, roomId, name: name || 'Anonimo', leftAt: null });
+    socket.data.rejoinToken = myToken;
 
-    socket.to(roomId).emit('peer-joined', { id: socket.id, name: name || 'Anonimo' });
+    const game = codenamesGames.get(roomId);
+    let gameChanged = false;
+    if (validRejoin && game) {
+      if (oldSocket) {
+        transferGameIdentity(game, rejoin.sid, socket.id);
+        gameChanged = true;
+      } else if (game.status === 'playing') {
+        // A antiga ja tinha caido: volta pro lugar que ficou guardado, se
+        // ainda estiver livre (ninguem pegou nesse meio tempo).
+        const vi = game.vacated.findIndex((v) => v.sid === rejoin.sid);
+        const seat = vi >= 0 ? game.vacated[vi] : null;
+        const t = seat && game.teams[seat.team];
+        const free = t && !game.eliminated.includes(seat.team)
+          && (seat.role === 'spymaster' ? !t.spymaster : t.agents.length < GAME_MODES[game.mode].maxAgents);
+        if (free) {
+          game.vacated.splice(vi, 1);
+          if (seat.role === 'spymaster') t.spymaster = socket.id; else t.agents.push(socket.id);
+          if (!game.joinOrder.includes(socket.id)) game.joinOrder.push(socket.id);
+          game.log.push(`${name} voltou pra Equipe ${TEAM_LABEL_FEM[seat.team]}`);
+          gameChanged = true;
+        } else if (!seat && rejoin.spectator !== undefined) {
+          game.spectators[socket.id] = rejoin.spectator;
+          if (rejoin.mapViewer) game.mapViewers.add(socket.id);
+          gameChanged = true;
+        }
+      } else if (rejoin.spectator !== undefined) {
+        game.spectators[socket.id] = rejoin.spectator;
+        gameChanged = true;
+      }
+    }
+
+    if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers, iceServers: getIceServers(), rejoinToken: myToken, rejoined: validRejoin, chatHistory: chatHistoryFor(roomId) });
+
+    socket.to(roomId).emit('peer-joined', { id: socket.id, name: name || 'Anonimo', rejoin: validRejoin, replaces: oldSocket ? rejoin.sid : null });
     // Espectadores invisiveis tambem precisam saber de gente nova pra
     // conseguir receber a midia dela - 'peer-joined' direto pra cada um
     // (nao via socket.to, porque eles nunca dao socket.join na sala).
     const specs = spectatorsByRoom.get(roomId);
     if (specs) specs.forEach((id) => io.to(id).emit('peer-joined', { id: socket.id, name: name || 'Anonimo' }));
 
-    // Codenames: quem caiu com a partida rolando e voltou com o MESMO nome
-    // reassume o lugar no time, se a vaga ainda estiver livre.
-    const game = codenamesGames.get(roomId);
-    if (game && game.status !== 'lobby') {
-      const cleanName = String(name || 'Anonimo').trim().toLowerCase();
-      const i = game.vacated.findIndex((v) => String(v.name).trim().toLowerCase() === cleanName);
-      if (i >= 0) {
-        const v = game.vacated[i];
-        const t = game.teams[v.team];
-        const free = v.role === 'spymaster' ? !t.spymaster : t.agents.length < GAME_MODES[game.mode].maxAgents;
-        if (free && !playerGameRole(game, socket.id)) {
-          if (v.role === 'spymaster') t.spymaster = socket.id; else t.agents.push(socket.id);
-          game.vacated.splice(i, 1);
-          if (!game.joinOrder.includes(socket.id)) game.joinOrder.push(socket.id);
-          game.log.push(`${name || 'Anonimo'} voltou pra Equipe ${TEAM_LABEL[v.team]}`);
-          broadcastGameState(roomId);
-        }
-      }
+    if (oldSocket) {
+      oldSocket.data.replacedBy = socket.id;
+      oldSocket.disconnect(true);
     }
+    if (gameChanged) broadcastGameState(roomId);
+    // Listas de palavras do pessoal dessa sala: carrega do banco na primeira
+    // vez e avisa todo mundo quando chegar.
+    if (!wordListsByRoom.has(roomId)) {
+      loadRoomWordLists(roomId).then((lists) => { if (lists.length && rooms.has(roomId)) broadcastGameState(roomId); });
+    }
+
+    // Codenames: quem SAIU e entrou de novo pelo botao (sem token) NAO e
+    // colocado de volta no time sozinho (pedido do Rafael) - ao abrir o
+    // Codenames ele ve "Partida em andamento" e escolhe: assistir com/sem
+    // mapa ou pegar uma vaga livre; o lugar antigo aparece marcado (ver
+    // "vacated" no estado).
     broadcastRoomsToAdmins();
+  });
+
+  // Retrospectiva da pessoa nessa sala (ver computeWrapped).
+  socket.on('wrapped-get', async (data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const period = data && data.period === 'month' ? 'month' : 'week';
+    const roomId = currentRoom;
+    const name = rooms.get(roomId)?.get(socket.id)?.name;
+    if (!name) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    try {
+      const events = await getWrappedEvents(period);
+      const now = Date.now();
+      if (ack) ack({ ok: true, period, storage: activityDbEnabled ? 'db' : 'memory', serverStartedAt, wrapped: computeWrapped(events, roomId, name, now - WRAPPED_PERIODS[period], now) });
+    } catch (err) {
+      console.error('[wrapped] falha:', err);
+      if (ack) ack({ ok: false, error: 'Não deu pra montar a retrospectiva agora' });
+    }
+  });
+
+  // Copia de uma mensagem do chat pro historico da sala (ver chatHistories).
+  // O autor e sempre o nome de quem mandou, nunca o que vier no payload.
+  socket.on('chat-store', (data) => {
+    if (!currentRoom) return;
+    const info = rooms.get(currentRoom)?.get(socket.id);
+    if (!info) return;
+    const text = (data && typeof data.text === 'string' ? data.text : '').trim().slice(0, CHAT_TEXT_MAX);
+    if (!text) return;
+    storeChatMessage(currentRoom, info.name, text);
   });
 
   // So repassa pra quem esta na MESMA sala (ou, pro modo espectador do
@@ -1640,7 +2045,11 @@ io.on('connection', (socket) => {
     const role = playerGameRole(game, socket.id);
     // Espectador que escolheu "assistir com mapa" tambem recebe o mapa.
     if (!role && game.spectators[socket.id] === true) {
+      const firstLook = game.status === 'playing' && !game.mapViewers.has(socket.id);
+      if (firstLook) game.mapViewers.add(socket.id);
       if (ack) ack({ ok: true, round: game.round, boardId: game.boardId, map: game.board.map((c) => c.team) });
+      // avisa todo mundo (o app dessa pessoa ja desativa "Entrar como agente")
+      if (firstLook) broadcastGameState(currentRoom);
       return;
     }
     if (!role || role.role !== 'spymaster') {
@@ -1676,9 +2085,71 @@ io.on('connection', (socket) => {
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = getOrCreateGame(currentRoom);
     if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra trocar as palavras com a partida em andamento' }); return; }
-    if (!CODENAMES_CATEGORIES[category]) { if (ack) ack({ ok: false, error: 'Categoria inválida' }); return; }
+    const isCustom = typeof category === 'string' && (wordListsByRoom.get(currentRoom) || []).some((l) => `custom:${l.id}` === category);
+    if (!CODENAMES_CATEGORIES[category] && !isCustom) { if (ack) ack({ ok: false, error: 'Categoria inválida' }); return; }
     game.category = category;
     broadcastGameState(currentRoom);
+    if (ack) ack({ ok: true });
+  });
+
+  // Listas de palavras do pessoal (ver wordListsByRoom): qualquer um da sala
+  // cria, edita e apaga - sao da sala, nao de uma pessoa.
+  socket.on('game-wordlist-save', async (data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const roomId = currentRoom;
+    const name = (data && typeof data.name === 'string' ? data.name : '').replace(/\s+/g, ' ').trim().slice(0, WORDLIST_MAX_NAME_LEN);
+    if (!name) { if (ack) ack({ ok: false, error: 'Dê um nome pra lista' }); return; }
+    const { words, tooLong } = parseWordListText(data && data.words);
+    if (tooLong.length) { if (ack) ack({ ok: false, error: `Palavra grande demais (máx. ${WORDLIST_MAX_WORD_LEN} letras): ${tooLong.slice(0, 3).join(', ')}` }); return; }
+    if (words.length < WORDLIST_MIN_WORDS) { if (ack) ack({ ok: false, error: `A lista precisa de pelo menos ${WORDLIST_MIN_WORDS} palavras diferentes (tem ${words.length})` }); return; }
+    if (words.length > WORDLIST_MAX_WORDS) { if (ack) ack({ ok: false, error: `No máximo ${WORDLIST_MAX_WORDS} palavras por lista (tem ${words.length})` }); return; }
+    const lists = await loadRoomWordLists(roomId);
+    const author = rooms.get(roomId)?.get(socket.id)?.name || 'Alguém';
+    const id = data && typeof data.id === 'string' ? data.id : null;
+    const now = Date.now();
+    let list;
+    if (id) {
+      list = lists.find((l) => l.id === id);
+      if (!list) { if (ack) ack({ ok: false, error: 'Essa lista não existe mais' }); return; }
+      if (lists.some((l) => l.id !== id && l.name.toLowerCase() === name.toLowerCase())) { if (ack) ack({ ok: false, error: 'Já tem uma lista com esse nome' }); return; }
+      Object.assign(list, { name, words, updatedAt: now });
+    } else {
+      if (lists.length >= WORDLIST_MAX_PER_ROOM) { if (ack) ack({ ok: false, error: `No máximo ${WORDLIST_MAX_PER_ROOM} listas por sala - apague alguma antes` }); return; }
+      if (lists.some((l) => l.name.toLowerCase() === name.toLowerCase())) { if (ack) ack({ ok: false, error: 'Já tem uma lista com esse nome' }); return; }
+      list = { id: crypto.randomBytes(6).toString('hex'), name, author, words, createdAt: now, updatedAt: now };
+      lists.push(list);
+    }
+    persistRoomWordLists(roomId);
+    // Lista nova ja fica escolhida (se nao tiver partida rolando).
+    const game = getOrCreateGame(roomId);
+    if (!id && game.status !== 'playing') game.category = `custom:${list.id}`;
+    broadcastGameState(roomId);
+    if (ack) ack({ ok: true, list: wordListMeta(list) });
+  });
+
+  socket.on('game-wordlist-get', async (data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const lists = await loadRoomWordLists(currentRoom);
+    const list = lists.find((l) => l.id === (data && data.id));
+    if (!list) { if (ack) ack({ ok: false, error: 'Essa lista não existe mais' }); return; }
+    if (ack) ack({ ok: true, list: { ...wordListMeta(list), words: list.words.slice() } });
+  });
+
+  socket.on('game-wordlist-delete', async (data, ack) => {
+    if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const roomId = currentRoom;
+    const lists = await loadRoomWordLists(roomId);
+    const i = lists.findIndex((l) => l.id === (data && data.id));
+    if (i < 0) { if (ack) ack({ ok: false, error: 'Essa lista não existe mais' }); return; }
+    const game = getOrCreateGame(roomId);
+    if (game.status === 'playing' && game.category === `custom:${lists[i].id}`) {
+      if (ack) ack({ ok: false, error: 'Essa lista está sendo usada na partida agora' });
+      return;
+    }
+    if (game.category === `custom:${lists[i].id}`) game.category = DEFAULT_CODENAMES_CATEGORY;
+    lists.splice(i, 1);
+    persistRoomWordLists(roomId);
+    broadcastGameState(roomId);
     if (ack) ack({ ok: true });
   });
 
@@ -1686,10 +2157,22 @@ io.on('connection', (socket) => {
     const { team, role } = data || {};
     if (!currentRoom) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
     const game = getOrCreateGame(currentRoom);
-    if (game.status === 'playing') { if (ack) ack({ ok: false, error: 'Não dá pra trocar de equipe com a partida em andamento' }); return; }
     const validTeams = GAME_MODES[game.mode].teams;
     if (!validTeams.includes(team)) { if (ack) ack({ ok: false, error: 'Equipe inválida' }); return; }
     if (role !== 'spymaster' && role !== 'agent') { if (ack) ack({ ok: false, error: 'Papel inválido' }); return; }
+    // Partida rolando: quem esta de fora (ou assistindo) pode pegar uma vaga
+    // livre; quem ja joga nao troca de time no meio.
+    const midGame = game.status === 'playing';
+    if (midGame) {
+      if (playerGameRole(game, socket.id)) { if (ack) ack({ ok: false, error: 'Não dá pra trocar de equipe com a partida em andamento' }); return; }
+      if (game.eliminated.includes(team)) { if (ack) ack({ ok: false, error: 'Essa equipe já foi eliminada nessa partida' }); return; }
+      // Quem assistiu com o mapa nessa partida ja sabe a cor das cartas -
+      // como agente seria trapaca; como Mestre-Espiao (que ve o mapa) pode.
+      if (role === 'agent' && game.mapViewers.has(socket.id)) {
+        if (ack) ack({ ok: false, error: 'Você viu o mapa assistindo - nessa partida só dá pra entrar como Mestre-Espião' });
+        return;
+      }
+    }
     if (role === 'spymaster' && game.teams[team].spymaster && game.teams[team].spymaster !== socket.id) {
       if (ack) ack({ ok: false, error: 'Essa equipe já tem um Mestre-Espião' });
       return;
@@ -1705,6 +2188,14 @@ io.on('connection', (socket) => {
     if (role === 'spymaster') game.teams[team].spymaster = socket.id;
     else game.teams[team].agents.push(socket.id);
     if (!game.joinOrder.includes(socket.id)) game.joinOrder.push(socket.id);
+    if (midGame) {
+      const myName = (rooms.get(currentRoom)?.get(socket.id)?.name) || 'Alguém';
+      // o lugar de quem caiu deixa de ser "lugar vago de Fulano"
+      const vi = game.vacated.findIndex((v) => v.team === team && v.role === role);
+      if (vi >= 0) game.vacated.splice(vi, 1);
+      game.vacated = game.vacated.filter((v) => String(v.name).trim().toLowerCase() !== myName.trim().toLowerCase());
+      game.log.push(`${myName} entrou na Equipe ${TEAM_LABEL_FEM[team]} como ${role === 'spymaster' ? 'Mestre-Espião' : 'agente'}`);
+    }
     broadcastGameState(currentRoom);
     // Codenames nao tem um "abrir lobby" explicito - o primeiro a escolher
     // equipe num lobby vazio e quem "iniciou" o jogo, e tambem quem fica
@@ -2154,8 +2645,22 @@ io.on('connection', (socket) => {
       socket.to(spectatingRoom).emit('spectator-left', { id: socket.id });
     }
 
+    // O token de voltar continua valendo por um tempo depois de cair, e
+    // lembra se a pessoa assistia o Codenames (com/sem mapa).
+    const myRejoin = socket.data.rejoinToken && rejoinTokens.get(socket.data.rejoinToken);
+    if (myRejoin) {
+      myRejoin.leftAt = Date.now();
+      const g = currentRoom && codenamesGames.get(currentRoom);
+      if (g && socket.id in g.spectators) {
+        myRejoin.spectator = g.spectators[socket.id];
+        myRejoin.mapViewer = g.mapViewers.has(socket.id);
+      }
+      if (socket.data.replacedBy) rejoinTokens.delete(socket.data.rejoinToken);
+    }
+
     if (currentRoom && rooms.has(currentRoom)) {
       const leavingName = rooms.get(currentRoom).get(socket.id)?.name || 'Alguém';
+      const replaced = !!socket.data.replacedBy;
       logPresence('leave', leavingName, currentRoom, rooms.get(currentRoom).get(socket.id)?.version);
       endSessionActivity(currentRoom, rooms.get(currentRoom).get(socket.id), Date.now());
       rooms.get(currentRoom).delete(socket.id);
@@ -2171,15 +2676,15 @@ io.on('connection', (socket) => {
         stopGames.delete(currentRoom);
         sketchGames.delete(currentRoom);
       } else {
-        socket.to(currentRoom).emit('peer-left', { id: socket.id });
+        socket.to(currentRoom).emit('peer-left', { id: socket.id, replaced });
         const game = codenamesGames.get(currentRoom);
         if (game) {
           const role = playerGameRole(game, socket.id);
           // Partida rolando: guarda o lugar pra pessoa voltar se reconectar
           // com o mesmo nome (ver join-room).
           if (role && game.status !== 'lobby') {
-            game.vacated.push({ name: leavingName, team: role.team, role: role.role });
-            game.log.push(`${leavingName} saiu da sala (Equipe ${TEAM_LABEL[role.team]})`);
+            game.vacated.push({ name: leavingName, team: role.team, role: role.role, sid: socket.id });
+            game.log.push(`${leavingName} saiu da sala (Equipe ${TEAM_LABEL_FEM[role.team]})`);
           }
           removeFromGameTeams(game, socket.id);
           delete game.marks[socket.id];
@@ -2191,7 +2696,7 @@ io.on('connection', (socket) => {
           const t = role && game.teams[role.team];
           const stuckNow = t && (t.agents.length === 0 || (game.phase === 'clue' && !t.spymaster));
           if (role && game.status === 'playing' && role.team === game.currentTeam && stuckNow) {
-            game.log.push(`Equipe ${TEAM_LABEL[role.team]} está desfalcada - vez pulada`);
+            game.log.push(`Equipe ${TEAM_LABEL_FEM[role.team]} está desfalcada - vez pulada`);
             endGameTurn(game);
           }
           broadcastGameState(currentRoom);
@@ -2213,7 +2718,7 @@ io.on('connection', (socket) => {
         }
       }
       // Mesma logica do join: espectadores recebem o peer-left direto.
-      if (specs) specs.forEach((id) => io.to(id).emit('peer-left', { id: socket.id }));
+      if (specs) specs.forEach((id) => io.to(id).emit('peer-left', { id: socket.id, replaced }));
       broadcastRoomsToAdmins();
     }
   });

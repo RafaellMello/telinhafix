@@ -4,6 +4,21 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.0.0',
+    date: '20/10/2026',
+    title: 'Big Update 4.0',
+    items: [
+      'Volta sozinho pra sala: se a sua internet piscar ou o servidor reiniciar, o app reconecta e te coloca de volta na call (e no seu lugar no Codenames). Um aviso no topo mostra quando está reconectando.',
+      'Chat com memória: quem entra na sala vê as últimas 50 mensagens da conversa.',
+      'Aviso do Windows quando alguém começa a transmitir a tela ou a câmera (só aparece se o TelinhaFix não estiver na sua frente). Dá pra desligar em Configurações > Sons.',
+      'Print da live: novo botão de câmera em cima da transmissão de cada pessoa - copia a imagem, é só colar com Ctrl+V.',
+      'Codenames: listas de palavras do pessoal. Clique em "+ Criar lista" no lobby, escreva as palavras e ela fica salva na sala pra próxima vez.',
+      'Codenames: abrir o jogo com uma partida rolando mostra "Tem uma partida em andamento" - assistir com mapa, sem mapa, ou pegar uma vaga livre. Ninguém é mais colocado num time sozinho.',
+      'Retrospectiva: o novo botão de gráfico no topo da sala mostra a sua semana ou o seu mês na sala (horas em call, quem mais ficou com você, transmissões, vitórias) num card pra copiar e mandar no grupo.',
+      'Novo botão "Apoie o Projeto do TelinhaFix" na tela inicial: o Pix ajuda a ter um servidor próprio pra conexão das telas.',
+    ],
+  },
+  {
     version: '3.9.0',
     date: '19/10/2026',
     title: 'Controle de volume novo',

@@ -422,6 +422,31 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .suggestion-status.suggestion-ok { color: #3ddc73; }
 .suggestion-status.suggestion-error { color: var(--red-bright); }
 
+/* Retrospectiva (ver renderWrappedCard) */
+.wrapped-panel { width: 520px; max-width: calc(100vw - 32px); max-height: 92vh; overflow-x: hidden; display: flex; flex-direction: column; gap: 8px; }
+.wrapped-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.wrapped-head h2 { margin: 0; }
+.wrapped-panel .settings-hint { margin: 0; }
+.wrapped-stage { position: relative; display: flex; justify-content: center; align-items: center; min-height: 200px; }
+#wrapped-canvas { height: min(62vh, 560px); width: calc(min(62vh, 560px) * 0.8); max-width: 100%; border-radius: 12px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55); }
+#wrapped-canvas.loading { opacity: 0.35; }
+.wrapped-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--text-muted); font-weight: 600; }
+.wrapped-footer { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.wrapped-footer .suggestion-status { margin-right: auto; }
+
+/* Listas de palavras do pessoal (Codenames) */
+.wordlist-overlay { z-index: 70; }
+.wordlist-panel { width: 480px; }
+.wordlist-panel textarea { min-height: 200px; text-transform: uppercase; }
+.wordlist-panel .settings-footer { display: flex; gap: 8px; justify-content: flex-end; }
+.wordlist-panel .settings-footer .danger-text { margin-right: auto; color: var(--red-bright); }
+.game-custom-categories { display: contents; }
+.game-wordlist-new { border-style: dashed !important; opacity: 0.85; }
+.game-wordlist-new:hover { opacity: 1; }
+.game-wordlist-info { margin-top: 6px; }
+.game-wordlist-info .game-wordlist-edit { background: none; border: none; box-shadow: none; padding: 0 2px; color: var(--text); text-decoration: underline; cursor: pointer; font: inherit; text-transform: none; letter-spacing: 0; }
+.game-wordlist-info .game-wordlist-edit:hover { color: #fff; filter: none; }
+
 /* Botao de configuracoes (engrenagem), fixo no canto da tela de login */
 #btn-settings {
   position: absolute;
@@ -452,6 +477,28 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-size: calc(11px * var(--font-scale));
   color: var(--text-muted);
 }
+
+/* "Apoie o Projeto" - canto inferior direito da tela inicial (ver #support-overlay) */
+.support-btn {
+  position: absolute;
+  z-index: 1;
+  bottom: 14px;
+  right: 18px;
+  padding: 8px 14px;
+  font-size: calc(12px * var(--font-scale));
+  text-transform: none;
+  letter-spacing: 0;
+}
+.support-overlay { z-index: 70; }
+.settings-panel.support-panel { position: relative; width: 640px; overflow: visible; max-width: calc(100vw - 32px); display: flex; gap: 28px; align-items: center; }
+.support-qr { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; border-radius: 12px; background: #fff; }
+.support-qr img { display: block; width: 220px; height: 220px; image-rendering: pixelated; }
+.support-qr span { color: #111; font-weight: 800; font-size: calc(13px * var(--font-scale)); letter-spacing: 1px; text-transform: uppercase; }
+.support-text h2 { margin: 0 0 12px; }
+.support-text p { margin: 0 0 12px; line-height: 1.5; color: var(--text); }
+.support-account { color: var(--text-muted) !important; }
+.support-close { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; padding: 0; font-size: 18px; line-height: 1; }
+@media (max-width: 620px) { .settings-panel.support-panel { flex-direction: column; } }
 
 /* Painel de configuracoes (aparencia) */
 .settings-overlay {
@@ -784,14 +831,14 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 
 .font-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 
-.mode-options, .border-options, .sound-options, .hotkeys-options, .priority-options, .size-options, .background-options, .game-mode-options {
+.mode-options, .border-options, .sound-options, .share-notify-options, .hotkeys-options, .priority-options, .size-options, .background-options, .game-mode-options {
   display: flex;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
 
-.mode-option, .border-option, .sound-option, .hotkeys-option, .priority-option, .background-option, .game-mode-option, .volume-style-option {
+.mode-option, .border-option, .sound-option, .share-notify-option, .hotkeys-option, .priority-option, .background-option, .game-mode-option, .volume-style-option {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 8px;
@@ -802,7 +849,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 700;
 }
 
-.mode-option.selected, .border-option.selected, .sound-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected, .game-mode-option.selected, .volume-style-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.mode-option.selected, .border-option.selected, .sound-option.selected, .share-notify-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected, .game-mode-option.selected, .volume-style-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 .game-mode-option:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .settings-hint {
@@ -1290,6 +1337,26 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 }
 
 .tile-action-btn:hover { filter: none; background: var(--red); }
+.tile-action-btn.copied, .tile-action-btn.copied:hover { background: #1f8f57; }
+
+/* Aviso rapido do print da live (ver copyTileSnapshot) */
+.snapshot-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(15, 15, 15, 0.96);
+  border: 1px solid #2fae6b;
+  color: #fff;
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 700;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.snapshot-toast.error { border-color: var(--red-bright); }
 
 /* Modo foco: a tile focada ocupa o espaco principal, as outras encolhem
    numa faixa. flex-direction column faz o flex-basis virar altura. */
@@ -1727,6 +1794,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .mode-serio .mode-option,
 .mode-serio .border-option,
 .mode-serio .sound-option,
+.mode-serio .share-notify-option,
 .mode-serio .hotkeys-option,
 .mode-serio .priority-option,
 .mode-serio .quality-btn,
@@ -2252,7 +2320,36 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   gap: 6px;
   text-align: left;
 }
-.game-spectate-toggle { align-self: flex-start; padding: 4px 10px; font-size: calc(12px * var(--font-scale)); }
+.game-spectate-toggle, .game-spectate-join { padding: 4px 10px; font-size: calc(12px * var(--font-scale)); }
+.game-spectate-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* "Tem uma partida em andamento": escolher assistir (com/sem mapa) ou
+   pegar uma vaga - aparece pra quem abre o Codenames com a partida rolando. */
+.game-join-view { max-width: 980px; margin: 0 auto; padding: 8px 0 24px; display: flex; flex-direction: column; gap: 10px; }
+.game-join-title { margin: 0; font-size: calc(18px * var(--font-scale)); text-transform: uppercase; letter-spacing: 0.6px; }
+.game-join-view > .settings-hint { margin: 0; }
+.game-join-watch { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 6px; }
+.game-join-watch-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+  padding: 14px 16px; border-radius: 10px; background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text); text-transform: none; letter-spacing: 0; cursor: pointer;
+}
+.game-join-watch-btn strong { font-size: calc(14px * var(--font-scale)); text-transform: uppercase; letter-spacing: 0.4px; }
+.game-join-watch-btn span { font-size: calc(12px * var(--font-scale)); color: var(--text-muted); font-weight: 400; }
+.game-join-watch-btn:hover { border-color: var(--red-bright); filter: none; }
+.game-join-subtitle { margin: 14px 0 0; font-size: calc(12px * var(--font-scale)); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); }
+.game-join-teams { margin: 4px 0 0; }
+.game-join-team .game-team-slot { gap: 6px; }
+.game-join-name { font-size: calc(14px * var(--font-scale)); font-weight: 700; }
+.game-join-full { font-size: calc(12px * var(--font-scale)); color: var(--text-muted); font-style: italic; }
+.game-join-seat { align-self: flex-start; padding: 7px 12px; font-size: calc(11px * var(--font-scale)); }
+.game-join-seat:disabled { opacity: 0.45; cursor: not-allowed; }
+.game-join-seat-mine { border-color: var(--red-bright); box-shadow: 0 0 0 2px rgba(var(--red-bright-rgb), 0.25); }
+.game-join-vacated { font-size: calc(11px * var(--font-scale)); color: var(--text-muted); }
+.game-join-vacated.game-join-mine { color: var(--red-bright); font-weight: 700; }
+.game-join-eliminated { opacity: 0.55; }
+.game-join-back { align-self: flex-start; margin-top: 6px; }
+@media (max-width: 700px) { .game-join-watch { grid-template-columns: 1fr; } }
 .game-agents-list li { font-size: calc(13px * var(--font-scale)); }
 .game-agents-empty { color: var(--text-muted); font-style: italic; }
 
@@ -3055,6 +3152,14 @@ input.locked-input { cursor: not-allowed; opacity: 0.6; user-select: none; }
   color: #fff;
   font-weight: 800;
 }
+/* Voltar sozinho pra sala (ver rejoinAfterReconnect) */
+.reconnect-banner[data-state="lost"] { border-color: #e0a63a; }
+.reconnect-banner[data-state="lost"] .admin-notice-label { background: #e0a63a; color: #111; }
+.reconnect-banner[data-state="ok"] { border-color: #2fae6b; }
+.reconnect-banner[data-state="ok"] .admin-notice-label { background: #2fae6b; }
+#reconnect-banner-text { white-space: pre-wrap; word-break: break-word; }
+/* Historico do chat (mensagens de antes de voce entrar) */
+.chat-message.chat-history { opacity: 0.6; }
 .admin-notice-close { flex-shrink: 0; width: 28px; height: 28px; padding: 0; border-radius: 8px; font-size: 18px; line-height: 1; }
 @keyframes admin-notice-in { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 

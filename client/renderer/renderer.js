@@ -25,6 +25,7 @@ const DEFAULT_THEME = {
   font: 'inter', scale: 1, color: '#e2231a', mode: 'serio', border: 'arredondada',
   sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS }, priority: 'nitidez',
   volumeStyle: 'abre', // visual do controle de volume das transmissoes: 'abre' | 'degraus'
+  shareNotify: 'ligado', // notificacao do Windows quando alguem comeca a transmitir
   background: 'particulas', loginOpacity: 0.25, volumes: { ...DEFAULT_VOLUMES },
   // false ate a pessoa mexer de proposito (clicar num modo, arrastar o
   // slider de transparencia) - diferencia "nunca escolheu" (recebe o
@@ -54,6 +55,7 @@ const ICONS = {
   check: `<svg ${ICON_SVG_ATTRS}><polyline points="20 6 9 17 4 12"></polyline></svg>`,
   pip: `<svg ${ICON_SVG_ATTRS}><rect x="2" y="4" width="20" height="14" rx="2"></rect><rect x="12" y="11" width="8" height="6" rx="1"></rect></svg>`,
   focus: `<svg ${ICON_SVG_ATTRS}><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="21" y1="21" x2="15.5" y2="15.5"></line></svg>`,
+  snapshot: `<svg ${ICON_SVG_ATTRS}><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>`,
 };
 
 // Silhuetas grandes (preenchidas, nao outline) usadas como marca d'agua no
@@ -209,6 +211,7 @@ function setupSettingsPanel() {
   const modeOptions = document.querySelectorAll('.mode-option');
   const borderOptions = document.querySelectorAll('.border-option');
   const soundOptions = document.querySelectorAll('.sound-option');
+  const shareNotifyOptions = document.querySelectorAll('.share-notify-option');
   const hotkeyOptions = document.querySelectorAll('.hotkeys-option');
   const priorityOptions = document.querySelectorAll('.priority-option');
   const fontOptions = document.querySelectorAll('.font-option');
@@ -235,6 +238,7 @@ function setupSettingsPanel() {
     modeOptions.forEach((el) => el.classList.toggle('selected', el.dataset.mode === currentTheme.mode));
     borderOptions.forEach((el) => el.classList.toggle('selected', el.dataset.border === currentTheme.border));
     soundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.sound === currentTheme.sound));
+    shareNotifyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.shareNotify === (currentTheme.shareNotify || 'ligado')));
     hotkeyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.hotkeys === currentTheme.hotkeys));
     priorityOptions.forEach((el) => el.classList.toggle('selected', el.dataset.priority === currentTheme.priority));
     fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
@@ -319,6 +323,9 @@ function setupSettingsPanel() {
   });
   soundOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ sound: el.dataset.sound }));
+  });
+  shareNotifyOptions.forEach((el) => {
+    el.addEventListener('click', () => updateTheme({ shareNotify: el.dataset.shareNotify }));
   });
   hotkeyOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ hotkeys: el.dataset.hotkeys }));
@@ -1547,6 +1554,42 @@ function refreshAllGainsForSharingState() {
   updateVolumeControlsSuppressedState();
 }
 
+// Print da live: o frame que esta na tela agora, no tamanho real do video
+// (nao o tamanho da tile), copiado como imagem - e so colar no Discord/
+// WhatsApp. Camera sai espelhada igual aparece pra todo mundo.
+let snapshotToastTimer = null;
+async function copyTileSnapshot(tile, video, btn) {
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  let ok = false;
+  if (w && h && !tile.classList.contains('content-hidden')) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (video.classList.contains('mirrored-video')) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(video, 0, 0, w, h);
+      ok = await window.appLinks.copyImage(canvas.toDataURL('image/png'));
+    } catch (err) {
+      console.error('Falha ao copiar print da transmissao:', err);
+    }
+  }
+  btn.innerHTML = ok ? ICONS.check : ICONS.close;
+  btn.classList.toggle('copied', ok);
+  clearTimeout(btn._snapshotTimer);
+  btn._snapshotTimer = setTimeout(() => { btn.innerHTML = ICONS.snapshot; btn.classList.remove('copied'); }, 1500);
+  const toast = document.getElementById('snapshot-toast');
+  if (toast) {
+    toast.textContent = ok ? 'Print copiado - é só colar (Ctrl+V)' : 'Não deu pra tirar o print (o vídeo ainda não chegou?)';
+    toast.classList.toggle('error', !ok);
+    toast.classList.remove('hidden');
+    clearTimeout(snapshotToastTimer);
+    snapshotToastTimer = setTimeout(() => toast.classList.add('hidden'), 2200);
+  }
+  return ok;
+}
+
 function updateSliderFill(slider) {
   const min = Number(slider.min) || 0;
   const max = Number(slider.max) || 100;
@@ -1625,6 +1668,16 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
     setFocus(peerId);
   });
 
+  const btnSnapshot = document.createElement('button');
+  btnSnapshot.className = 'tile-action-btn tile-snapshot-btn';
+  btnSnapshot.innerHTML = ICONS.snapshot;
+  btnSnapshot.title = 'Copiar print da transmissão (cola com Ctrl+V)';
+  btnSnapshot.addEventListener('click', (e) => {
+    e.stopPropagation();
+    copyTileSnapshot(tile, video, btnSnapshot);
+  });
+
+  actionsRow.appendChild(btnSnapshot);
   actionsRow.appendChild(btnFullscreen);
   actionsRow.appendChild(btnPip);
   actionsRow.appendChild(btnFocus);
@@ -1755,12 +1808,12 @@ function setupChatChannel(peerId, channel) {
 // Constroi a mensagem via createElement/textContent (nunca innerHTML com o
 // texto direto) de proposito - o texto e o nome vem de outro participante,
 // entao nao da pra confiar que nao tem HTML/script dentro.
-function addChatMessage({ author, text, timestamp, self }) {
+function addChatMessage({ author, text, timestamp, self, history }) {
   const messagesEl = document.getElementById('chat-messages');
   if (!messagesEl) return;
 
   const row = document.createElement('div');
-  row.className = 'chat-message' + (self ? ' self' : '');
+  row.className = 'chat-message' + (self ? ' self' : '') + (history ? ' chat-history' : '');
 
   const authorEl = document.createElement('span');
   authorEl.className = 'chat-author';
@@ -1776,13 +1829,21 @@ function addChatMessage({ author, text, timestamp, self }) {
   messagesEl.appendChild(row);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
-  if (!self) {
+  if (!self && !history) {
     playChatSound();
     if (!chatPanelOpen) {
       chatUnreadCount++;
       updateChatUnreadBadge();
     }
   }
+}
+
+// Mensagens que a sala trocou antes de voce entrar (o servidor guarda as
+// ultimas 50) - aparecem mais apagadas, sem som e sem contar como nao lidas.
+function renderChatHistory(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  messages.forEach((m) => addChatMessage({ author: String(m.author || 'Participante'), text: String(m.text || ''), timestamp: m.t || Date.now(), self: false, history: true }));
+  addChatSystemMessage('— mensagens de antes de você entrar —');
 }
 
 function addChatSystemMessage(text) {
@@ -1826,6 +1887,9 @@ function sendChatMessage(text) {
   if (!trimmed) return;
   const timestamp = Date.now();
   addChatMessage({ author: 'Você', text: trimmed, timestamp, self: true });
+
+  // copia pro historico da sala (pra quem entrar depois ver a conversa)
+  window.rtc.storeChat(trimmed);
 
   const payload = JSON.stringify({ text: trimmed, timestamp });
   for (const [, state] of peers) {
@@ -2034,18 +2098,79 @@ function ensureSecretMap() {
   }).catch((err) => console.error('Falha ao buscar mapa secreto:', err));
 }
 
+// Nome com que VOCE entrou na sala (pra achar "seu lugar antes" no Codenames).
+let mySelfName = null;
+// "Entrar num time" no painel de espectadores: abre a escolha de vaga mesmo
+// pra quem ja esta assistindo.
+let gameJoinViewForced = false;
+
+// Partida rolando e voce ainda nao escolheu nada (nem time nem assistir):
+// mostra "Partida em andamento" em vez de jogar voce direto no tabuleiro.
+function needsGameJoinChoice() {
+  if (!gameState || gameState.status !== 'playing' || myGameRole()) return false;
+  return gameJoinViewForced || !mySpectatorEntry();
+}
+
 function renderGame() {
   if (!gameState || !gameOverlayOpen || currentGameView !== 'codenames') return;
   const playing = gameState.status === 'playing' || gameState.status === 'over';
+  if (myGameRole() || gameState.status !== 'playing') gameJoinViewForced = false;
+  const choosing = needsGameJoinChoice();
   document.getElementById('game-lobby-view').classList.toggle('hidden', playing);
-  document.getElementById('game-board-view').classList.toggle('hidden', !playing);
+  document.getElementById('game-board-view').classList.toggle('hidden', !playing || choosing);
+  document.getElementById('game-join-view').classList.toggle('hidden', !choosing);
 
-  if (!playing) {
+  if (choosing) {
+    renderGameJoinView();
+  } else if (!playing) {
     renderGameLobby();
   } else {
     ensureSecretMap();
     renderGameBoard();
   }
+}
+
+function renderGameJoinView() {
+  const maxAgents = GAME_MODE_MAX_AGENTS[gameState.mode] ?? Infinity;
+  const me = normalizeRoomId(mySelfName || ''); // so pra comparar nomes sem maiuscula/espaco
+  const sawMap = (gameState.mapViewers || []).includes(selfId);
+  const vacated = gameState.vacated || [];
+  const spec = mySpectatorEntry();
+  const teamCards = Object.keys(gameState.teams).map((team) => {
+    const t = gameState.teams[team];
+    const eliminated = gameState.eliminated?.includes(team);
+    const vacFor = (role) => vacated.find((v) => v.team === team && v.role === role);
+    const mine = (v) => v && normalizeRoomId(v.name) === me;
+    const vacTag = (v) => (v ? `<span class="game-join-vacated${mine(v) ? ' game-join-mine' : ''}">${mine(v) ? 'seu lugar antes' : `lugar de ${escapeHtml(v.name)}`}</span>` : '');
+    const spyVac = vacFor('spymaster');
+    const agentVac = vacFor('agent');
+    const spySlot = t.spymaster
+      ? `<span class="game-join-name">${escapeHtml(t.spymaster.name)}</span>`
+      : `<button type="button" class="game-join-seat${mine(spyVac) ? ' game-join-seat-mine' : ''}" data-join-team="${team}" data-join-role="spymaster"${eliminated ? ' disabled' : ''}>Entrar como Mestre-Espião</button>${vacTag(spyVac)}`;
+    const agentsFull = t.agents.length >= maxAgents;
+    const agentBlocked = sawMap ? 'Você viu o mapa assistindo - nessa partida só dá pra entrar como Mestre-Espião' : '';
+    const agentSlot = agentsFull
+      ? '<span class="game-join-full">time cheio</span>'
+      : `<button type="button" class="game-join-seat${mine(agentVac) ? ' game-join-seat-mine' : ''}" data-join-team="${team}" data-join-role="agent"${eliminated || agentBlocked ? ' disabled' : ''}${agentBlocked ? ` title="${escapeHtml(agentBlocked)}"` : ''}>Entrar como agente</button>${vacTag(agentVac)}`;
+    return `
+      <div class="game-team-card game-team-card-${team} game-join-team${eliminated ? ' game-join-eliminated' : ''}">
+        <h3>Equipe ${GAME_TEAM_LABEL[team]}${eliminated ? ' · eliminada' : ''}</h3>
+        <div class="game-team-slot"><span class="game-slot-label">Mestre-Espião</span>${spySlot}</div>
+        <div class="game-team-slot game-team-slot-agents"><span class="game-slot-label">Agentes</span>
+          <span class="game-join-name">${t.agents.length ? t.agents.map((a) => escapeHtml(a.name)).join(', ') : 'ninguém'}</span>
+          ${agentSlot}
+        </div>
+      </div>`;
+  }).join('');
+  document.getElementById('game-join-content').innerHTML = `
+    <div class="game-join-watch">
+      <button type="button" class="game-join-watch-btn" data-join-watch="1"><strong>Assistir com mapa</strong><span>Vê a cor de todas as cartas, como os mestres-espiões.</span></button>
+      <button type="button" class="game-join-watch-btn" data-join-watch="0"><strong>Assistir sem mapa</strong><span>Vê só as cartas que já foram reveladas.</span></button>
+    </div>
+    <h4 class="game-join-subtitle">Ou entre numa vaga</h4>
+    <div class="game-teams-row game-join-teams">${teamCards}</div>
+    ${sawMap ? '<p class="settings-hint">Você assistiu essa partida com o mapa, então como agente não dá (seria roubar) - só como Mestre-Espião.</p>' : ''}
+    ${spec ? '<button type="button" class="ghost game-join-back" data-join-back>Voltar a assistir</button>' : ''}`;
 }
 
 const GAME_MODE_MAX_AGENTS = { livre: Infinity, '2x2': 1, '3x3': 2, ffa3: 1 };
@@ -2060,6 +2185,7 @@ function renderGameLobby() {
   });
   // Servidor antigo nao manda "category" - ai as palavras sao sempre as normais.
   const category = gameState.category || 'normal';
+  renderCustomCategoryButtons(category);
   document.querySelectorAll('.game-mode-option[data-category]').forEach((btn) => {
     btn.classList.toggle('selected', btn.dataset.category === category);
   });
@@ -2540,7 +2666,8 @@ function gameSpectatorsPanelHtml() {
   let toggle = '';
   if (!role && gameState.status === 'playing') {
     const turnOn = !(spec && spec.withMap);
-    toggle = `<button type="button" class="ghost game-spectate-toggle" data-with-map="${turnOn ? '1' : '0'}">${turnOn ? 'Mostrar mapa' : 'Esconder mapa'}</button>`;
+    toggle = `<div class="game-spectate-actions"><button type="button" class="ghost game-spectate-toggle" data-with-map="${turnOn ? '1' : '0'}">${turnOn ? 'Mostrar mapa' : 'Esconder mapa'}</button>`
+      + '<button type="button" class="ghost game-spectate-join" data-open-join>Entrar num time</button></div>';
   }
   if (!(gameState.spectators || []).length && !toggle) return '';
   return `<div class="game-spectators-panel"><div class="game-clue-history-title">Espectadores</div><ul class="game-spectators-list">${spectatorNamesHtml()}</ul>${toggle}</div>`;
@@ -4001,6 +4128,7 @@ async function finishStartingShare(selfLabel) {
   // captura de sistema e viraria eco pra quem esta assistindo.
   refreshAllGainsForSharingState();
 
+  selfTileLabel = selfLabel;
   const video = getOrCreateVideoTile(selfId, selfLabel, true);
   video.srcObject = localStream;
   video.classList.toggle('mirrored-video', shareMode === 'camera');
@@ -4056,7 +4184,184 @@ async function stopShare() {
   refreshGameAvatarVideos();
 }
 
+// --- Voltar sozinho pra sala ----------------------------------------------
+// A internet caiu ou o servidor reiniciou (deploy, Render acordando): o
+// socket.io reconecta sozinho, mas a conexao nova tem outro id e nao esta
+// em sala nenhuma. Antes a pessoa ficava numa sala "morta" ate sair e entrar
+// de novo; agora o app entra de volta sozinho, com o token que o servidor
+// deu na entrada (ele devolve o lugar no Codenames e avisa os outros que
+// foi so uma reconexao, sem "fulano saiu"/"fulano entrou").
+let currentRoomId = null;
+let myRejoinToken = null;
+let rejoinInFlight = false;
+let reconnectBannerTimer = null;
+let selfTileLabel = 'Você (compartilhando)';
+
+function setReconnectBanner(state, text) {
+  const el = document.getElementById('reconnect-banner');
+  if (!el) return;
+  clearTimeout(reconnectBannerTimer);
+  if (!state) { el.classList.add('hidden'); return; }
+  el.dataset.state = state;
+  document.getElementById('reconnect-banner-text').textContent = text;
+  document.getElementById('btn-reconnect-leave').classList.toggle('hidden', state !== 'kicked');
+  el.classList.remove('hidden');
+  if (state === 'ok') reconnectBannerTimer = setTimeout(() => el.classList.add('hidden'), 3000);
+}
+
+function onServerConnectionLost(reason) {
+  if (!currentRoomId || reason === 'io client disconnect') return;
+  if (reason === 'io server disconnect') {
+    // o servidor derrubou de proposito (ex: admin expulsou) - nao volta sozinho
+    setReconnectBanner('kicked', 'Você foi desconectado da sala pelo servidor.');
+    return;
+  }
+  setReconnectBanner('lost', 'Sem conexão com o servidor - tentando voltar pra sala...');
+  playDisconnectSound();
+}
+
+// Fecha tudo de uma pessoa (conexao, tile, linha na lista) sem mexer no
+// volume/ocultar escolhido pra ela (isso e forgetPeerAudioPrefs).
+function teardownPeer(peerId) {
+  const state = peers.get(peerId);
+  if (state) {
+    clearReconnectTimers(state);
+    if (state.connFailTimer) { clearTimeout(state.connFailTimer); state.connFailTimer = null; }
+    state.pc.close();
+  }
+  peers.delete(peerId);
+  peerNames.delete(peerId);
+  peerShareModes.delete(peerId);
+  spectatorPeerIds.delete(peerId);
+  removeParticipantRow(peerId);
+  removeVideoTile(peerId);
+  refreshGameAvatarVideos();
+  updateSelfAudienceLabel();
+}
+
+// Notificacao do Windows quando alguem COMECA a transmitir (trocar de tela
+// pra camera nao conta). Opcao em Configuracoes > Sons; o main.js so mostra
+// se a janela nao estiver na frente da pessoa.
+let lastShareNotify = null; // ultimo aviso (pros testes conferirem)
+const SHARE_MODE_LABELS = { screen: 'a tela', 'screen-native': 'a tela', camera: 'a câmera' };
+function notifyShareStarted(peerId, mode) {
+  if (currentTheme.shareNotify === 'desligado') return;
+  if (hiddenPeers.has(peerId)) return; // voce ocultou essa pessoa
+  const name = peerNames.get(peerId);
+  if (!name) return;
+  const what = SHARE_MODE_LABELS[mode] || 'a tela';
+  const title = `${name} começou a transmitir`;
+  const body = `${name} está compartilhando ${what} na sala ${currentRoomId || ''}`.trim();
+  window.appLinks.notifyShare(title, body)
+    .then((result) => { lastShareNotify = { title, body, result }; })
+    .catch(() => {});
+}
+
+function copyPeerAudioPrefs(fromId, toId) {
+  if (peerVolumes.has(fromId)) peerVolumes.set(toId, { ...peerVolumes.get(fromId) });
+  if (hiddenPeers.has(fromId)) hiddenPeers.add(toId);
+}
+
+// Volume/ocultar de quem caiu, pelo nome, por uns minutos: quando a pessoa
+// voltar (com id novo) ela continua com o que voce tinha escolhido. Depois
+// de um servidor reiniciar, cada um volta numa ordem diferente - quem volta
+// depois de voce chega como peer-joined comum, entao tambem vale ai.
+const PREFS_BY_NAME_TTL_MS = 2 * 60 * 1000;
+const prefsByName = new Map(); // nome -> { volume, hidden, until, anyJoin }
+function rememberPeerPrefsByName(peerId, anyJoin) {
+  const name = peerNames.get(peerId);
+  if (!name || (!peerVolumes.has(peerId) && !hiddenPeers.has(peerId))) return;
+  const sameName = [...peerNames.values()].filter((n) => n === name).length;
+  if (sameName > 1) { prefsByName.delete(name); return; } // nome repetido: nao da pra saber quem e quem
+  prefsByName.set(name, { volume: peerVolumes.get(peerId), hidden: hiddenPeers.has(peerId), until: Date.now() + PREFS_BY_NAME_TTL_MS, anyJoin });
+}
+function restorePeerPrefsByName(peerId, name, isRejoin) {
+  const saved = prefsByName.get(name);
+  if (!saved) return;
+  prefsByName.delete(name);
+  if (Date.now() > saved.until || !(isRejoin || saved.anyJoin)) return;
+  if (saved.volume) peerVolumes.set(peerId, { ...saved.volume });
+  if (saved.hidden) hiddenPeers.add(peerId);
+}
+
+async function rejoinAfterReconnect() {
+  if (!currentRoomId || rejoinInFlight) return;
+  rejoinInFlight = true;
+  setReconnectBanner('lost', 'Conectado de novo - voltando pra sala...');
+  try {
+    const res = await window.rtc.joinRoom(currentRoomId, mySelfName, myRejoinToken);
+    if (!currentRoomId) return; // saiu da sala enquanto isso
+    myRejoinToken = res.rejoinToken || null;
+    setIceServersFromServer(res.iceServers);
+
+    // Os ids de todo mundo podem ter mudado (servidor reiniciado): o
+    // volume/ocultar de cada pessoa passa pro id novo pelo nome (so quando
+    // o nome e unico na sala, pra nao trocar as preferencias de duas
+    // pessoas) - inclusive de quem voltar DEPOIS de voce.
+    for (const id of peerNames.keys()) rememberPeerPrefsByName(id, true);
+
+    // Todas as conexoes de video sao refeitas do zero com os ids novos.
+    for (const id of new Set([...peers.keys(), ...peerNames.keys()])) teardownPeer(id);
+    resetRemoteAudio();
+    for (const p of res.peers) restorePeerPrefsByName(p.id, p.name, true);
+
+    const oldSelf = selfId;
+    selfId = res.selfId;
+    removeParticipantRow(oldSelf);
+    addParticipantRow(selfId, mySelfName, true);
+    if (localStream) {
+      removeVideoTile(oldSelf);
+      const video = getOrCreateVideoTile(selfId, selfTileLabel, true);
+      video.srcObject = localStream;
+      video.classList.toggle('mirrored-video', shareMode === 'camera');
+      window.rtc.setShareMode(shareMode);
+    }
+    res.peers.forEach((p) => {
+      peerShareModes.set(p.id, p.shareMode || null);
+      peerNames.set(p.id, p.name);
+      addParticipantRow(p.id, p.name, false);
+      createPeerConnection(p.id);
+    });
+    updateSelfAudienceLabel();
+    refreshGameAvatarVideos();
+
+    // Estado dos minijogos pode ter mudado (ou sumido, se o servidor reiniciou).
+    await Promise.all([
+      window.game.getState().then((s) => { gameState = withPhaseDeadline(s); }).catch(() => {}),
+      window.stopGame.getState().then((s) => { stopState = s; }).catch(() => {}),
+      window.sketchGame.getState().then((s) => { sketchState = s; }).catch(() => {}),
+    ]);
+    if (gameState && gameState.status !== 'playing' && gameState.status !== 'over') {
+      boardCellRound = -1;
+      mySecretMap = null;
+      mySecretMapBoardId = null;
+    }
+    renderGame();
+    renderStop();
+    renderSketch();
+    renderGameActivityBadge();
+
+    addChatSystemMessage('Você reconectou');
+    setReconnectBanner('ok', 'Reconectado!');
+    playReconnectedSound();
+  } catch (err) {
+    console.error('Falha ao voltar pra sala:', err);
+    setReconnectBanner('kicked', `Não deu pra voltar pra sala: ${err.message || err}`);
+  } finally {
+    rejoinInFlight = false;
+  }
+}
+
+document.getElementById('btn-reconnect-leave').addEventListener('click', () => {
+  setReconnectBanner(null);
+  leaveRoom();
+});
+
 async function leaveRoom() {
+  currentRoomId = null;
+  myRejoinToken = null;
+  prefsByName.clear();
+  setReconnectBanner(null);
   if (localStream) await stopShare();
   for (const [, state] of peers) state.pc.close();
   peers.clear();
@@ -4194,12 +4499,361 @@ document.querySelectorAll('.game-mode-option[data-mode]').forEach((btn) => {
   });
 });
 
-document.querySelectorAll('.game-mode-option[data-category]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    if (gameState && (gameState.category || 'normal') === btn.dataset.category) return;
-    setGameError('');
-    window.game.setCategory(btn.dataset.category).catch((err) => setGameError(err.message));
+// Delegado: as listas do pessoal sao botoes criados na hora (ver
+// renderCustomCategoryButtons).
+document.getElementById('game-category-options').addEventListener('click', (e) => {
+  const btn = e.target.closest('.game-mode-option[data-category]');
+  if (!btn) return;
+  if (gameState && (gameState.category || 'normal') === btn.dataset.category) return;
+  setGameError('');
+  window.game.setCategory(btn.dataset.category).catch((err) => setGameError(err.message));
+});
+
+// --- Retrospectiva ("TelinhaFix Wrapped") ------------------------------------
+// O servidor calcula (ver computeWrapped) so com o tempo da pessoa NESSA
+// sala; aqui vira um card em imagem (1080x1350, formato de story) pra
+// copiar e mandar no grupo.
+const WRAPPED_DATA_START = Date.UTC(2026, 9, 19, 3); // 19/10/2026 - quando o servidor comecou a guardar a atividade
+let wrappedPeriod = 'week';
+let wrappedRequestSeq = 0;
+let wrappedLogo = null;
+
+function fmtWrappedDuration(ms) {
+  const min = Math.round(ms / 60000);
+  if (min < 1) return 'menos de 1 min';
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h}h ${m}min` : `${h}h`;
+}
+function fmtWrappedDate(t) {
+  return new Date(t).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+function loadWrappedLogo() {
+  if (wrappedLogo) return Promise.resolve(wrappedLogo);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { wrappedLogo = img; resolve(img); };
+    img.onerror = () => resolve(null);
+    img.src = 'assets/logo.png';
   });
+}
+
+// Texto que encolhe ate caber na largura
+function fitWrappedText(ctx, text, maxWidth, size, weight, family) {
+  let s = size;
+  do {
+    ctx.font = `${weight} ${s}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) break;
+    s -= 2;
+  } while (s > 12);
+  return s;
+}
+
+async function renderWrappedCard(canvas, w) {
+  await Promise.all([document.fonts.ready, loadWrappedLogo()]);
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+  const { base, bright } = deriveThemeColors(currentTheme.color || DEFAULT_THEME.color);
+  const sans = "'Inter', 'Segoe UI', Arial, sans-serif";
+  const display = "'Anton', 'Impact', sans-serif";
+  const pad = 80;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0b0b0d';
+  ctx.fillRect(0, 0, W, H);
+  const glow = ctx.createRadialGradient(W * 0.15, H * 0.05, 0, W * 0.15, H * 0.05, W * 1.1);
+  glow.addColorStop(0, `rgba(${hexToRgbString(base)}, 0.55)`);
+  glow.addColorStop(0.45, `rgba(${hexToRgbString(base)}, 0.12)`);
+  glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // cabecalho
+  let y = pad;
+  if (wrappedLogo) {
+    const lh = 64;
+    const lw = (wrappedLogo.width / wrappedLogo.height) * lh;
+    ctx.drawImage(wrappedLogo, pad, y, lw, lh);
+  }
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.font = `700 26px ${sans}`;
+  ctx.textAlign = 'right';
+  ctx.fillText(wrappedPeriod === 'month' ? 'ÚLTIMOS 30 DIAS' : 'ÚLTIMOS 7 DIAS', W - pad, y + 6);
+  ctx.font = `500 24px ${sans}`;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.fillText(`${fmtWrappedDate(w.since)} – ${fmtWrappedDate(w.until)} · sala ${w.roomId}`, W - pad, y + 40);
+  ctx.textAlign = 'left';
+
+  y += 130;
+  ctx.fillStyle = bright;
+  ctx.font = `800 26px ${sans}`;
+  ctx.fillText('TELINHAFIX WRAPPED', pad, y);
+  y += 40;
+  ctx.fillStyle = '#fff';
+  const nameSize = fitWrappedText(ctx, w.name.toUpperCase(), W - pad * 2, 110, 400, display);
+  ctx.fillText(w.name.toUpperCase(), pad, y);
+  y += nameSize + 36;
+
+  // numero principal
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.font = `600 30px ${sans}`;
+  ctx.fillText('em call nessa sala', pad, y);
+  y += 44;
+  ctx.fillStyle = bright;
+  fitWrappedText(ctx, fmtWrappedDuration(w.totalMs), W - pad * 2, 150, 400, display);
+  ctx.fillText(fmtWrappedDuration(w.totalMs), pad, y);
+  y += 170;
+  if (w.rank) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+    ctx.font = `600 30px ${sans}`;
+    const rankText = w.rank === 1 && w.rankOf > 1 ? `Quem mais ficou em call na sala (de ${w.rankOf} pessoas)` : `${w.rank}º em tempo de call (de ${w.rankOf} ${w.rankOf === 1 ? 'pessoa' : 'pessoas'})`;
+    ctx.fillText(rankText, pad, y);
+    y += 70;
+  }
+
+  // grade de numeros
+  const days = wrappedPeriod === 'month' ? 30 : 7;
+  const tiles = [
+    { label: 'Dias com call', value: `${w.daysActive} de ${days}` },
+    { label: 'Maior call', value: w.longestMs ? fmtWrappedDuration(w.longestMs) : '—' },
+    { label: 'Horário favorito', value: w.peakHour === null ? '—' : `${w.peakHour}h` },
+    { label: 'Transmissões', value: w.shares.count ? `${w.shares.count} · ${fmtWrappedDuration(w.shares.ms)}` : '0' },
+    { label: 'Codenames', value: w.codenames.played ? `${w.codenames.wins} ${w.codenames.wins === 1 ? 'vitória' : 'vitórias'} em ${w.codenames.played}` : '—' },
+    { label: 'Stop', value: w.stop.played ? `${w.stop.wins} ${w.stop.wins === 1 ? 'vitória' : 'vitórias'} em ${w.stop.played}` : '—' },
+  ];
+  const gap = 16;
+  const tw = (W - pad * 2 - gap) / 2;
+  const th = 104;
+  tiles.forEach((t, i) => {
+    const x = pad + (i % 2) * (tw + gap);
+    const ty = y + Math.floor(i / 2) * (th + gap);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+    ctx.beginPath();
+    ctx.roundRect(x, ty, tw, th, 18);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.font = `600 24px ${sans}`;
+    ctx.fillText(t.label.toUpperCase(), x + 26, ty + 18);
+    ctx.fillStyle = '#fff';
+    fitWrappedText(ctx, t.value, tw - 52, 44, 700, sans);
+    ctx.fillText(t.value, x + 26, ty + 50);
+  });
+  y += 3 * (th + gap) + 30;
+
+  // companhia
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.font = `600 28px ${sans}`;
+  ctx.fillText('Quem mais ficou em call com você', pad, y);
+  y += 48;
+  if (!w.companions.length) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.font = `500 32px ${sans}`;
+    ctx.fillText('Ninguém ainda - chama a galera!', pad, y);
+  }
+  w.companions.forEach((c, i) => {
+    ctx.fillStyle = i === 0 ? bright : 'rgba(255, 255, 255, 0.85)';
+    ctx.font = `${i === 0 ? 800 : 600} ${i === 0 ? 40 : 32}px ${sans}`;
+    const label = `${i + 1}. ${c.name}`;
+    ctx.fillText(label, pad, y);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.font = `600 30px ${sans}`;
+    ctx.fillText(`${fmtWrappedDuration(c.ms)} juntos`, W - pad, y + (i === 0 ? 6 : 2));
+    ctx.textAlign = 'left';
+    y += i === 0 ? 58 : 46;
+  });
+}
+
+async function loadWrapped(period) {
+  wrappedPeriod = period;
+  document.querySelectorAll('[data-wrapped-period]').forEach((b) => b.classList.toggle('selected', b.dataset.wrappedPeriod === period));
+  const canvas = document.getElementById('wrapped-canvas');
+  const empty = document.getElementById('wrapped-empty');
+  const status = document.getElementById('wrapped-status');
+  const copyBtn = document.getElementById('btn-wrapped-copy');
+  const seq = ++wrappedRequestSeq;
+  canvas.classList.add('loading');
+  copyBtn.disabled = true;
+  status.textContent = 'Calculando...';
+  status.classList.remove('suggestion-error', 'suggestion-ok');
+  try {
+    const { wrapped } = await window.rtc.getWrapped(period);
+    if (seq !== wrappedRequestSeq) return; // trocou de periodo no meio
+    const hint = document.getElementById('wrapped-hint');
+    hint.textContent = wrapped.since < WRAPPED_DATA_START
+      ? 'Seu tempo e seus jogos nessa sala. (O TelinhaFix começou a guardar isso em 19/10.)'
+      : 'Seu tempo e seus jogos nessa sala.';
+    if (!wrapped.totalMs && !wrapped.codenames.played && !wrapped.stop.played) {
+      empty.textContent = 'Ainda não tem nada seu nessa sala nesse período. Volta depois de umas calls!';
+      empty.classList.remove('hidden');
+      canvas.classList.add('hidden');
+      status.textContent = '';
+      return;
+    }
+    empty.classList.add('hidden');
+    canvas.classList.remove('hidden');
+    await renderWrappedCard(canvas, wrapped);
+    status.textContent = '';
+    copyBtn.disabled = false;
+  } catch (err) {
+    if (seq !== wrappedRequestSeq) return;
+    status.textContent = err.message || 'Não deu pra montar a retrospectiva';
+    status.classList.add('suggestion-error');
+  } finally {
+    if (seq === wrappedRequestSeq) canvas.classList.remove('loading');
+  }
+}
+
+document.getElementById('btn-wrapped').addEventListener('click', () => {
+  document.getElementById('wrapped-overlay').classList.remove('hidden');
+  loadWrapped(wrappedPeriod);
+});
+document.querySelectorAll('[data-wrapped-period]').forEach((b) => {
+  b.addEventListener('click', () => { if (b.dataset.wrappedPeriod !== wrappedPeriod || !b.classList.contains('selected')) loadWrapped(b.dataset.wrappedPeriod); });
+});
+function closeWrapped() {
+  wrappedRequestSeq += 1;
+  document.getElementById('wrapped-overlay').classList.add('hidden');
+}
+document.getElementById('btn-wrapped-close').addEventListener('click', closeWrapped);
+document.getElementById('wrapped-overlay').addEventListener('click', (e) => { if (e.target.id === 'wrapped-overlay') closeWrapped(); });
+document.getElementById('btn-wrapped-copy').addEventListener('click', async () => {
+  const status = document.getElementById('wrapped-status');
+  const ok = await window.appLinks.copyImage(document.getElementById('wrapped-canvas').toDataURL('image/png')).catch(() => false);
+  status.textContent = ok ? 'Imagem copiada - é só colar (Ctrl+V)' : 'Não deu pra copiar';
+  status.classList.toggle('suggestion-ok', !!ok);
+  status.classList.toggle('suggestion-error', !ok);
+});
+
+// --- Listas de palavras do pessoal ------------------------------------------
+// Criadas por quem joga e salvas por sala no servidor (ver wordListsByRoom
+// no server/index.js) - aparecem do lado de Normal/Counter-Strike.
+function renderCustomCategoryButtons(category) {
+  const slot = document.getElementById('game-custom-categories');
+  const info = document.getElementById('game-wordlist-info');
+  if (!slot) return;
+  const lists = Array.isArray(gameState.customLists) ? gameState.customLists : [];
+  const key = lists.map((l) => `${l.id}:${l.name}:${l.count}`).join('|');
+  if (slot.dataset.key !== key) {
+    slot.dataset.key = key;
+    slot.innerHTML = '';
+    lists.forEach((l) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'game-mode-option game-custom-category';
+      b.dataset.category = `custom:${l.id}`;
+      b.textContent = l.name;
+      b.title = `${l.count} palavras - criada por ${l.author}`;
+      slot.appendChild(b);
+    });
+  }
+  const current = lists.find((l) => `custom:${l.id}` === category);
+  info.classList.toggle('hidden', !current);
+  if (current) {
+    info.textContent = `${current.count} palavras · criada por ${current.author} · `;
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'game-wordlist-edit';
+    edit.textContent = 'Editar lista';
+    edit.addEventListener('click', () => openWordListEditor(current.id));
+    info.appendChild(edit);
+  }
+}
+
+// Mesma regra do servidor (parseWordListText), so pra contar ao vivo.
+function countWordListWords(raw) {
+  const seen = new Set();
+  String(raw || '').split(/[\n,;]+/).forEach((w) => {
+    const word = w.replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
+    if (word && word.length <= 20) seen.add(word);
+  });
+  return seen.size;
+}
+
+let editingWordListId = null;
+function setWordListStatus(text, isError) {
+  const el = document.getElementById('wordlist-status');
+  el.textContent = text || '';
+  el.classList.toggle('suggestion-error', !!isError);
+}
+function updateWordListCount() {
+  const n = countWordListWords(document.getElementById('wordlist-words').value);
+  const el = document.getElementById('wordlist-count');
+  el.textContent = `${n} ${n === 1 ? 'palavra' : 'palavras'}`;
+  el.classList.toggle('suggestion-ok', n >= 25);
+}
+async function openWordListEditor(listId) {
+  editingWordListId = listId || null;
+  const nameEl = document.getElementById('wordlist-name');
+  const wordsEl = document.getElementById('wordlist-words');
+  const delBtn = document.getElementById('btn-wordlist-delete');
+  document.getElementById('wordlist-title').textContent = listId ? 'Editar lista de palavras' : 'Nova lista de palavras';
+  delBtn.classList.toggle('hidden', !listId);
+  delBtn.textContent = 'Apagar lista';
+  delBtn.dataset.armed = '';
+  nameEl.value = '';
+  wordsEl.value = '';
+  setWordListStatus('');
+  document.getElementById('wordlist-overlay').classList.remove('hidden');
+  if (listId) {
+    setWordListStatus('Carregando...');
+    try {
+      const { list } = await window.game.getWordList(listId);
+      nameEl.value = list.name;
+      wordsEl.value = list.words.join('\n');
+      setWordListStatus('');
+    } catch (err) {
+      setWordListStatus(err.message, true);
+    }
+  }
+  updateWordListCount();
+  nameEl.focus();
+}
+function closeWordListEditor() {
+  document.getElementById('wordlist-overlay').classList.add('hidden');
+  editingWordListId = null;
+}
+document.getElementById('btn-wordlist-new').addEventListener('click', () => openWordListEditor(null));
+document.getElementById('btn-wordlist-cancel').addEventListener('click', closeWordListEditor);
+document.getElementById('wordlist-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'wordlist-overlay') closeWordListEditor();
+});
+document.getElementById('wordlist-words').addEventListener('input', () => {
+  updateWordListCount();
+  setWordListStatus(''); // erro antigo ("tem 3") nao vale mais
+});
+document.getElementById('wordlist-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('btn-wordlist-save');
+  btn.disabled = true;
+  setWordListStatus('Salvando...');
+  try {
+    await window.game.saveWordList(editingWordListId, document.getElementById('wordlist-name').value, document.getElementById('wordlist-words').value);
+    closeWordListEditor();
+  } catch (err) {
+    setWordListStatus(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+// Apagar pede 2 cliques (sem janela de confirmacao do sistema).
+document.getElementById('btn-wordlist-delete').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-wordlist-delete');
+  if (!editingWordListId) return;
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = '1';
+    btn.textContent = 'Clique de novo pra apagar';
+    return;
+  }
+  try {
+    await window.game.deleteWordList(editingWordListId);
+    closeWordListEditor();
+  } catch (err) {
+    setWordListStatus(err.message, true);
+  }
 });
 
 function applyGameBoardTheme(theme) {
@@ -4255,9 +4909,27 @@ document.querySelectorAll('.game-spectate-btn').forEach((btn) => {
   });
 });
 
+// "Partida em andamento": assistir com/sem mapa, pegar uma vaga ou voltar a assistir.
+document.getElementById('game-join-view').addEventListener('click', (e) => {
+  const errEl = document.getElementById('game-join-error');
+  const showErr = (err) => { errEl.textContent = err.message || String(err); errEl.classList.remove('hidden'); };
+  errEl.classList.add('hidden');
+  const watch = e.target.closest('[data-join-watch]');
+  const seat = e.target.closest('[data-join-team]');
+  if (watch) {
+    window.game.setSpectator(watch.dataset.joinWatch === '1').then(() => { gameJoinViewForced = false; renderGame(); }).catch(showErr);
+  } else if (seat && !seat.disabled) {
+    window.game.setRole(seat.dataset.joinTeam, seat.dataset.joinRole).then(() => { gameJoinViewForced = false; renderGame(); }).catch(showErr);
+  } else if (e.target.closest('[data-join-back]')) {
+    gameJoinViewForced = false;
+    renderGame();
+  }
+});
+
 // Botao "Mostrar mapa / Esconder mapa" do painel de espectadores (o painel
 // e refeito a cada render, entao o clique e tratado por delegacao).
 document.getElementById('game-panels-right').addEventListener('click', (e) => {
+  if (e.target.closest('[data-open-join]')) { gameJoinViewForced = true; renderGame(); return; }
   const btn = e.target.closest('.game-spectate-toggle');
   if (!btn) return;
   window.game.setSpectator(btn.dataset.withMap === '1').catch((err) => console.error('Falha ao trocar o modo de espectador:', err));
@@ -4458,35 +5130,45 @@ btnJoin.addEventListener('click', async () => {
     await window.rtc.connect(serverUrl, password);
     setLoginError('');
     saveWorkingDisplayName(rawName);
-    const { selfId: id, peers: existingPeers, iceServers: serverIceServers } = await window.rtc.joinRoom(roomId, name);
+    const { selfId: id, peers: existingPeers, iceServers: serverIceServers, rejoinToken, chatHistory } = await window.rtc.joinRoom(roomId, name);
     selfId = id;
+    currentRoomId = roomId;
+    myRejoinToken = rejoinToken || null;
     setIceServersFromServer(serverIceServers);
     saveRoomToHistory(roomId);
     existingPeers.forEach((p) => peerShareModes.set(p.id, p.shareMode || null));
 
     window.rtc.onSignal(handleSignal);
 
-    window.rtc.onPeerJoined(({ id: peerId, name: peerName }) => {
+    window.rtc.onPeerJoined(({ id: peerId, name: peerName, rejoin, replaces }) => {
+      // Alguem que caiu e voltou sozinho: a conexao antiga dela (replaces)
+      // ainda esta aqui - fecha em silencio e passa o volume/ocultar que
+      // voce tinha escolhido pra ela pro id novo.
+      if (replaces && peerNames.has(replaces)) {
+        copyPeerAudioPrefs(replaces, peerId);
+        teardownPeer(replaces);
+      } else {
+        restorePeerPrefsByName(peerId, peerName, !!rejoin);
+      }
       peerNames.set(peerId, peerName);
       addParticipantRow(peerId, peerName, false);
       createPeerConnection(peerId);
       updateSelfAudienceLabel();
-      addChatSystemMessage(`${peerName} entrou na sala`);
-      playJoinSound();
+      if (rejoin) {
+        addChatSystemMessage(`${peerName} reconectou`);
+      } else {
+        addChatSystemMessage(`${peerName} entrou na sala`);
+        playJoinSound();
+      }
     });
 
-    window.rtc.onPeerLeft(({ id: peerId }) => {
+    window.rtc.onPeerLeft(({ id: peerId, replaced }) => {
+      if (!peerNames.has(peerId) && !peers.has(peerId)) return; // ja trocada (ver onPeerJoined)
       const leftName = peerNames.get(peerId) || 'Alguém';
-      const state = peers.get(peerId);
-      if (state) state.pc.close();
-      peers.delete(peerId);
-      peerNames.delete(peerId);
-      peerShareModes.delete(peerId);
-      refreshGameAvatarVideos();
-      updateSelfAudienceLabel();
-      removeParticipantRow(peerId);
-      removeVideoTile(peerId);
+      if (!replaced) rememberPeerPrefsByName(peerId, false); // vale se ela voltar sozinha
+      teardownPeer(peerId);
       forgetPeerAudioPrefs(peerId);
+      if (replaced) return; // voltou com outro id - nao "saiu"
       addChatSystemMessage(`${leftName} saiu da sala`);
       playLeaveSound();
     });
@@ -4495,14 +5177,15 @@ btnJoin.addEventListener('click', async () => {
     window.rtc.onUpdatePrompt(() => { window.appInfo.promptUpdate().catch(() => {}); });
 
     window.rtc.onPeerShareMode(({ id: peerId, mode }) => {
+      const wasSharing = !!peerShareModes.get(peerId);
       peerShareModes.set(peerId, mode || null);
+      if (mode && !wasSharing) notifyShareStarted(peerId, mode);
       updatePeerTileMirror(peerId);
       refreshGameAvatarVideos();
     });
 
-    window.rtc.onDisconnected(() => {
-      setLoginError('Conexão com o servidor perdida.');
-    });
+    window.rtc.onDisconnected(onServerConnectionLost);
+    window.rtc.onReconnected(rejoinAfterReconnect);
 
     window.game.onState((newState) => {
       // "round" por si so nao basta pra saber se o tabuleiro precisa ser
@@ -4578,11 +5261,13 @@ btnJoin.addEventListener('click', async () => {
 
     roomLabel.textContent = roomId;
     addParticipantRow(selfId, name, true);
+    mySelfName = name;
     existingPeers.forEach((p) => {
       peerNames.set(p.id, p.name);
       addParticipantRow(p.id, p.name, false);
       createPeerConnection(p.id);
     });
+    renderChatHistory(chatHistory);
 
     loginScreen.classList.add('hidden');
     roomScreen.classList.remove('hidden');
@@ -4592,3 +5277,13 @@ btnJoin.addEventListener('click', async () => {
     btnJoin.disabled = false;
   }
 });
+
+// "Apoie o Projeto do TelinhaFix" (tela inicial): QR code do Pix.
+(() => {
+  const overlay = document.getElementById('support-overlay');
+  const close = () => overlay.classList.add('hidden');
+  document.getElementById('btn-support').addEventListener('click', () => overlay.classList.remove('hidden'));
+  document.getElementById('btn-support-close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.classList.contains('hidden')) close(); });
+})();
