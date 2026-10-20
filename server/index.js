@@ -1142,7 +1142,92 @@ function logActivity(event) {
   activityLog.push(e);
   if (activityLog.length > ACTIVITY_MAX) activityLog.splice(0, activityLog.length - ACTIVITY_MAX);
   adminSockets.forEach((s) => s.emit('admin-activity-event', e));
+  persistActivity(e);
   return e;
+}
+
+// --- Banco de dados dos dashboards (Upstash Redis, via HTTPS) ----------------
+// Cada evento vai pro banco na hora, entao nada se perde quando o servidor
+// dorme/reinicia - e o painel admin le de la, mesmo que tenha ficado fechado.
+// Credenciais SO nas variaveis do Render (UPSTASH_REDIS_REST_URL e
+// UPSTASH_REDIS_REST_TOKEN); sem elas, tudo continua so na memoria como antes.
+// Guardado num "sorted set" com a hora do evento como nota, pra dar pra pedir
+// "tudo depois de tal hora". Se o Upstash falhar, os eventos ficam na fila e
+// o servidor tenta de novo a cada 10s.
+const UPSTASH_URL = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/+$/, '');
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
+const ACTIVITY_DB_KEY = process.env.ACTIVITY_DB_KEY || 'telinhafix:activity'; // env so pros testes
+const activityDbEnabled = !!(UPSTASH_URL && UPSTASH_TOKEN);
+const activityDbQueue = [];
+let activityDbFlushing = false;
+let activityDbRetryTimer = null;
+let activityDbLastError = null;
+console.log(`[stats] banco de dados ${activityDbEnabled ? 'ligado (Upstash)' : 'desligado - so memoria'}`);
+
+async function upstash(command) {
+  const r = await fetch(UPSTASH_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(command),
+    signal: AbortSignal.timeout(8000),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+  return data.result;
+}
+
+function persistActivity(e) {
+  if (!activityDbEnabled) return;
+  activityDbQueue.push(e);
+  flushActivityDb();
+}
+
+async function flushActivityDb() {
+  if (activityDbFlushing || !activityDbQueue.length) return;
+  activityDbFlushing = true;
+  try {
+    while (activityDbQueue.length) {
+      const batch = activityDbQueue.slice(0, 50);
+      const cmd = ['ZADD', ACTIVITY_DB_KEY];
+      batch.forEach((e) => cmd.push(String(e.t), JSON.stringify(e)));
+      await upstash(cmd);
+      activityDbQueue.splice(0, batch.length);
+    }
+    activityDbLastError = null;
+  } catch (err) {
+    activityDbLastError = err.message;
+    console.error(`[stats] falha ao salvar no banco (${activityDbQueue.length} na fila, tentando de novo em 10s):`, err.message);
+    if (!activityDbRetryTimer) {
+      activityDbRetryTimer = setTimeout(() => { activityDbRetryTimer = null; flushActivityDb(); }, 10000);
+      activityDbRetryTimer.unref();
+    }
+  } finally {
+    activityDbFlushing = false;
+  }
+}
+
+// Tudo depois de "since" (ms), em paginas de 2000 pra nao estourar o limite
+// de tamanho de resposta do Upstash.
+async function readActivityFromDb(since) {
+  const out = [];
+  for (let page = 0, offset = 0; page < 100; page++, offset += 2000) {
+    const res = await upstash(['ZRANGEBYSCORE', ACTIVITY_DB_KEY, `(${Number(since) || 0}`, '+inf', 'LIMIT', String(offset), '2000']);
+    for (const s of res || []) { try { out.push(JSON.parse(s)); } catch { /* linha estragada - ignora */ } }
+    if (!res || res.length < 2000) break;
+  }
+  return out;
+}
+
+// Espera a fila do banco esvaziar (usado antes de desligar), no maximo maxMs.
+function waitActivityDbIdle(maxMs) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    (function tick() {
+      if ((!activityDbQueue.length && !activityDbFlushing) || Date.now() - t0 > maxMs) return resolve();
+      if (!activityDbFlushing) flushActivityDb();
+      setTimeout(tick, 100);
+    }());
+  });
 }
 
 // Fecha a transmissao em andamento de alguem (se tiver) e registra a duracao.
@@ -1305,10 +1390,23 @@ io.on('connection', (socket) => {
 
   // Dashboards: tudo que o servidor registrou desde que ligou (since = so o
   // que veio depois desse horario), pro painel guardar no PC do admin.
-  socket.on('admin-activity', (data, ack) => {
+  // Com o banco ligado, le de la (inclui o que aconteceu antes desse servidor
+  // ligar) e junta com o que ainda esta na memoria/fila; sem banco ou se ele
+  // falhar, devolve so a memoria (storage diz de onde veio).
+  socket.on('admin-activity', async (data, ack) => {
     if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
     const since = Number(data && data.since) || 0;
-    if (ack) ack({ ok: true, serverStartedAt, events: since ? activityLog.filter((e) => e.t > since) : activityLog });
+    const fromMemory = activityLog.filter((e) => e.t > since);
+    if (!activityDbEnabled) { if (ack) ack({ ok: true, serverStartedAt, storage: 'memory', events: fromMemory }); return; }
+    try {
+      const fromDb = await readActivityFromDb(since);
+      const seen = new Set(fromDb.map((e) => e.id));
+      const events = fromDb.concat(fromMemory.filter((e) => !seen.has(e.id))).sort((a, b) => a.t - b.t);
+      if (ack) ack({ ok: true, serverStartedAt, storage: 'db', events });
+    } catch (err) {
+      console.error('[stats] falha ao ler o banco:', err.message);
+      if (ack) ack({ ok: true, serverStartedAt, storage: 'memory', dbError: err.message, events: fromMemory });
+    }
   });
 
   socket.on('admin-server-health', (_data, ack) => {
@@ -1326,6 +1424,9 @@ io.on('connection', (socket) => {
       rooms: rooms.size,
       people: Array.from(rooms.values()).reduce((n, r) => n + r.size, 0),
       codenamesPlaying: playing,
+      // banco dos dashboards: 'off' (sem variaveis), 'ok' ou 'erro' (+ fila esperando pra salvar)
+      statsDb: !activityDbEnabled ? 'off' : activityDbLastError ? 'erro' : 'ok',
+      statsDbQueue: activityDbQueue.length,
       rssMb: Math.round(mem.rss / 1048576),
       heapMb: Math.round(mem.heapUsed / 1048576),
       node: process.version,
@@ -2134,7 +2235,9 @@ function flushActivityAndExit() {
     for (const info of room.values()) endSessionActivity(roomId, info, now, true);
   }
   for (const game of codenamesGames.values()) if (game.status === 'playing') logCodenamesGame(game, true);
-  setTimeout(() => process.exit(0), 1500).unref();
+  // termina de salvar no banco antes de sair (no maximo ~4s)
+  waitActivityDbIdle(4000).then(() => setTimeout(() => process.exit(0), 300));
+  setTimeout(() => process.exit(0), 5000).unref();
 }
 process.on('SIGTERM', flushActivityAndExit);
 process.on('SIGINT', flushActivityAndExit);
