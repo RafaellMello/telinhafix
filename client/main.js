@@ -384,6 +384,75 @@ app.setAsDefaultProtocolClient(INVITE_PROTOCOL);
 // appId do atalho que o instalador cria).
 if (process.platform === 'win32') app.setAppUserModelId('com.telinhafix.app');
 
+// --- Apontar na tela: seta por cima do monitor transmitido -----------------
+// Quem assiste faz Alt + clique na sua transmissao de tela e a seta aparece
+// por cima do monitor que voce esta compartilhando - numa janela
+// transparente, sempre na frente, que nao recebe clique e fica FORA da
+// propria captura (setContentProtection), senao quem assiste veria a seta
+// duas vezes. So da pra saber o monitor quando a transmissao e de um monitor
+// inteiro; compartilhando uma janela so, a seta aparece so no app de quem
+// assiste. Jogo em tela cheia exclusiva pode ficar por cima da camada.
+let pingTargetBounds = null; // area (em DIP) do monitor sendo transmitido
+let pingOverlayWin = null;
+let pingOverlayHideTimer = null;
+let suppressNextAltUp = false;
+
+function setPingTargetDisplayId(displayId) {
+  const display = screen.getAllDisplays().find((d) => String(d.id) === String(displayId));
+  pingTargetBounds = display ? display.bounds : null;
+}
+function setPingTargetPhysicalRect(rect) {
+  if (!rect || !(rect.width > 0 && rect.height > 0)) { pingTargetBounds = null; return; }
+  try {
+    const dip = process.platform === 'win32' ? screen.screenToDipRect(null, { x: rect.left, y: rect.top, width: rect.width, height: rect.height }) : { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+    pingTargetBounds = screen.getDisplayMatching(dip).bounds;
+  } catch {
+    pingTargetBounds = null;
+  }
+}
+function clearPingOverlay() {
+  pingTargetBounds = null;
+  clearTimeout(pingOverlayHideTimer);
+  if (pingOverlayWin && !pingOverlayWin.isDestroyed()) pingOverlayWin.destroy();
+  pingOverlayWin = null;
+}
+function showPingOverlay(ping) {
+  if (!pingTargetBounds || !ping) return;
+  const x = Number(ping.x);
+  const y = Number(ping.y);
+  if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) return;
+  const color = /^(#[0-9a-f]{6}|hsl\([0-9., %]+\))$/i.test(String(ping.color || '')) ? ping.color : '#e2231a';
+  const payload = JSON.stringify({ x, y, name: String(ping.name || '').slice(0, 40), color });
+  const show = () => {
+    pingOverlayWin.setBounds(pingTargetBounds);
+    pingOverlayWin.showInactive();
+    pingOverlayWin.setAlwaysOnTop(true, 'screen-saver');
+    // fora da captura: so pega com a janela JA visivel (testado - ligar antes
+    // de mostrar nao funciona), entao liga de novo a cada vez que aparece
+    pingOverlayWin.setContentProtection(true);
+    pingOverlayWin.webContents.executeJavaScript(`window.showPing(${payload})`).catch(() => {});
+    clearTimeout(pingOverlayHideTimer);
+    pingOverlayHideTimer = setTimeout(() => { if (pingOverlayWin && !pingOverlayWin.isDestroyed()) pingOverlayWin.hide(); }, 4500);
+  };
+  if (pingOverlayWin && !pingOverlayWin.isDestroyed()) { show(); return; }
+  pingOverlayWin = new BrowserWindow({
+    ...pingTargetBounds,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false,
+    alwaysOnTop: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  pingOverlayWin.setIgnoreMouseEvents(true);
+  pingOverlayWin.webContents.once('did-finish-load', show);
+  pingOverlayWin.loadFile(path.join(__dirname, 'renderer', 'ping-overlay.html'));
+}
+
 // Notificacao do Windows "Fulano comecou a transmitir" (o renderer decide
 // quando - ver notifyShareStarted). So aparece se a janela NAO estiver na
 // frente da pessoa; clicar nela traz o app pra frente.
@@ -444,6 +513,14 @@ function createWindow() {
 
   mainWindow = win;
   win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
+  // Alt + clique (apontar na tela): soltar o Alt depois do clique nao abre
+  // o menu da janela (autoHideMenuBar mostra o menu com Alt sozinho).
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'Alt' && input.type === 'keyUp' && suppressNextAltUp) {
+      suppressNextAltUp = false;
+      event.preventDefault();
+    }
+  });
 
   win.once('ready-to-show', () => {
     win.maximize();
@@ -500,6 +577,9 @@ function createWindow() {
         callback({});
         return;
       }
+      // monitor inteiro: guarda qual e (pra seta do "apontar na tela")
+      if (String(source.id).startsWith('screen:')) setPingTargetDisplayId(source.display_id);
+      else pingTargetBounds = null;
       const response = { video: source };
       if (request.audioRequested) response.audio = 'loopback';
       callback(response);
@@ -520,6 +600,7 @@ function createWindow() {
   ipcMain.handle('native-screen-list', () => listNativeScreens());
 
   ipcMain.handle('native-screen-start', (event, opts) => {
+    setPingTargetPhysicalRect(opts && opts.bounds);
     startNativeScreenCapture(BrowserWindow.fromWebContents(event.sender), opts);
   });
 
@@ -556,6 +637,9 @@ function createWindow() {
   // denied"). O modulo nativo nao passa pelo modelo de permissoes da web,
   // entao funciona direto.
   ipcMain.handle('share-notify', (_event, payload) => showShareNotification(payload));
+  ipcMain.on('ping-overlay-show', (_event, ping) => showPingOverlay(ping));
+  ipcMain.on('ping-overlay-clear', () => clearPingOverlay());
+  ipcMain.on('ping-alt-click', () => { suppressNextAltUp = true; });
   ipcMain.handle('copy-image', (_event, dataUrl) => {
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,') || dataUrl.length > 80 * 1024 * 1024) return false;
     const img = nativeImage.createFromDataURL(dataUrl);

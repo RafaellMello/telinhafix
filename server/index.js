@@ -980,6 +980,42 @@ function transferGameIdentity(game, oldId, newId) {
 // um que soubesse o id de outro poderia "roubar" o lugar dele.
 const REJOIN_TOKEN_TTL_MS = 10 * 60 * 1000;
 const rejoinTokens = new Map(); // token -> { sid, roomId, name, leftAt, spectator, mapViewer }
+
+// --- Senha da sala ---------------------------------------------------------------
+// O dono (1a pessoa da sala; se sair, a proxima que entrou) pode por uma
+// senha pelo cadeado do lado do "Convidar". Fica so na memoria e some quando
+// a sala esvazia. Guardada so como hash com sal - nem o servidor sabe a senha.
+const ROOM_PASSWORD_MIN = 3;
+const ROOM_PASSWORD_MAX = 32;
+const ROOM_PASSWORD_MAX_FAILS = 5;
+const ROOM_PASSWORD_WINDOW_MS = 60 * 1000;
+const roomLocks = new Map(); // roomId -> { salt, hash }
+const roomOwners = new Map(); // roomId -> socketId
+const roomPasswordFails = new Map(); // `${ip}|${roomId}` -> [t]
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, list] of roomPasswordFails) if (!list.some((t) => now - t < ROOM_PASSWORD_WINDOW_MS)) roomPasswordFails.delete(k);
+}, 5 * 60 * 1000).unref();
+
+function validRoomPassword(pw) {
+  return typeof pw === 'string' && pw.length >= ROOM_PASSWORD_MIN && pw.length <= ROOM_PASSWORD_MAX;
+}
+function makeRoomLock(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return { salt, hash: crypto.createHash('sha256').update(salt + pw).digest() };
+}
+function roomPasswordMatches(lock, pw) {
+  const h = crypto.createHash('sha256').update(lock.salt + String(pw).slice(0, 200)).digest();
+  return crypto.timingSafeEqual(h, lock.hash);
+}
+function roomLockState(roomId) {
+  const ownerId = roomOwners.get(roomId) || null;
+  const ownerName = (ownerId && rooms.get(roomId)?.get(ownerId)?.name) || null;
+  return { locked: roomLocks.has(roomId), ownerId, ownerName };
+}
+function broadcastRoomLockState(roomId) {
+  io.to(roomId).emit('room-lock-state', roomLockState(roomId));
+}
 function pruneRejoinTokens() {
   const now = Date.now();
   for (const [token, entry] of rejoinTokens) {
@@ -1722,6 +1758,18 @@ const WRAPPED_PERIODS = { week: 7 * 24 * 60 * 60 * 1000, month: 30 * 24 * 60 * 6
 const WRAPPED_CACHE_MS = 2 * 60 * 1000;
 const BRT_OFFSET_MS = -3 * 60 * 60 * 1000; // horario de Brasilia (sem horario de verao desde 2019)
 const wrappedEventsCache = new Map(); // period -> { at, since, promise }
+// desde quando o servidor guarda a atividade no banco (19/10/2026, 0h Brasilia)
+const ACTIVITY_DATA_SINCE = Date.UTC(2026, 9, 19, 3);
+let profileEventsCache = null; // { at, promise } - tudo desde o comeco
+
+function getProfileEvents() {
+  const now = Date.now();
+  if (profileEventsCache && now - profileEventsCache.at < WRAPPED_CACHE_MS) return profileEventsCache.promise;
+  const promise = getActivitySince(0);
+  profileEventsCache = { at: now, promise };
+  promise.catch(() => { profileEventsCache = null; });
+  return promise;
+}
 
 function getActivitySince(since) {
   const fromMemory = () => activityLog.filter((e) => e.t > since);
@@ -1844,18 +1892,158 @@ function computeWrapped(allEvents, roomId, name, since, now) {
   };
 }
 
+// --- Perfil + conquistas ---------------------------------------------------
+// Os numeros de uma pessoa (pelo nome) no TelinhaFix inteiro - todas as
+// salas, sem mostrar o codigo de nenhuma - e as 12 conquistas em bronze,
+// prata e ouro. Mesma fonte da Retrospectiva (banco + memoria + o que esta
+// rolando agora). So da pra pedir o seu perfil ou o de quem esta na mesma
+// sala que voce (clicando no nome na lista).
+const ACHIEVEMENTS = [
+  { id: 'maratonista', name: 'Maratonista', desc: 'Horas em call', metric: 'callHours', unit: 'h', tiers: [10, 50, 200] },
+  { id: 'folego', name: 'Fôlego', desc: 'Maior call seguida', metric: 'longestHours', unit: 'h', tiers: [2, 4, 8] },
+  { id: 'fiel', name: 'Fiel', desc: 'Dias diferentes com call', metric: 'daysActive', unit: 'dias', tiers: [7, 30, 100] },
+  { id: 'coruja', name: 'Coruja', desc: 'Noites em call entre 0h e 5h', metric: 'nights', unit: 'noites', tiers: [3, 15, 50] },
+  { id: 'streamer', name: 'Streamer', desc: 'Horas transmitindo a tela', metric: 'screenHours', unit: 'h', tiers: [5, 25, 100] },
+  { id: 'rosto', name: 'Rosto conhecido', desc: 'Transmissões de câmera', metric: 'cameraShares', unit: '', tiers: [5, 25, 100] },
+  { id: 'turma', name: 'Turma', desc: 'Pessoas diferentes em call com você', metric: 'people', unit: 'pessoas', tiers: [3, 10, 25] },
+  { id: 'agente', name: 'Agente secreto', desc: 'Vitórias no Codenames', metric: 'cnWins', unit: '', tiers: [5, 25, 100] },
+  { id: 'mestre', name: 'Mestre-espião', desc: 'Vitórias como Mestre-Espião', metric: 'cnSpyWins', unit: '', tiers: [3, 15, 50] },
+  { id: 'stop', name: 'Rei do Stop', desc: 'Vitórias no Stop', metric: 'stopWins', unit: '', tiers: [3, 15, 50] },
+  { id: 'artista', name: 'Artista', desc: 'Rodadas criadas no "A ou B"', metric: 'sketches', unit: '', tiers: [3, 15, 50] },
+  { id: 'pefrio', name: 'Pé-frio', desc: 'Derrotas no Codenames pelo assassino', metric: 'assassinLosses', unit: '', tiers: [1, 5, 20] },
+];
+const PROFILE_MIN_TOGETHER_MS = 60 * 1000; // ficar junto menos de 1 min nao conta como "turma"
+
+function computeProfile(allEvents, name, now) {
+  const norm = (n) => String(n || '').trim().toLowerCase();
+  const me = norm(name);
+  const live = [];
+  for (const [roomId, room] of rooms) {
+    for (const info of room.values()) {
+      if (info.joinedAt) live.push({ type: 'session', name: info.name, roomId, start: info.joinedAt, end: now });
+      if (info.shareMode && info.shareStartedAt) live.push({ type: 'share', name: info.name, roomId, mode: info.shareMode, start: info.shareStartedAt, end: now });
+    }
+  }
+  const events = allEvents.concat(live);
+  const sessions = events.filter((e) => e.type === 'session' && e.end > e.start);
+  const mine = sessions.filter((e) => norm(e.name) === me);
+
+  let totalMs = 0;
+  let longestMs = 0;
+  let firstSeen = null;
+  const days = new Set();
+  const nights = new Set();
+  for (const e of mine) {
+    totalMs += e.end - e.start;
+    longestMs = Math.max(longestMs, e.end - e.start);
+    if (firstSeen === null || e.start < firstSeen) firstSeen = e.start;
+    for (let t = e.start; t < e.end;) {
+      const local = new Date(t + BRT_OFFSET_MS);
+      const day = local.toISOString().slice(0, 10);
+      days.add(day);
+      if (local.getUTCHours() < 5) nights.add(day);
+      const nextHour = t - (local.getUTCMinutes() * 60000 + local.getUTCSeconds() * 1000 + local.getUTCMilliseconds()) + 3600000;
+      t = Math.min(nextHour, e.end);
+    }
+  }
+
+  // com quem ficou em call (mesma sala, ao mesmo tempo)
+  const byRoom = new Map();
+  for (const e of sessions) {
+    if (!byRoom.has(e.roomId)) byRoom.set(e.roomId, []);
+    byRoom.get(e.roomId).push(e);
+  }
+  const together = new Map();
+  for (const m of mine) {
+    for (const o of byRoom.get(m.roomId) || []) {
+      if (norm(o.name) === me) continue;
+      const overlap = Math.min(m.end, o.end) - Math.max(m.start, o.start);
+      if (overlap <= 0) continue;
+      const k = norm(o.name);
+      const cur = together.get(k) || { name: o.name, ms: 0 };
+      cur.ms += overlap;
+      cur.name = o.name;
+      together.set(k, cur);
+    }
+  }
+  const companions = Array.from(together.values()).sort((a, b) => b.ms - a.ms);
+
+  const shares = events.filter((e) => e.type === 'share' && norm(e.name) === me && e.end > e.start);
+  const screenMs = shares.filter((e) => e.mode === 'screen' || e.mode === 'screen-native').reduce((s, e) => s + (e.end - e.start), 0);
+  const cameraShares = shares.filter((e) => e.mode === 'camera').length;
+
+  let cnPlayed = 0, cnWins = 0, cnSpyWins = 0, assassinLosses = 0;
+  for (const g of events) {
+    if (g.type !== 'codenames' || g.aborted) continue;
+    const p = (g.players || []).find((x) => norm(x.name) === me);
+    if (!p) continue;
+    cnPlayed += 1;
+    const won = !!g.winner && g.winner === p.team;
+    if (won) cnWins += 1;
+    if (won && p.role === 'spymaster') cnSpyWins += 1;
+    if (!won && g.winReason === 'assassin') assassinLosses += 1;
+  }
+  let stopPlayed = 0, stopWins = 0;
+  for (const r of events) {
+    if (r.type !== 'stop') continue;
+    const p = (r.players || []).find((x) => norm(x.name) === me);
+    if (!p) continue;
+    stopPlayed += 1;
+    const best = Math.max(...r.players.map((x) => x.total || 0));
+    if (best > 0 && (p.total || 0) === best) stopWins += 1;
+  }
+  const sketches = events.filter((e) => e.type === 'sketch' && norm(e.author) === me).length;
+
+  const metrics = {
+    callHours: totalMs / 3600000,
+    longestHours: longestMs / 3600000,
+    daysActive: days.size,
+    nights: nights.size,
+    screenHours: screenMs / 3600000,
+    cameraShares,
+    people: companions.filter((c) => c.ms >= PROFILE_MIN_TOGETHER_MS).length,
+    cnWins,
+    cnSpyWins,
+    stopWins,
+    sketches,
+    assassinLosses,
+  };
+  const achievements = ACHIEVEMENTS.map((a) => {
+    const value = metrics[a.metric] || 0;
+    const level = a.tiers.filter((t) => value >= t).length; // 0 = nenhum, 1 bronze, 2 prata, 3 ouro
+    return { id: a.id, name: a.name, desc: a.desc, unit: a.unit, tiers: a.tiers, value: Math.round(value * 10) / 10, level, next: level < 3 ? a.tiers[level] : null };
+  });
+
+  return {
+    name,
+    firstSeen,
+    dataSince: ACTIVITY_DATA_SINCE,
+    stats: {
+      totalMs, longestMs, daysActive: days.size, sessions: mine.length,
+      screenMs, shares: shares.length, cameraShares,
+      people: metrics.people,
+      codenames: { played: cnPlayed, wins: cnWins, spyWins: cnSpyWins },
+      stop: { played: stopPlayed, wins: stopWins },
+      sketches,
+    },
+    companions: companions.slice(0, 3),
+    achievements,
+  };
+}
+
 let peakRooms = 0;
 let peakParticipants = 0;
 
 function getPeersInRoom(roomId) {
   const room = rooms.get(roomId);
   if (!room) return [];
-  return Array.from(room.entries()).map(([id, info]) => ({ id, name: info.name, shareMode: info.shareMode || null, shareStartedAt: info.shareStartedAt || null, version: info.version || null, joinedAt: info.joinedAt || null }));
+  return Array.from(room.entries()).map(([id, info]) => ({ id, name: info.name, shareMode: info.shareMode || null, shareStartedAt: info.shareStartedAt || null, version: info.version || null, joinedAt: info.joinedAt || null, allowPings: info.allowPings !== false }));
 }
 
 function getRoomsSnapshot() {
   return Array.from(rooms.keys()).map((roomId) => ({
     roomId,
+    locked: roomLocks.has(roomId),
     participants: getPeersInRoom(roomId),
     codenames: codenamesAdminView(roomId),
   }));
@@ -2160,16 +2348,41 @@ io.on('connection', (socket) => {
     // nome: so texto, ate MAX_NAME_LEN caracteres (o resto e cortado)
     const name = (typeof data.name === 'string' ? data.name : '').trim().slice(0, MAX_NAME_LEN) || 'Anonimo';
     if (currentRoom) { if (ack) ack({ ok: false, error: 'Você já está em uma sala' }); return; }
-    currentRoom = roomId;
-    if (!rooms.has(roomId)) rooms.set(roomId, new Map());
-    const room = rooms.get(roomId);
 
     // Reconexao automatica (a internet caiu ou o servidor reiniciou): so vale
     // com o token que essa pessoa recebeu ao entrar, e pra MESMA sala.
     const rejoinToken = data && typeof data.rejoinToken === 'string' ? data.rejoinToken : null;
     const rejoin = rejoinToken && rejoinTokens.get(rejoinToken);
     const validRejoin = !!rejoin && rejoin.roomId === roomId;
+
+    // Sala com senha (ver roomLocks): quem ja estava dentro e so reconectou
+    // (token valido) volta direto; o resto precisa da senha.
+    const lock = rooms.has(roomId) ? roomLocks.get(roomId) : null;
+    if (lock && !validRejoin) {
+      const ip = String(socket.handshake.headers['x-forwarded-for'] || socket.handshake.address || '').split(',')[0].trim();
+      const attemptKey = `${ip}|${roomId}`;
+      const now = Date.now();
+      const recent = (roomPasswordFails.get(attemptKey) || []).filter((t) => now - t < ROOM_PASSWORD_WINDOW_MS);
+      if (recent.length >= ROOM_PASSWORD_MAX_FAILS) {
+        const waitS = Math.ceil((recent[0] + ROOM_PASSWORD_WINDOW_MS - now) / 1000);
+        if (ack) ack({ ok: false, needsPassword: true, error: `Muitas tentativas erradas - tenta de novo em ${waitS}s` });
+        return;
+      }
+      const given = data && typeof data.roomPassword === 'string' ? data.roomPassword : '';
+      if (!given) { if (ack) ack({ ok: false, needsPassword: true, error: 'Essa sala tem senha' }); return; }
+      if (!roomPasswordMatches(lock, given)) {
+        recent.push(now);
+        roomPasswordFails.set(attemptKey, recent);
+        if (ack) ack({ ok: false, needsPassword: true, wrongPassword: true, error: 'Senha incorreta' });
+        return;
+      }
+    }
     if (rejoin) rejoinTokens.delete(rejoinToken); // token vale uma vez so
+
+    currentRoom = roomId;
+    if (!rooms.has(roomId)) rooms.set(roomId, new Map());
+    const room = rooms.get(roomId);
+    const isNewRoom = room.size === 0;
     // A conexao antiga ainda nao caiu do lado do servidor (ele demora uns
     // segundos pra perceber): a nova assume o lugar dela e a antiga sai em
     // silencio, sem "fulano saiu"/"fulano entrou" pros outros.
@@ -2177,13 +2390,29 @@ io.on('connection', (socket) => {
 
     const existingPeers = getPeersInRoom(roomId).filter((p) => !oldSocket || p.id !== rejoin.sid);
 
-    room.set(socket.id, { name: name || 'Anonimo', shareMode: null, version: appVersion, joinedAt: Date.now() });
+    // roomSince: desde quando a pessoa esta na sala (uma reconexao mantem o
+    // horario original) - decide quem herda o cadeado quando o dono sai.
+    // joinedAt continua sendo o inicio DESTA conexao (conta as horas em call).
+    const roomSince = validRejoin && rejoin.roomSince ? rejoin.roomSince : Date.now();
+    room.set(socket.id, { name: name || 'Anonimo', shareMode: null, version: appVersion, joinedAt: Date.now(), roomSince, allowPings: data.allowPings !== false });
     logPresence('join', name || 'Anonimo', roomId, appVersion);
     socket.join(roomId);
 
     const myToken = crypto.randomBytes(18).toString('hex');
-    rejoinTokens.set(myToken, { sid: socket.id, roomId, name: name || 'Anonimo', leftAt: null });
+    rejoinTokens.set(myToken, { sid: socket.id, roomId, name: name || 'Anonimo', leftAt: null, roomSince });
     socket.data.rejoinToken = myToken;
+
+    // Dono da sala (quem pode por/tirar senha): a 1a pessoa. Quem so
+    // reconectou continua dono; se o dono ja tinha saido, nao volta a ser.
+    const owner = roomOwners.get(roomId);
+    if (oldSocket && owner === rejoin.sid) roomOwners.set(roomId, socket.id);
+    else if (!owner || !room.has(owner)) roomOwners.set(roomId, socket.id);
+    // Servidor reiniciou e o dono voltou primeiro: o app dele reenvia a
+    // senha que tinha posto (so vale em sala recem-criada por ele).
+    const restore = data && typeof data.restoreRoomPassword === 'string' ? data.restoreRoomPassword : '';
+    if (isNewRoom && restore && !roomLocks.has(roomId) && validRoomPassword(restore)) {
+      roomLocks.set(roomId, makeRoomLock(restore));
+    }
 
     const game = codenamesGames.get(roomId);
     let gameChanged = false;
@@ -2216,9 +2445,11 @@ io.on('connection', (socket) => {
       }
     }
 
-    if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers, iceServers: getIceServers(), rejoinToken: myToken, rejoined: validRejoin, chatHistory: chatHistoryFor(roomId) });
+    if (ack) ack({ ok: true, selfId: socket.id, peers: existingPeers, iceServers: getIceServers(), rejoinToken: myToken, rejoined: validRejoin, chatHistory: chatHistoryFor(roomId), lock: roomLockState(roomId) });
+    // dono mudou (sala nova ou reconexao do dono): todo mundo atualiza o cadeado
+    if (!isNewRoom) broadcastRoomLockState(roomId);
 
-    socket.to(roomId).emit('peer-joined', { id: socket.id, name: name || 'Anonimo', rejoin: validRejoin, replaces: oldSocket ? rejoin.sid : null });
+    socket.to(roomId).emit('peer-joined', { id: socket.id, name: name || 'Anonimo', rejoin: validRejoin, replaces: oldSocket ? rejoin.sid : null, allowPings: data.allowPings !== false });
     // Espectadores invisiveis tambem precisam saber de gente nova pra
     // conseguir receber a midia dela - 'peer-joined' direto pra cada um
     // (nao via socket.to, porque eles nunca dao socket.join na sala).
@@ -2242,6 +2473,72 @@ io.on('connection', (socket) => {
     // mapa ou pegar uma vaga livre; o lugar antigo aparece marcado (ver
     // "vacated" no estado).
     broadcastRoomsToAdmins();
+  });
+
+  // Apontar na tela: Alt + clique na transmissao de tela de alguem mostra
+  // uma seta pra sala toda (e por cima do monitor de quem transmite). Quem
+  // transmite pode desligar (Configuracoes > Transmissao).
+  let lastPingAt = 0;
+  socket.on('set-ping-permission', (data) => {
+    const info = currentRoom && rooms.get(currentRoom)?.get(socket.id);
+    if (!info) return;
+    info.allowPings = !(data && data.allow === false);
+    socket.to(currentRoom).emit('peer-ping-permission', { id: socket.id, allow: info.allowPings });
+  });
+  socket.on('screen-ping', (data, ack) => {
+    const room = currentRoom && rooms.get(currentRoom);
+    const me = room && room.get(socket.id);
+    const targetId = data && data.target;
+    const target = room && typeof targetId === 'string' ? room.get(targetId) : null;
+    const x = Number(data && data.x);
+    const y = Number(data && data.y);
+    if (!me || !target || targetId === socket.id) { if (ack) ack({ ok: false, error: 'Pessoa não encontrada' }); return; }
+    if (target.shareMode !== 'screen' && target.shareMode !== 'screen-native') { if (ack) ack({ ok: false, error: 'Só dá pra apontar em transmissão de tela' }); return; }
+    if (target.allowPings === false) { if (ack) ack({ ok: false, error: `${target.name} não deixa apontar na tela`, denied: true }); return; }
+    if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) { if (ack) ack({ ok: false, error: 'Ponto inválido' }); return; }
+    const now = Date.now();
+    if (now - lastPingAt < 300) { if (ack) ack({ ok: false, error: 'Calma' }); return; }
+    lastPingAt = now;
+    io.to(currentRoom).emit('screen-ping', { target: targetId, from: socket.id, name: me.name, x, y });
+    if (ack) ack({ ok: true });
+  });
+
+  // Senha da sala (ver roomLocks): so o dono poe, troca ou tira.
+  socket.on('room-lock-set', (data, ack) => {
+    if (!currentRoom || !rooms.get(currentRoom)?.has(socket.id)) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    if (roomOwners.get(currentRoom) !== socket.id) { if (ack) ack({ ok: false, error: 'Só o dono da sala pode mudar a senha' }); return; }
+    const pw = data && typeof data.password === 'string' ? data.password : '';
+    if (!validRoomPassword(pw)) { if (ack) ack({ ok: false, error: `A senha precisa ter de ${ROOM_PASSWORD_MIN} a ${ROOM_PASSWORD_MAX} caracteres` }); return; }
+    roomLocks.set(currentRoom, makeRoomLock(pw));
+    broadcastRoomLockState(currentRoom);
+    broadcastRoomsToAdmins();
+    if (ack) ack({ ok: true, lock: roomLockState(currentRoom) });
+  });
+  socket.on('room-lock-clear', (_data, ack) => {
+    if (!currentRoom || !rooms.get(currentRoom)?.has(socket.id)) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    if (roomOwners.get(currentRoom) !== socket.id) { if (ack) ack({ ok: false, error: 'Só o dono da sala pode mudar a senha' }); return; }
+    roomLocks.delete(currentRoom);
+    broadcastRoomLockState(currentRoom);
+    broadcastRoomsToAdmins();
+    if (ack) ack({ ok: true, lock: roomLockState(currentRoom) });
+  });
+
+  // Perfil (ver computeProfile): o seu, ou o de alguem da mesma sala.
+  socket.on('profile-get', async (data, ack) => {
+    const room = currentRoom && rooms.get(currentRoom);
+    const me = room && room.get(socket.id);
+    if (!me) { if (ack) ack({ ok: false, error: 'Você não está em uma sala' }); return; }
+    const asked = data && typeof data.name === 'string' && data.name.trim() ? data.name.trim().slice(0, MAX_NAME_LEN) : me.name;
+    const norm = (n) => String(n || '').trim().toLowerCase();
+    const inRoom = Array.from(room.values()).some((info) => norm(info.name) === norm(asked));
+    if (!inRoom) { if (ack) ack({ ok: false, error: 'Essa pessoa não está na sala' }); return; }
+    try {
+      const events = await getProfileEvents();
+      if (ack) ack({ ok: true, self: norm(asked) === norm(me.name), profile: computeProfile(events, asked, Date.now()) });
+    } catch (err) {
+      console.error('[perfil] falha:', err);
+      if (ack) ack({ ok: false, error: 'Não deu pra montar o perfil agora' });
+    }
   });
 
   // Retrospectiva da pessoa nessa sala (ver computeWrapped).
@@ -2951,6 +3248,8 @@ io.on('connection', (socket) => {
       const specs = spectatorsByRoom.get(currentRoom);
       if (rooms.get(currentRoom).size === 0) {
         rooms.delete(currentRoom);
+        roomLocks.delete(currentRoom); // a senha some junto com a sala
+        roomOwners.delete(currentRoom);
         const deadGame = codenamesGames.get(currentRoom);
         if (deadGame) clearAnswerTimer(deadGame);
         if (deadGame && deadGame.status === 'playing') logCodenamesGame(deadGame, true); // sala esvaziou no meio
@@ -2961,6 +3260,14 @@ io.on('connection', (socket) => {
         sketchGames.delete(currentRoom);
       } else {
         socket.to(currentRoom).emit('peer-left', { id: socket.id, replaced });
+        // o dono saiu (e nao foi so reconexao): o cadeado passa pra quem
+        // entrou primeiro entre os que ficaram
+        if (roomOwners.get(currentRoom) === socket.id) {
+          let next = null;
+          for (const [id, info] of rooms.get(currentRoom)) if (!next || info.roomSince < next.since) next = { id, since: info.roomSince };
+          roomOwners.set(currentRoom, next.id);
+          broadcastRoomLockState(currentRoom);
+        }
         const game = codenamesGames.get(currentRoom);
         if (game) {
           const role = playerGameRole(game, socket.id);

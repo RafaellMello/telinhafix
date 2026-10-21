@@ -47,16 +47,52 @@ contextBridge.exposeInMainWorld('rtc', {
 
   // rejoinToken: so na volta automatica depois de cair (ver
   // rejoinAfterReconnect no renderer.js) - o servidor devolve o lugar antigo.
-  joinRoom(roomId, name, rejoinToken) {
+  // opts.roomPassword: senha da sala (se ela tiver); opts.restoreRoomPassword:
+  // o dono reenviando a senha que tinha posto (servidor reiniciou).
+  // Erros voltam como objeto simples { message, needsPassword, wrongPassword }
+  // - um Error perde os campos extras ao passar pro renderer.
+  joinRoom(roomId, name, rejoinToken, opts) {
     return new Promise((resolve, reject) => {
-      if (!socket) return reject(new Error('Não conectado'));
+      if (!socket) return reject({ message: 'Não conectado' });
       const payload = { roomId, name, version: require('./package.json').version };
       if (typeof rejoinToken === 'string') payload.rejoinToken = rejoinToken;
+      if (opts && typeof opts.roomPassword === 'string') payload.roomPassword = opts.roomPassword;
+      if (opts && typeof opts.restoreRoomPassword === 'string') payload.restoreRoomPassword = opts.restoreRoomPassword;
+      if (opts && typeof opts.allowPings === 'boolean') payload.allowPings = opts.allowPings;
       socket.emit('join-room', payload, (res) => {
         if (res && res.ok) resolve(res);
-        else reject(new Error((res && res.error) || 'Falha ao entrar na sala'));
+        else reject({ message: (res && res.error) || 'Falha ao entrar na sala', needsPassword: !!(res && res.needsPassword), wrongPassword: !!(res && res.wrongPassword) });
       });
     });
+  },
+
+  // Apontar na tela (Alt + clique na transmissao de tela de alguem).
+  setPingPermission(allow) {
+    if (!socket) return;
+    socket.emit('set-ping-permission', { allow: !!allow });
+  },
+  screenPing(target, x, y) {
+    return emitAck('screen-ping', { target, x, y });
+  },
+  onScreenPing(cb) {
+    if (!socket) return;
+    socket.on('screen-ping', (ping) => cb(ping));
+  },
+  onPeerPingPermission(cb) {
+    if (!socket) return;
+    socket.on('peer-ping-permission', (data) => cb(data));
+  },
+
+  // Senha da sala (so o dono) e o estado do cadeado pra todo mundo.
+  setRoomLock(password) {
+    return emitAck('room-lock-set', { password });
+  },
+  clearRoomLock() {
+    return emitAck('room-lock-clear', null);
+  },
+  onRoomLockState(cb) {
+    if (!socket) return;
+    socket.on('room-lock-state', (state) => cb(state));
   },
 
   sendSignal(to, data) {
@@ -139,6 +175,12 @@ contextBridge.exposeInMainWorld('rtc', {
       wentDown = false;
       cb();
     });
+  },
+
+  // Perfil (numeros de todas as salas + conquistas) - o seu (sem nome) ou o
+  // de alguem da mesma sala.
+  getProfile(name) {
+    return emitAck('profile-get', { name: name || null });
   },
 
   // Retrospectiva da pessoa nessa sala ('week' | 'month').
@@ -366,6 +408,21 @@ contextBridge.exposeInMainWorld('nativeScreen', {
   onFrame(cb) {
     ipcRenderer.removeAllListeners('native-screen-frame');
     ipcRenderer.on('native-screen-frame', (event, frame) => cb(frame));
+  },
+});
+
+// Seta do "apontar na tela" por cima do monitor que voce esta transmitindo
+// (camada transparente do main.js, fora da propria captura).
+contextBridge.exposeInMainWorld('pingOverlay', {
+  show(ping) {
+    ipcRenderer.send('ping-overlay-show', ping);
+  },
+  clear() {
+    ipcRenderer.send('ping-overlay-clear');
+  },
+  // Alt + clique: o Alt solto depois nao deve abrir o menu da janela
+  altClick() {
+    ipcRenderer.send('ping-alt-click');
   },
 });
 

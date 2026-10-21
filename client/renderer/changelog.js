@@ -4,6 +4,16 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.0',
+    date: '21/10/2026',
+    title: 'Senha na sala, apontar na tela e Perfil',
+    items: [
+      'Senha da sala: o cadeado do lado do "Convidar" deixa quem abriu a sala pôr uma senha. Quem entrar depois (inclusive pelo convite) precisa digitar; quem já está dentro continua. A senha some quando todo mundo sai.',
+      'Apontar na tela: segure Alt e clique num ponto da transmissão de tela de alguém - aparece uma seta com o seu nome pra todo mundo, e por cima do monitor de quem está transmitindo. Dá pra não permitir em Configurações > Transmissão.',
+      'Perfil: o botão de gráfico agora abre o seu Perfil, com seus números no TelinhaFix e 12 conquistas em bronze, prata e ouro. Clicando no nome de alguém na lista, você vê o perfil dela. A retrospectiva fica num botão dentro do seu Perfil.',
+    ],
+  },
+  {
     version: '4.2.0',
     date: '21/10/2026',
     title: 'Fundos animados novos',

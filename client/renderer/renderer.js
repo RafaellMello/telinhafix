@@ -26,6 +26,7 @@ const DEFAULT_THEME = {
   sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS }, priority: 'nitidez',
   volumeStyle: 'abre', // visual do controle de volume das transmissoes: 'abre' | 'degraus'
   shareNotify: 'ligado', // notificacao do Windows quando alguem comeca a transmitir
+  allowPings: 'ligado', // deixar quem assiste apontar na sua tela (Alt + clique)
   background: 'particulas', loginOpacity: 0.25, volumes: { ...DEFAULT_VOLUMES },
   // false ate a pessoa mexer de proposito (clicar num modo, arrastar o
   // slider de transparencia) - diferencia "nunca escolheu" (recebe o
@@ -217,6 +218,7 @@ function setupSettingsPanel() {
   const borderOptions = document.querySelectorAll('.border-option');
   const soundOptions = document.querySelectorAll('.sound-option');
   const shareNotifyOptions = document.querySelectorAll('.share-notify-option');
+  const pingPermissionOptions = document.querySelectorAll('.ping-permission-option');
   const hotkeyOptions = document.querySelectorAll('.hotkeys-option');
   const priorityOptions = document.querySelectorAll('.priority-option');
   const fontOptions = document.querySelectorAll('.font-option');
@@ -244,6 +246,7 @@ function setupSettingsPanel() {
     borderOptions.forEach((el) => el.classList.toggle('selected', el.dataset.border === currentTheme.border));
     soundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.sound === currentTheme.sound));
     shareNotifyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.shareNotify === (currentTheme.shareNotify || 'ligado')));
+    pingPermissionOptions.forEach((el) => el.classList.toggle('selected', el.dataset.pingPermission === (currentTheme.allowPings || 'ligado')));
     hotkeyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.hotkeys === currentTheme.hotkeys));
     priorityOptions.forEach((el) => el.classList.toggle('selected', el.dataset.priority === currentTheme.priority));
     fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
@@ -331,6 +334,12 @@ function setupSettingsPanel() {
   });
   shareNotifyOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ shareNotify: el.dataset.shareNotify }));
+  });
+  pingPermissionOptions.forEach((el) => {
+    el.addEventListener('click', () => {
+      updateTheme({ allowPings: el.dataset.pingPermission });
+      if (currentRoomId) window.rtc.setPingPermission(pingsAllowedByMe());
+    });
   });
   hotkeyOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ hotkeys: el.dataset.hotkeys }));
@@ -1030,6 +1039,10 @@ function addParticipantRow(id, name, isSelf) {
 
   li.appendChild(avatar);
   li.appendChild(label);
+  // clicar no nome abre o perfil da pessoa (o seu, se for voce)
+  li.classList.add('participant-clickable');
+  li.title = isSelf ? 'Ver seu perfil' : `Ver o perfil de ${name}`;
+  li.addEventListener('click', () => openProfile(isSelf ? null : (peerNames.get(id) || name)));
   participantsList.appendChild(li);
 }
 
@@ -1696,6 +1709,13 @@ function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
   // Ocultar so afeta o que VOCE ve dessa pessoa - local, ninguem mais na
   // sala e afetado. Botao direito na tile pra ligar/desligar.
   if (!isSelf) {
+    // Alt + clique: aponta nesse ponto da transmissao (ver handleTilePing)
+    tile.addEventListener('click', (e) => {
+      if (!e.altKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleTilePing(peerId, tile, video, e);
+    });
     const hiddenOverlay = document.createElement('div');
     hiddenOverlay.className = 'tile-hidden-overlay';
     hiddenOverlay.textContent = 'Transmissão oculta — clique com o botão direito para mostrar de novo';
@@ -3947,6 +3967,7 @@ async function startNativeScreenShare() {
   await window.nativeScreen.start({
     adapterIndex: monitor.adapterIndex,
     outputIndex: monitor.outputIndex,
+    bounds: { left: monitor.left, top: monitor.top, width: monitor.width, height: monitor.height },
     fps: choice.fps,
     quality: NATIVE_SHARE_QUALITY,
     maxWidth: choice.maxWidth,
@@ -4152,6 +4173,7 @@ async function finishStartingShare(selfLabel) {
 
 async function stopShare() {
   if (!localStream) return;
+  window.pingOverlay.clear();
 
   if (cameraActive) await disableCamera();
 
@@ -4189,6 +4211,223 @@ async function stopShare() {
   btnStopShare.classList.add('hidden');
   refreshGameAvatarVideos();
 }
+
+// --- Apontar na tela -------------------------------------------------------
+// Alt + clique na transmissao de TELA de alguem: uma seta grande com o seu
+// nome aparece naquele ponto pra todo mundo da sala e, pra quem transmite,
+// por cima do monitor de verdade (ver showPingOverlay no main.js). Quem
+// transmite pode desligar em Configuracoes > Transmissao.
+const peerPingAllowed = new Map(); // peerId -> bool
+const PING_SHOW_MS = 3600;
+
+function pingsAllowedByMe() {
+  return currentTheme.allowPings !== 'desligado';
+}
+function pingColorFor(name) {
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `hsl(${h % 360}, 80%, 55%)`;
+}
+// Parte do <video> onde a imagem esta de fato (object-fit: contain deixa
+// faixas pretas em cima/embaixo ou dos lados).
+function videoContentRect(video) {
+  const box = video.getBoundingClientRect();
+  const vw = video.videoWidth || 16;
+  const vh = video.videoHeight || 9;
+  const scale = Math.min(box.width / vw, box.height / vh);
+  const w = vw * scale;
+  const h = vh * scale;
+  return { left: box.left + (box.width - w) / 2, top: box.top + (box.height - h) / 2, width: w, height: h };
+}
+
+async function handleTilePing(peerId, tile, video, e) {
+  const name = peerNames.get(peerId) || 'Essa pessoa';
+  const mode = peerShareModes.get(peerId);
+  if (mode !== 'screen' && mode !== 'screen-native') { showRoomLockToast('Só dá pra apontar em transmissão de tela'); return; }
+  if (peerPingAllowed.get(peerId) === false) { showRoomLockToast(`${name} não deixa apontar na tela`); return; }
+  const r = videoContentRect(video);
+  const x = (e.clientX - r.left) / r.width;
+  const y = (e.clientY - r.top) / r.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return; // clicou na faixa preta
+  window.pingOverlay.altClick();
+  try {
+    await window.rtc.screenPing(peerId, x, y);
+  } catch (err) {
+    if (err && err.message && err.message !== 'Calma') showRoomLockToast(err.message);
+  }
+}
+
+function showTilePing(targetId, ping) {
+  const tile = document.getElementById(`tile-${targetId}`);
+  const video = tile && tile.querySelector('video');
+  if (!tile || !video) return;
+  const t = tile.getBoundingClientRect();
+  const r = videoContentRect(video);
+  const el = document.createElement('div');
+  el.className = 'tile-ping';
+  el.style.left = `${r.left - t.left + ping.x * r.width}px`;
+  el.style.top = `${r.top - t.top + ping.y * r.height}px`;
+  const color = pingColorFor(ping.name);
+  const label = document.createElement('div');
+  label.className = 'tile-ping-name';
+  label.textContent = ping.name;
+  label.style.background = color;
+  el.appendChild(label);
+  el.insertAdjacentHTML('beforeend', `<svg viewBox="0 0 54 64" aria-hidden="true"><path d="M17 0h20v34h17L27 64 0 34h17Z" fill="${color}" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>`);
+  tile.appendChild(el);
+  setTimeout(() => el.remove(), PING_SHOW_MS);
+}
+
+function onScreenPing(ping) {
+  if (!ping || typeof ping.x !== 'number' || typeof ping.y !== 'number') return;
+  showTilePing(ping.target, ping);
+  // apontaram na MINHA tela: seta por cima do monitor que eu transmito
+  if (ping.target === selfId && localStream && (shareMode === 'screen' || shareMode === 'screen-native')) {
+    window.pingOverlay.show({ x: ping.x, y: ping.y, name: ping.name, color: pingColorFor(ping.name) });
+  }
+}
+
+// Segurando Alt: cursor de mira nas transmissoes de tela que aceitam
+function markPingableTiles(on) {
+  document.querySelectorAll('.video-tile').forEach((tile) => {
+    const peerId = tile.id.replace(/^tile-/, '');
+    const mode = peerShareModes.get(peerId);
+    tile.classList.toggle('ping-ready', on && peerId !== selfId && (mode === 'screen' || mode === 'screen-native') && peerPingAllowed.get(peerId) !== false);
+  });
+}
+window.addEventListener('keydown', (e) => { if (e.key === 'Alt') markPingableTiles(true); });
+window.addEventListener('keyup', (e) => { if (e.key === 'Alt') markPingableTiles(false); });
+window.addEventListener('blur', () => markPingableTiles(false));
+
+// --- Senha da sala ---------------------------------------------------------
+// Cadeado do lado do "Convidar": o dono (1a pessoa da sala; se sair, passa
+// pra proxima) poe, troca ou tira a senha; os outros so veem se esta
+// trancada. A senha fica no servidor so como hash - o app do dono guarda a
+// que ele digitou (myRoomPassword) pra mostrar de novo e pra reenviar se o
+// servidor reiniciar. Ver roomLocks no server/index.js.
+const LOCK_ICON_CLOSED = `<svg ${ICON_SVG_ATTRS}><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>`;
+const LOCK_ICON_OPEN = `<svg ${ICON_SVG_ATTRS}><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg>`;
+const EYE_ICON = `<svg ${ICON_SVG_ATTRS}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+let roomLock = null; // { locked, ownerId, ownerName }
+let myRoomPassword = null; // a senha que EU pus (so o dono tem)
+let currentRoomPassword = null; // a senha que eu digitei pra entrar
+
+function applyRoomLockState(state) {
+  roomLock = state || null;
+  const btn = document.getElementById('btn-room-lock');
+  if (!btn) return;
+  const locked = !!(roomLock && roomLock.locked);
+  const mine = !!(roomLock && roomLock.ownerId && roomLock.ownerId === selfId);
+  if (!locked) myRoomPassword = mine ? myRoomPassword : null;
+  btn.innerHTML = locked ? LOCK_ICON_CLOSED : LOCK_ICON_OPEN;
+  btn.classList.toggle('locked', locked);
+  btn.setAttribute('aria-label', locked ? 'Sala trancada com senha' : 'Sala aberta (sem senha)');
+  btn.title = mine
+    ? (locked ? 'Sala trancada com senha - clique pra trocar ou tirar' : 'Sala aberta - clique pra pôr uma senha')
+    : `${locked ? 'Sala trancada com senha' : 'Sala aberta (sem senha)'}. Só ${roomLock && roomLock.ownerName ? roomLock.ownerName : 'o dono da sala'} pode mudar a senha.`;
+}
+
+function showRoomLockToast(text) {
+  const toast = document.getElementById('snapshot-toast');
+  if (!toast) return;
+  toast.textContent = text;
+  toast.classList.remove('error');
+  toast.classList.remove('hidden');
+  clearTimeout(snapshotToastTimer);
+  snapshotToastTimer = setTimeout(() => toast.classList.add('hidden'), 2600);
+}
+
+(() => {
+  const overlay = document.getElementById('room-lock-overlay');
+  const input = document.getElementById('room-lock-input');
+  const status = document.getElementById('room-lock-status');
+  const removeBtn = document.getElementById('btn-room-lock-remove');
+  const saveBtn = document.getElementById('btn-room-lock-save');
+  const eye = document.getElementById('btn-room-lock-show');
+  eye.innerHTML = EYE_ICON;
+  const setStatus = (text, isError) => { status.textContent = text || ''; status.classList.toggle('suggestion-error', !!isError); };
+  const close = () => overlay.classList.add('hidden');
+
+  document.getElementById('btn-room-lock').addEventListener('click', () => {
+    if (!roomLock || roomLock.ownerId !== selfId) {
+      showRoomLockToast(`Só ${roomLock && roomLock.ownerName ? roomLock.ownerName : 'o dono da sala'} pode mudar a senha da sala`);
+      return;
+    }
+    const locked = !!roomLock.locked;
+    input.value = myRoomPassword || '';
+    input.type = 'password';
+    input.placeholder = locked && !myRoomPassword ? 'Digite uma senha nova' : 'De 3 a 32 caracteres';
+    removeBtn.classList.toggle('hidden', !locked);
+    saveBtn.textContent = locked ? 'Trocar senha' : 'Trancar sala';
+    setStatus(locked ? 'A sala está trancada.' : '');
+    overlay.classList.remove('hidden');
+    input.focus();
+  });
+  eye.addEventListener('click', () => { input.type = input.type === 'password' ? 'text' : 'password'; });
+  document.getElementById('btn-room-lock-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.getElementById('room-lock-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = input.value;
+    if (pw.length < 3) { setStatus('A senha precisa ter pelo menos 3 caracteres', true); return; }
+    saveBtn.disabled = true;
+    try {
+      const r = await window.rtc.setRoomLock(pw);
+      myRoomPassword = pw;
+      applyRoomLockState(r.lock);
+      close();
+      showRoomLockToast('Sala trancada - quem entrar vai precisar da senha');
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+  removeBtn.addEventListener('click', async () => {
+    try {
+      const r = await window.rtc.clearRoomLock();
+      myRoomPassword = null;
+      applyRoomLockState(r.lock);
+      close();
+      showRoomLockToast('Senha tirada - a sala está aberta');
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  });
+})();
+
+// Pergunta a senha de uma sala trancada ao entrar. Resolve com a senha ou
+// null se a pessoa desistir.
+function askRoomPassword(roomId, errorText) {
+  const overlay = document.getElementById('room-password-overlay');
+  const input = document.getElementById('room-password-input');
+  const form = document.getElementById('room-password-form');
+  const cancel = document.getElementById('btn-room-password-cancel');
+  document.getElementById('room-password-hint').textContent = `A sala "${roomId}" está trancada. Peça a senha pra quem está nela.`;
+  document.getElementById('room-password-status').textContent = errorText || '';
+  input.value = '';
+  overlay.classList.remove('hidden');
+  input.focus();
+  return new Promise((resolve) => {
+    const done = (value) => {
+      overlay.classList.add('hidden');
+      form.removeEventListener('submit', onSubmit);
+      cancel.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      resolve(value);
+    };
+    const onSubmit = (e) => { e.preventDefault(); if (input.value) done(input.value); };
+    const onCancel = () => done(null);
+    const onBackdrop = (e) => { if (e.target === overlay) done(null); };
+    const onKey = (e) => { if (e.key === 'Escape') done(null); };
+    form.addEventListener('submit', onSubmit);
+    cancel.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+  });
+}
+applyRoomLockState(null);
 
 // --- Voltar sozinho pra sala ----------------------------------------------
 // A internet caiu ou o servidor reiniciou (deploy, Render acordando): o
@@ -4238,6 +4477,7 @@ function teardownPeer(peerId) {
   peers.delete(peerId);
   peerNames.delete(peerId);
   peerShareModes.delete(peerId);
+  peerPingAllowed.delete(peerId);
   spectatorPeerIds.delete(peerId);
   removeParticipantRow(peerId);
   removeVideoTile(peerId);
@@ -4295,7 +4535,21 @@ async function rejoinAfterReconnect() {
   rejoinInFlight = true;
   setReconnectBanner('lost', 'Conectado de novo - voltando pra sala...');
   try {
-    const res = await window.rtc.joinRoom(currentRoomId, mySelfName, myRejoinToken);
+    // O dono reenvia a senha que tinha posto (se o servidor reiniciou, a sala
+    // volta trancada); quem entrou digitando a senha usa ela de novo se o
+    // token nao valer mais.
+    const wasOwner = !!roomLock && roomLock.ownerId === selfId;
+    const opts = { allowPings: pingsAllowedByMe() };
+    if (wasOwner && roomLock.locked && myRoomPassword) opts.restoreRoomPassword = myRoomPassword;
+    let res;
+    try {
+      res = await window.rtc.joinRoom(currentRoomId, mySelfName, myRejoinToken, opts);
+    } catch (err) {
+      const known = myRoomPassword || currentRoomPassword;
+      if (!(err && err.needsPassword && known)) throw err;
+      res = await window.rtc.joinRoom(currentRoomId, mySelfName, undefined, { roomPassword: known, allowPings: pingsAllowedByMe() });
+    }
+    applyRoomLockState(res.lock);
     if (!currentRoomId) return; // saiu da sala enquanto isso
     myRejoinToken = res.rejoinToken || null;
     setIceServersFromServer(res.iceServers);
@@ -4324,6 +4578,7 @@ async function rejoinAfterReconnect() {
     }
     res.peers.forEach((p) => {
       peerShareModes.set(p.id, p.shareMode || null);
+      peerPingAllowed.set(p.id, p.allowPings !== false);
       peerNames.set(p.id, p.name);
       addParticipantRow(p.id, p.name, false);
       createPeerConnection(p.id);
@@ -4366,6 +4621,9 @@ document.getElementById('btn-reconnect-leave').addEventListener('click', () => {
 async function leaveRoom() {
   currentRoomId = null;
   myRejoinToken = null;
+  myRoomPassword = null;
+  currentRoomPassword = null;
+  applyRoomLockState(null);
   prefsByName.clear();
   setReconnectBanner(null);
   if (localStream) await stopShare();
@@ -4713,10 +4971,11 @@ async function loadWrapped(period) {
   }
 }
 
-document.getElementById('btn-wrapped').addEventListener('click', () => {
+function openWrapped() {
   document.getElementById('wrapped-overlay').classList.remove('hidden');
   loadWrapped(wrappedPeriod);
-});
+}
+document.getElementById('btn-wrapped').addEventListener('click', () => openProfile(null));
 document.querySelectorAll('[data-wrapped-period]').forEach((b) => {
   b.addEventListener('click', () => { if (b.dataset.wrappedPeriod !== wrappedPeriod || !b.classList.contains('selected')) loadWrapped(b.dataset.wrappedPeriod); });
 });
@@ -4733,6 +4992,115 @@ document.getElementById('btn-wrapped-copy').addEventListener('click', async () =
   status.classList.toggle('suggestion-ok', !!ok);
   status.classList.toggle('suggestion-error', !ok);
 });
+
+// --- Perfil + conquistas -----------------------------------------------------
+// Botao do grafico (topo da sala) abre o seu Perfil; clicar no nome de alguem
+// na lista abre o perfil dela. Numeros de todas as salas (ver computeProfile
+// no server/index.js) e as 12 conquistas em bronze, prata e ouro. A
+// retrospectiva (semana/mes) fica num botao dentro do SEU perfil.
+const TIER_NAMES = ['Bloqueada', 'Bronze', 'Prata', 'Ouro'];
+const TIER_COLORS = ['#3a3a42', '#c8813f', '#c9ced6', '#f2c14e'];
+let profileRequestSeq = 0;
+
+function medalSvg(level) {
+  const c = TIER_COLORS[level];
+  const ribbon = level ? c : '#2a2a30';
+  return `<svg viewBox="0 0 40 48" aria-hidden="true"><path d="M10 0h8l4 14h-8Z M22 0h8l-4 14h-8Z" fill="${ribbon}" opacity="0.75"/><circle cx="20" cy="30" r="15" fill="${c}"/><circle cx="20" cy="30" r="10.5" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="2"/>${level ? `<path d="M20 22.5l2.3 4.7 5.2.8-3.8 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1-3.8-3.6 5.2-.8Z" fill="rgba(0,0,0,0.3)"/>` : `<path d="M15 30h10" stroke="rgba(255,255,255,0.25)" stroke-width="2.5" stroke-linecap="round"/>`}</svg>`;
+}
+function fmtAchValue(v, unit) {
+  const n = Number.isInteger(v) ? String(v) : v.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  if (!unit) return n;
+  // "1 dia", "1 noite", "1 pessoa" (as unidades vem no plural)
+  const u = v === 1 && unit.endsWith('s') ? unit.slice(0, -1) : unit;
+  return `${n} ${u}`;
+}
+function escHtml(t) {
+  return String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderProfile(p, isSelf) {
+  const st = p.stats;
+  const initial = (p.name || '?').trim().charAt(0).toUpperCase() || '?';
+  const avatar = document.getElementById('profile-avatar');
+  avatar.textContent = initial;
+  avatar.style.background = pingColorFor(p.name);
+  document.getElementById('profile-name').textContent = p.name;
+  const since = p.firstSeen ? new Date(p.firstSeen).toLocaleDateString('pt-BR') : null;
+  document.getElementById('profile-since').textContent = since
+    ? `No TelinhaFix desde ${since}${p.firstSeen - p.dataSince < 2 * 86400000 ? ' (o TelinhaFix começou a guardar isso em 19/10/2026)' : ''}`
+    : 'Ainda sem nenhuma call registrada';
+  document.getElementById('btn-profile-wrapped').classList.toggle('hidden', !isSelf);
+
+  const tiles = [
+    ['Horas em call', fmtWrappedDuration(st.totalMs)],
+    ['Dias com call', String(st.daysActive)],
+    ['Maior call', st.longestMs ? fmtWrappedDuration(st.longestMs) : '—'],
+    ['Transmissões', st.shares ? `${st.shares} · ${fmtWrappedDuration(st.screenMs)} de tela` : '0'],
+    ['Pessoas na call', String(st.people)],
+    ['Codenames', st.codenames.played ? `${st.codenames.wins} ${st.codenames.wins === 1 ? 'vitória' : 'vitórias'} em ${st.codenames.played}` : '—'],
+    ['Stop', st.stop.played ? `${st.stop.wins} ${st.stop.wins === 1 ? 'vitória' : 'vitórias'} em ${st.stop.played}` : '—'],
+    ['"A ou B" criadas', String(st.sketches)],
+  ];
+  const companions = p.companions.length
+    ? p.companions.map((c, i) => `<li><span class="profile-rank">${i + 1}º</span><span class="profile-comp-name">${escHtml(c.name)}</span><span class="profile-comp-time">${fmtWrappedDuration(c.ms)} juntos</span></li>`).join('')
+    : '<li class="profile-empty">Ninguém ainda.</li>';
+  const earned = p.achievements.filter((a) => a.level > 0).length;
+  const achievements = p.achievements.map((a) => {
+    const target = a.next;
+    const prevTier = a.level > 0 ? a.tiers[a.level - 1] : 0;
+    const pct = target ? Math.max(0, Math.min(100, ((a.value - prevTier) / (target - prevTier)) * 100)) : 100;
+    const progress = target
+      ? `${fmtAchValue(a.value, a.unit)} de ${fmtAchValue(target, a.unit)} pro ${TIER_NAMES[a.level + 1].toLowerCase()}`
+      : 'Nível máximo';
+    return `<div class="ach ach-l${a.level}">
+      <div class="ach-medal">${medalSvg(a.level)}</div>
+      <div class="ach-text">
+        <div class="ach-top"><span class="ach-name">${escHtml(a.name)}</span><span class="ach-tier">${TIER_NAMES[a.level]}</span></div>
+        <div class="ach-desc">${escHtml(a.desc)} · ${a.tiers.map((t) => fmtAchValue(t, a.unit)).join(' / ')}</div>
+        <div class="ach-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}"><div style="width:${pct}%"></div></div>
+        <div class="ach-progress">${progress}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('profile-body').innerHTML = `
+    <div class="profile-stats">${tiles.map(([k, v]) => `<div class="profile-stat"><div class="profile-stat-label">${k}</div><div class="profile-stat-value">${escHtml(v)}</div></div>`).join('')}</div>
+    <div class="profile-section">
+      <h3>Quem mais ficou em call ${isSelf ? 'com você' : `com ${escHtml(p.name)}`}</h3>
+      <ol class="profile-companions">${companions}</ol>
+    </div>
+    <div class="profile-section">
+      <h3>Conquistas <span class="profile-count">${earned} de ${p.achievements.length}</span></h3>
+      <div class="ach-grid">${achievements}</div>
+    </div>`;
+}
+
+async function openProfile(name) {
+  const overlay = document.getElementById('profile-overlay');
+  const seq = ++profileRequestSeq;
+  overlay.classList.remove('hidden');
+  document.getElementById('profile-name').textContent = name || mySelfName || '';
+  document.getElementById('profile-since').textContent = '';
+  document.getElementById('profile-avatar').textContent = '';
+  document.getElementById('btn-profile-wrapped').classList.add('hidden');
+  document.getElementById('profile-body').innerHTML = '<p class="settings-hint">Carregando...</p>';
+  try {
+    const { profile, self } = await window.rtc.getProfile(name);
+    if (seq !== profileRequestSeq) return;
+    renderProfile(profile, self);
+  } catch (err) {
+    if (seq !== profileRequestSeq) return;
+    document.getElementById('profile-body').innerHTML = `<p class="settings-hint suggestion-error">${escHtml(err.message || 'Não deu pra abrir o perfil')}</p>`;
+  }
+}
+function closeProfile() {
+  profileRequestSeq += 1;
+  document.getElementById('profile-overlay').classList.add('hidden');
+}
+document.getElementById('btn-profile-close').addEventListener('click', closeProfile);
+document.getElementById('profile-overlay').addEventListener('click', (e) => { if (e.target.id === 'profile-overlay') closeProfile(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('profile-overlay').classList.contains('hidden')) closeProfile(); });
+document.getElementById('btn-profile-wrapped').addEventListener('click', () => { closeProfile(); openWrapped(); });
 
 // --- Listas de palavras do pessoal ------------------------------------------
 // Criadas por quem joga e salvas por sala no servidor (ver wordListsByRoom
@@ -5136,17 +5504,41 @@ btnJoin.addEventListener('click', async () => {
     await window.rtc.connect(serverUrl, password);
     setLoginError('');
     saveWorkingDisplayName(rawName);
-    const { selfId: id, peers: existingPeers, iceServers: serverIceServers, rejoinToken, chatHistory } = await window.rtc.joinRoom(roomId, name);
+    // Sala com senha: pergunta e tenta de novo na mesma conexao ate acertar
+    // ou a pessoa desistir (ver askRoomPassword).
+    let joinRes = null;
+    let typedRoomPassword;
+    for (;;) {
+      try {
+        const joinOpts = { allowPings: pingsAllowedByMe() };
+        if (typedRoomPassword !== undefined) joinOpts.roomPassword = typedRoomPassword;
+        joinRes = await window.rtc.joinRoom(roomId, name, undefined, joinOpts);
+        break;
+      } catch (err) {
+        if (!err || !err.needsPassword) throw err;
+        typedRoomPassword = await askRoomPassword(roomId, typedRoomPassword === undefined ? '' : err.message);
+        if (typedRoomPassword === null) {
+          window.rtc.disconnect();
+          setLoginError('');
+          return;
+        }
+      }
+    }
+    const { selfId: id, peers: existingPeers, iceServers: serverIceServers, rejoinToken, chatHistory, lock } = joinRes;
+    currentRoomPassword = typedRoomPassword || null;
     selfId = id;
+    applyRoomLockState(lock);
     currentRoomId = roomId;
     myRejoinToken = rejoinToken || null;
     setIceServersFromServer(serverIceServers);
     saveRoomToHistory(roomId);
     existingPeers.forEach((p) => peerShareModes.set(p.id, p.shareMode || null));
+    existingPeers.forEach((p) => peerPingAllowed.set(p.id, p.allowPings !== false));
 
     window.rtc.onSignal(handleSignal);
 
-    window.rtc.onPeerJoined(({ id: peerId, name: peerName, rejoin, replaces }) => {
+    window.rtc.onPeerJoined(({ id: peerId, name: peerName, rejoin, replaces, allowPings }) => {
+      peerPingAllowed.set(peerId, allowPings !== false);
       // Alguem que caiu e voltou sozinho: a conexao antiga dela (replaces)
       // ainda esta aqui - fecha em silencio e passa o volume/ocultar que
       // voce tinha escolhido pra ela pro id novo.
@@ -5191,6 +5583,9 @@ btnJoin.addEventListener('click', async () => {
     });
 
     window.rtc.onDisconnected(onServerConnectionLost);
+    window.rtc.onRoomLockState(applyRoomLockState);
+    window.rtc.onScreenPing(onScreenPing);
+    window.rtc.onPeerPingPermission(({ id: peerId, allow }) => peerPingAllowed.set(peerId, allow !== false));
     window.rtc.onReconnected(rejoinAfterReconnect);
 
     window.game.onState((newState) => {
