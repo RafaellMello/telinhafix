@@ -4,6 +4,14 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.1.2',
+    date: '20/10/2026',
+    title: 'Música do dia mais audível',
+    items: [
+      'A música do dia agora começa no volume 50% (antes 10%, que ficava baixo demais). Se você já tinha mexido no volume dela, continua o que você escolheu.',
+    ],
+  },
+  {
     version: '4.1.1',
     date: '20/10/2026',
     title: 'Música do dia mais firme',

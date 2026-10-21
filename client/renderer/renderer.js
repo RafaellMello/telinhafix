@@ -5291,12 +5291,12 @@ btnJoin.addEventListener('click', async () => {
 
 // --- Musica do dia (tela inicial) ---------------------------------------------
 // Uma musica por dia pra todo mundo (trecho de 30s do Deezer, ver
-// handleMusic no server/index.js). Toca sozinha a 10% so na PRIMEIRA vez que
+// handleMusic no server/index.js). Toca sozinha a 50% so na PRIMEIRA vez que
 // o app abre no dia; fora isso fica pausada ate a pessoa dar play. Para
 // quando a pessoa entra numa sala (nao vaza pra call nem pra transmissao).
 const MUSIC_AUTOPLAY_DAY_KEY = 'telinhafix-music-autoplay-day';
 const MUSIC_VOLUME_KEY = 'telinhafix-music-volume';
-const MUSIC_DEFAULT_VOLUME = 10; // % do slider (curva em dB - ver musicGain)
+const MUSIC_DEFAULT_VOLUME = 50; // % do slider (curva em dB - ver musicGain)
 const MUSIC_DEVICE_KEY = 'telinhafix-device-id';
 const MUSIC_ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>';
 const MUSIC_ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></svg>';
@@ -5320,7 +5320,7 @@ function musicVolume() {
 }
 // O ouvido percebe volume em decibeis, nao linear: com volume = %/100 o
 // 10% ja soava alto. Aqui o slider anda 40 dB (100% = volume cheio, cada
-// 10% = 4 dB a menos; 0% = mudo) - o padrao de 10% fica bem baixinho.
+// 10% = 4 dB a menos; 0% = mudo) - o padrao de 50% fica em -20 dB.
 const MUSIC_DB_RANGE = 40;
 function musicGain(pct) {
   const v = Math.min(100, Math.max(0, Number(pct) || 0));
