@@ -5348,6 +5348,7 @@ function renderMusicCard() {
   document.getElementById('btn-music-play').disabled = !m.today.preview;
   const next = m.queue[0];
   document.getElementById('music-next-title').textContent = next ? `${next.title} - ${next.artist}` : 'Fila vazia - vote na sua!';
+  document.getElementById('music-queue-info').classList.remove('hidden');
   document.getElementById('btn-music-vote').title = musicVotesLeft
     ? `Você ainda tem ${musicVotesLeft} ${musicVotesLeft === 1 ? 'voto' : 'votos'} hoje`
     : 'Você já usou seus votos de hoje';
@@ -5367,13 +5368,42 @@ function applyMusicState(data) {
   renderMusicCard();
 }
 
+// Se a busca falhar (app abriu antes da internet, servidor reiniciando,
+// oscilacao), tenta de novo sozinho: 3s, 6s, 15s, 30s e depois a cada 1min
+// enquanto a tela inicial estiver aberta. So mostra o erro (com "Tentar de
+// novo") depois de algumas falhas - antes disso continua "Carregando...".
+// O autoplay da 1a abertura do dia continua valendo quando enfim carregar.
+const MUSIC_RETRY_DELAYS_MS = [3000, 6000, 15000, 30000, 60000];
+const MUSIC_FETCH_TIMEOUT_MS = 20000;
+let musicRetryTimer = null;
+let musicFailures = 0;
+let musicPendingAutoplay = false;
+let musicLastError = null;
+
+function showMusicLoadError(show) {
+  const retry = document.getElementById('btn-music-retry');
+  retry.classList.toggle('hidden', !show);
+  retry.title = show && musicLastError ? `Motivo: ${musicLastError}` : '';
+  if (show) {
+    document.getElementById('music-title').textContent = 'Não deu pra carregar a música agora';
+    document.getElementById('music-artist').textContent = '';
+  }
+}
+
 async function loadMusicOfDay({ autoplay = false } = {}) {
+  if (autoplay) musicPendingAutoplay = true;
+  clearTimeout(musicRetryTimer);
+  musicRetryTimer = null;
   try {
-    const r = await fetch(`${DEFAULT_SERVER_URL}/musica?d=${encodeURIComponent(musicDeviceId())}`);
-    const data = await r.json();
-    if (!data.ok) throw new Error(data.error || 'falhou');
+    const r = await fetch(`${DEFAULT_SERVER_URL}/musica?d=${encodeURIComponent(musicDeviceId())}`, { signal: AbortSignal.timeout(MUSIC_FETCH_TIMEOUT_MS) });
+    const data = await r.json().catch(() => { throw new Error(`resposta inválida do servidor (HTTP ${r.status})`); });
+    if (!data.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    musicFailures = 0;
+    musicLastError = null;
+    showMusicLoadError(false);
     applyMusicState(data);
-    if (autoplay && data.today.preview && loginScreenVisible()) {
+    if (musicPendingAutoplay && data.today.preview && loginScreenVisible()) {
+      musicPendingAutoplay = false;
       let last = null;
       try { last = localStorage.getItem(MUSIC_AUTOPLAY_DAY_KEY); } catch {}
       if (last !== data.day) {
@@ -5382,12 +5412,19 @@ async function loadMusicOfDay({ autoplay = false } = {}) {
         audio.play().then(() => { try { localStorage.setItem(MUSIC_AUTOPLAY_DAY_KEY, data.day); } catch {} }).catch(() => {});
       }
     }
+    musicPendingAutoplay = false;
   } catch (err) {
+    musicFailures += 1;
+    musicLastError = err.message || String(err);
+    console.warn(`Musica do dia (tentativa ${musicFailures}):`, musicLastError);
     if (!musicOfDay) {
-      document.getElementById('music-title').textContent = 'Não deu pra carregar a música agora';
-      document.getElementById('music-artist').textContent = '';
+      if (musicFailures >= 3) showMusicLoadError(true);
+      // so continua tentando sozinho enquanto a pessoa esta na tela inicial
+      if (loginScreenVisible()) {
+        const delay = MUSIC_RETRY_DELAYS_MS[Math.min(musicFailures - 1, MUSIC_RETRY_DELAYS_MS.length - 1)];
+        musicRetryTimer = setTimeout(() => loadMusicOfDay(), delay);
+      }
     }
-    console.warn('Musica do dia:', err.message);
   }
 }
 
@@ -5575,6 +5612,13 @@ function closeMusicVote() {
     } finally {
       btn.disabled = false;
     }
+  });
+
+  document.getElementById('btn-music-retry').addEventListener('click', () => {
+    document.getElementById('music-title').textContent = 'Carregando...';
+    document.getElementById('btn-music-retry').classList.add('hidden');
+    musicFailures = 0;
+    loadMusicOfDay();
   });
 
   loadMusicOfDay({ autoplay: true });

@@ -4,6 +4,15 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.1.1',
+    date: '20/10/2026',
+    title: 'Música do dia mais firme',
+    items: [
+      'Corrigido: às vezes a música do dia aparecia "Não deu pra carregar a música agora" ao abrir o app. Agora ele tenta de novo sozinho até conseguir (e ainda toca a música, se for a primeira vez no dia), com um botão "Tentar de novo".',
+      'A tela inicial não mostra mais barras de rolagem.',
+    ],
+  },
+  {
     version: '4.1.0',
     date: '20/10/2026',
     title: 'Música do dia',

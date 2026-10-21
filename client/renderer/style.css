@@ -129,8 +129,13 @@ body {
   gap: 36px;
   padding: 24px;
   overflow-y: auto;
+  /* sem barras de rolagem (pedido do Bunny): em janela baixa ainda rola
+     com a rodinha, so nao mostra a barra; de lado nunca precisa rolar */
+  overflow-x: hidden;
+  scrollbar-width: none;
   position: relative;
 }
+#login-screen::-webkit-scrollbar { display: none; }
 
 /* Fundo animado (onda de particulas), fora do fluxo do flex pra nao
    empurrar o resto do layout - so decoracao atras de tudo. */
@@ -503,6 +508,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .music-title { font-weight: 800; font-size: calc(15px * var(--font-scale)); color: #fff; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .music-artist { font-size: calc(12px * var(--font-scale)); color: var(--text-muted); margin-top: -4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .music-player { display: flex; align-items: center; gap: 10px; }
+.music-card .music-retry { align-self: flex-start; padding: 6px 12px; font-size: calc(11px * var(--font-scale)); }
 .music-card .music-play { flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
 .music-play svg { width: 16px; height: 16px; }
 /* progresso: mesma linha fina branca dos sliders (.opacity-slider) */
