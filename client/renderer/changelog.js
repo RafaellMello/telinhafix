@@ -4,6 +4,17 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.1.0',
+    date: '20/10/2026',
+    title: 'Música do dia',
+    items: [
+      'Novo card "Música do dia" na tela inicial: uma música por dia pra todo mundo, com capa e player. Ela toca sozinha baixinho só na primeira vez que você abre o app no dia; depois é só dar play.',
+      'Vote na sua música: busque pelo nome, ouça o trecho e vote. Cada PC tem 3 votos por dia, cada voto põe a música na fila da música do dia (votar numa que já está na fila adianta ela).',
+      'Todos os controles deslizantes do app (volumes dos sons, transparência da tela inicial) ganharam o mesmo visual do volume das transmissões.',
+      'O "Apoie o Projeto do TelinhaFix" virou um card do lado direito da tela inicial.',
+    ],
+  },
+  {
     version: '4.0.0',
     date: '20/10/2026',
     title: 'Big Update 4.0',

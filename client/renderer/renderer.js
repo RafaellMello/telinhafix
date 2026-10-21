@@ -1594,7 +1594,8 @@ function updateSliderFill(slider) {
   const min = Number(slider.min) || 0;
   const max = Number(slider.max) || 100;
   const pct = ((Number(slider.value) - min) / (max - min)) * 100;
-  slider.style.background = `linear-gradient(to right, var(--red-bright) 0%, var(--red-bright) ${pct}%, rgba(255, 255, 255, 0.25) ${pct}%, rgba(255, 255, 255, 0.25) 100%)`;
+  // o visual (linha branca ate a bolinha) fica no CSS - ver .opacity-slider
+  slider.style.setProperty('--f', String(Math.min(1, Math.max(0, pct / 100))));
 }
 
 function getOrCreateVideoTile(peerId, label, isSelf = false, opts = {}) {
@@ -5286,4 +5287,295 @@ btnJoin.addEventListener('click', async () => {
   document.getElementById('btn-support-close').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.classList.contains('hidden')) close(); });
+})();
+
+// --- Musica do dia (tela inicial) ---------------------------------------------
+// Uma musica por dia pra todo mundo (trecho de 30s do Deezer, ver
+// handleMusic no server/index.js). Toca sozinha a 10% so na PRIMEIRA vez que
+// o app abre no dia; fora isso fica pausada ate a pessoa dar play. Para
+// quando a pessoa entra numa sala (nao vaza pra call nem pra transmissao).
+const MUSIC_AUTOPLAY_DAY_KEY = 'telinhafix-music-autoplay-day';
+const MUSIC_VOLUME_KEY = 'telinhafix-music-volume';
+const MUSIC_DEFAULT_VOLUME = 10; // % do slider (curva em dB - ver musicGain)
+const MUSIC_DEVICE_KEY = 'telinhafix-device-id';
+const MUSIC_ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>';
+const MUSIC_ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></svg>';
+let musicOfDay = null;
+let musicVotesLeft = 3;
+let musicMyVotes = [];
+
+function musicDeviceId() {
+  try {
+    let id = localStorage.getItem(MUSIC_DEVICE_KEY);
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem(MUSIC_DEVICE_KEY, id); }
+    return id;
+  } catch { return `sem-armazenamento-${navigator.userAgent.length}`; }
+}
+function musicVolume() {
+  try {
+    const raw = localStorage.getItem(MUSIC_VOLUME_KEY);
+    const v = Number(raw);
+    return raw !== null && Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : MUSIC_DEFAULT_VOLUME;
+  } catch { return 15; }
+}
+// O ouvido percebe volume em decibeis, nao linear: com volume = %/100 o
+// 10% ja soava alto. Aqui o slider anda 40 dB (100% = volume cheio, cada
+// 10% = 4 dB a menos; 0% = mudo) - o padrao de 10% fica bem baixinho.
+const MUSIC_DB_RANGE = 40;
+function musicGain(pct) {
+  const v = Math.min(100, Math.max(0, Number(pct) || 0));
+  return v === 0 ? 0 : Math.pow(10, ((v / 100 - 1) * MUSIC_DB_RANGE) / 20);
+}
+function fmtMusicTime(s) {
+  const t = Math.max(0, Math.floor(s || 0));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
+function loginScreenVisible() {
+  return !document.getElementById('login-screen').classList.contains('hidden');
+}
+
+function renderMusicCard() {
+  const m = musicOfDay;
+  if (!m) return;
+  const cover = document.getElementById('music-cover');
+  const title = document.getElementById('music-title');
+  if (cover.getAttribute('src') !== m.today.cover) cover.src = m.today.cover || '';
+  cover.classList.toggle('hidden', !m.today.cover);
+  cover.alt = `Capa de ${m.today.title}`;
+  title.textContent = m.today.title;
+  title.title = m.today.title;
+  document.getElementById('music-artist').textContent = m.today.artist;
+  document.getElementById('btn-music-play').disabled = !m.today.preview;
+  const next = m.queue[0];
+  document.getElementById('music-next-title').textContent = next ? `${next.title} - ${next.artist}` : 'Fila vazia - vote na sua!';
+  document.getElementById('btn-music-vote').title = musicVotesLeft
+    ? `Você ainda tem ${musicVotesLeft} ${musicVotesLeft === 1 ? 'voto' : 'votos'} hoje`
+    : 'Você já usou seus votos de hoje';
+}
+
+function applyMusicState(data) {
+  const audio = document.getElementById('music-audio');
+  const changed = !musicOfDay || musicOfDay.today.id !== data.today.id;
+  musicOfDay = data;
+  musicVotesLeft = data.votesLeft;
+  musicMyVotes = data.myVotes || [];
+  if (data.today.preview && (changed || !audio.getAttribute('src'))) {
+    const wasPlaying = !audio.paused;
+    audio.src = data.today.preview;
+    if (wasPlaying) audio.play().catch(() => {});
+  }
+  renderMusicCard();
+}
+
+async function loadMusicOfDay({ autoplay = false } = {}) {
+  try {
+    const r = await fetch(`${DEFAULT_SERVER_URL}/musica?d=${encodeURIComponent(musicDeviceId())}`);
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'falhou');
+    applyMusicState(data);
+    if (autoplay && data.today.preview && loginScreenVisible()) {
+      let last = null;
+      try { last = localStorage.getItem(MUSIC_AUTOPLAY_DAY_KEY); } catch {}
+      if (last !== data.day) {
+        const audio = document.getElementById('music-audio');
+        audio.volume = musicGain(musicVolume());
+        audio.play().then(() => { try { localStorage.setItem(MUSIC_AUTOPLAY_DAY_KEY, data.day); } catch {} }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    if (!musicOfDay) {
+      document.getElementById('music-title').textContent = 'Não deu pra carregar a música agora';
+      document.getElementById('music-artist').textContent = '';
+    }
+    console.warn('Musica do dia:', err.message);
+  }
+}
+
+const musicVoteOverlay = document.getElementById('music-vote-overlay');
+const musicResultAudio = document.getElementById('music-result-audio');
+function closeMusicVote() {
+  musicVoteOverlay.classList.add('hidden');
+  musicResultAudio.pause();
+}
+
+(() => {
+  const audio = document.getElementById('music-audio');
+  const play = document.getElementById('btn-music-play');
+  const fill = document.getElementById('music-progress-fill');
+  const time = document.getElementById('music-time');
+  const volume = document.getElementById('music-volume');
+  play.innerHTML = MUSIC_ICON_PLAY;
+  const mute = document.getElementById('btn-music-mute');
+  const volumeValue = document.getElementById('music-volume-value');
+  let volumeBeforeMute = musicVolume() || MUSIC_DEFAULT_VOLUME;
+  const syncVolumeUi = () => {
+    const v = Number(volume.value);
+    volumeValue.textContent = `${v}%`;
+    mute.innerHTML = v === 0 ? ICONS.speakerOff : ICONS.speakerOn;
+    mute.setAttribute('aria-label', v === 0 ? 'Desmutar a música do dia' : 'Mutar a música do dia');
+    updateSliderFill(volume);
+  };
+  const setMusicVolume = (v) => {
+    volume.value = String(v);
+    audio.volume = musicGain(v);
+    try { localStorage.setItem(MUSIC_VOLUME_KEY, String(v)); } catch {}
+    syncVolumeUi();
+  };
+  volume.value = String(musicVolume());
+  audio.volume = musicGain(musicVolume());
+  syncVolumeUi();
+  mute.addEventListener('click', () => {
+    const v = Number(volume.value);
+    if (v > 0) { volumeBeforeMute = v; setMusicVolume(0); } else setMusicVolume(volumeBeforeMute || MUSIC_DEFAULT_VOLUME);
+  });
+
+  const syncButton = () => {
+    play.innerHTML = audio.paused ? MUSIC_ICON_PLAY : MUSIC_ICON_PAUSE;
+    play.setAttribute('aria-label', audio.paused ? 'Tocar' : 'Pausar');
+  };
+  audio.addEventListener('play', syncButton);
+  audio.addEventListener('pause', syncButton);
+  audio.addEventListener('timeupdate', () => {
+    const d = audio.duration || 30;
+    fill.style.width = `${Math.min(100, (audio.currentTime / d) * 100)}%`;
+    time.textContent = fmtMusicTime(audio.currentTime);
+  });
+  play.addEventListener('click', () => {
+    if (audio.paused) {
+      musicResultAudio.pause();
+      audio.volume = musicGain(musicVolume());
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  });
+  document.getElementById('music-progress').addEventListener('click', (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    if (audio.duration) audio.currentTime = ((e.clientX - r.left) / r.width) * audio.duration;
+  });
+  volume.addEventListener('input', () => setMusicVolume(Number(volume.value)));
+  // rodinha do mouse: de 5 em 5, igual o volume das transmissoes
+  volume.parentElement.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    setMusicVolume(Math.min(100, Math.max(0, Number(volume.value) + (e.deltaY < 0 ? 5 : -5))));
+  }, { passive: false });
+
+  // Entrou numa sala: para. Voltou pra tela inicial: atualiza (sem tocar sozinha).
+  new MutationObserver(() => {
+    if (!loginScreenVisible()) { audio.pause(); closeMusicVote(); } else loadMusicOfDay();
+  }).observe(document.getElementById('login-screen'), { attributes: true, attributeFilter: ['class'] });
+  // virada do dia com o app aberto na tela inicial
+  setInterval(() => { if (loginScreenVisible()) loadMusicOfDay(); }, 10 * 60 * 1000);
+
+  // --- modal de voto ---
+  const results = document.getElementById('music-results');
+  const status = document.getElementById('music-vote-status');
+  const left = document.getElementById('music-votes-left');
+  const setStatus = (text, kind) => {
+    status.textContent = text || '';
+    status.classList.toggle('suggestion-error', kind === 'error');
+    status.classList.toggle('suggestion-ok', kind === 'ok');
+  };
+  const renderLeft = () => {
+    left.textContent = musicVotesLeft > 0
+      ? `Você ainda tem ${musicVotesLeft} ${musicVotesLeft === 1 ? 'voto' : 'votos'} hoje. Cada voto coloca a música na fila (votar numa que já está na fila adianta ela).`
+      : 'Você já usou seus 3 votos de hoje - amanhã tem mais!';
+  };
+  let lastResults = [];
+  let listeningId = null;
+  function renderResults() {
+    results.innerHTML = '';
+    lastResults.forEach((t) => {
+      const row = document.createElement('div');
+      row.className = 'music-result';
+      const img = document.createElement('img');
+      img.src = t.coverSmall || t.cover || '';
+      img.alt = '';
+      const text = document.createElement('div');
+      text.className = 'music-result-text';
+      const tt = document.createElement('div');
+      tt.className = 'music-result-title';
+      tt.textContent = t.title;
+      const ta = document.createElement('div');
+      ta.className = 'music-result-artist';
+      ta.textContent = t.album && t.album !== t.title ? `${t.artist} · ${t.album}` : t.artist;
+      text.append(tt, ta);
+      const listen = document.createElement('button');
+      listen.type = 'button';
+      listen.className = 'ghost music-result-listen';
+      const playingThis = listeningId === t.id && !musicResultAudio.paused;
+      listen.innerHTML = playingThis ? MUSIC_ICON_PAUSE : MUSIC_ICON_PLAY;
+      listen.title = playingThis ? 'Pausar' : 'Ouvir o trecho';
+      listen.addEventListener('click', () => {
+        if (listeningId === t.id && !musicResultAudio.paused) { musicResultAudio.pause(); return; }
+        audio.pause();
+        listeningId = t.id;
+        musicResultAudio.src = t.preview;
+        musicResultAudio.volume = musicGain(Math.max(30, musicVolume()));
+        musicResultAudio.play().then(renderResults).catch(() => {});
+      });
+      const vote = document.createElement('button');
+      vote.type = 'button';
+      vote.className = 'music-result-vote';
+      const isToday = !!musicOfDay && musicOfDay.today.id === t.id;
+      const already = musicMyVotes.includes(t.id);
+      vote.textContent = isToday ? 'É a de hoje' : already ? 'Votado' : 'Votar';
+      vote.disabled = isToday || already || musicVotesLeft <= 0;
+      vote.addEventListener('click', async () => {
+        vote.disabled = true;
+        setStatus('Votando...');
+        try {
+          const r = await fetch(`${DEFAULT_SERVER_URL}/musica/voto`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId: musicDeviceId(), trackId: t.id, name: document.getElementById('display-name').value.trim() || 'Anônimo' }),
+          });
+          const data = await r.json();
+          if (!data.ok) throw new Error(data.error || 'Não deu pra votar');
+          applyMusicState(data);
+          setStatus(`Votado! "${t.title}" está em ${data.position}º na fila.`, 'ok');
+        } catch (err) {
+          setStatus(err.message, 'error');
+        }
+        renderLeft();
+        renderResults();
+      });
+      row.append(img, text, listen, vote);
+      results.appendChild(row);
+    });
+  }
+  musicResultAudio.addEventListener('pause', () => { if (!musicVoteOverlay.classList.contains('hidden')) renderResults(); });
+
+  document.getElementById('btn-music-vote').addEventListener('click', () => {
+    musicVoteOverlay.classList.remove('hidden');
+    setStatus('');
+    renderLeft();
+    renderResults();
+    document.getElementById('music-search').focus();
+  });
+  document.getElementById('btn-music-vote-close').addEventListener('click', closeMusicVote);
+  musicVoteOverlay.addEventListener('click', (e) => { if (e.target === musicVoteOverlay) closeMusicVote(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !musicVoteOverlay.classList.contains('hidden')) closeMusicVote(); });
+  document.getElementById('music-search-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const q = document.getElementById('music-search').value.trim();
+    if (q.length < 2) { setStatus('Digite o nome da música', 'error'); return; }
+    const btn = document.getElementById('btn-music-search');
+    btn.disabled = true;
+    setStatus('Buscando...');
+    try {
+      const r = await fetch(`${DEFAULT_SERVER_URL}/musica/busca?q=${encodeURIComponent(q)}`);
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || 'Não deu pra buscar');
+      lastResults = data.results;
+      if (lastResults.length) setStatus(''); else setStatus('Nada encontrado - tenta com o nome do artista junto', 'error');
+      renderResults();
+    } catch (err) {
+      setStatus(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  loadMusicOfDay({ autoplay: true });
 })();

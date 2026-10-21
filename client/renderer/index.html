@@ -27,7 +27,34 @@
     <canvas id="login-background-canvas"></canvas>
     <button id="btn-settings" title="Aparencia"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle><circle cx="12" cy="12" r="8.2" stroke-dasharray="2 2.15"></circle></svg></button>
     <div id="build-version"></div>
-    <button type="button" id="btn-support" class="ghost support-btn">Apoie o Projeto do TelinhaFix. ❤️</button>
+    <button type="button" id="btn-support" class="support-card" aria-label="Apoie o Projeto do TelinhaFix">
+      <span class="support-card-label">Apoie o projeto</span>
+      <span class="support-card-qr"><img src="assets/pix-qrcode.png" alt="" /></span>
+      <span class="support-card-title">Apoie o Projeto do TelinhaFix. ❤️</span>
+      <span class="support-card-text">Com o Pix a gente chega no servidor próprio e em telas ainda melhores.</span>
+    </button>
+    <aside id="music-card" class="music-card" aria-label="Música do dia">
+      <div class="music-card-label">Música do dia</div>
+      <div class="music-cover-wrap"><img id="music-cover" class="music-cover hidden" alt="" /></div>
+      <div id="music-title" class="music-title">Carregando...</div>
+      <div id="music-artist" class="music-artist"></div>
+      <div class="music-player">
+        <button type="button" id="btn-music-play" class="music-play" aria-label="Tocar" disabled></button>
+        <div id="music-progress" class="music-progress" title="Clique pra pular"><div id="music-progress-fill" class="music-progress-fill"></div></div>
+        <span id="music-time" class="music-time">0:00</span>
+      </div>
+      <div class="opacity-control music-volume" title="Volume da música do dia">
+        <button type="button" id="btn-music-mute" class="music-mute" aria-label="Mutar a música do dia"></button>
+        <input type="range" id="music-volume" class="opacity-slider" min="0" max="100" value="10" aria-label="Volume da música do dia" />
+        <span id="music-volume-value" class="opacity-value">10%</span>
+      </div>
+      <button type="button" id="btn-music-vote" class="ghost music-vote">Vote na sua música para música do dia</button>
+      <div id="music-queue-info" class="music-queue-info">
+        <div class="music-next-label">Próxima música</div>
+        <div id="music-next-title" class="music-next-title"></div>
+      </div>
+    </aside>
+    <audio id="music-audio" loop preload="auto"></audio>
     <div id="members-left" class="members-col"></div>
 
     <div class="login-box">
@@ -679,6 +706,23 @@
       <div class="settings-footer">
         <button id="btn-camera-picker-cancel" class="ghost">Cancelar</button>
       </div>
+    </div>
+  </div>
+
+  <div id="music-vote-overlay" class="settings-overlay music-vote-overlay hidden">
+    <div class="settings-panel music-vote-panel" role="dialog" aria-labelledby="music-vote-title">
+      <h2 id="music-vote-title">Vote na sua música</h2>
+      <p id="music-votes-left" class="settings-hint">Cada voto coloca a música na fila da música do dia.</p>
+      <form id="music-search-form" class="music-search-row" autocomplete="off">
+        <input id="music-search" type="text" maxlength="100" placeholder="Nome da música ou do artista" />
+        <button id="btn-music-search" type="submit">Buscar</button>
+      </form>
+      <div id="music-results" class="music-results"></div>
+      <div class="music-vote-footer">
+        <span id="music-vote-status" class="suggestion-status" role="status"></span>
+        <button id="btn-music-vote-close" type="button" class="ghost">Fechar</button>
+      </div>
+      <audio id="music-result-audio" preload="none"></audio>
     </div>
   </div>
 

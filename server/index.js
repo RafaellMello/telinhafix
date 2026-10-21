@@ -106,6 +106,17 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // Musica do dia (ver handleMusic)
+  if (req.url === '/musica' || req.url.startsWith('/musica/') || req.url.startsWith('/musica?')) {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+      res.end();
+      return;
+    }
+    handleMusic(req, res, new URL(req.url, 'http://localhost'));
+    return;
+  }
+
   // Pagina de convite: https://.../convite/<sala>. Links telinhafix:// nao
   // ficam clicaveis no Discord/WhatsApp (so http/https), entao o botao
   // "Convidar" do app copia ESTE link - a pagina abre o TelinhaFix ja com a
@@ -212,6 +223,245 @@ function handleSuggestion(req, res) {
       sendJson(res, 502, { ok: false, error: 'Não deu pra enviar agora. Tenta de novo daqui a pouco.' });
     }
   });
+}
+
+// --- Musica do dia -----------------------------------------------------------
+// Card na tela inicial do app: uma musica por dia (trecho de 30s do Deezer,
+// API publica sem chave), igual pra todo mundo. Cada PC vota em ate 3
+// musicas por dia; cada voto poe a musica no fim da fila, e votar numa que
+// ja esta na fila adianta ela uma posicao. A meia-noite (Brasilia) a
+// primeira da fila vira a do dia; fila vazia = sorteio no "Pop All Stars"
+// (top 50 pop mundial do Deezer). Fica no Upstash (memoria se desligado).
+// Rotas HTTP (a tela inicial ainda nao tem socket): GET /musica,
+// GET /musica/busca?q=, POST /musica/voto.
+const MUSIC_DB_KEY = process.env.MUSIC_DB_KEY || 'telinhafix:music'; // env so pros testes
+const MUSIC_VOTES_PER_DAY = 3;
+const MUSIC_QUEUE_MAX = 200;
+const MUSIC_FALLBACK_PLAYLIST = 1282483245; // Deezer "Pop All Stars"
+// Primeiras musicas (pedido do Bunny): hoje NOBLE (Slowed Down) - F3miii,
+// depois Dracula (with JENNIE) - Tame Impala, depois hate that i made you
+// love me - Ariana Grande. So vale quando o banco ainda nao tem nada.
+const MUSIC_SEED = (process.env.MUSIC_SEED || '4038764831,3818963601,4045817471').split(',').map(Number).filter(Boolean);
+const DEEZER_API = process.env.DEEZER_API_URL || 'https://api.deezer.com'; // env so pros testes
+let musicState = null; // { day, today, queue: [{ track, votes, by: [nome], firstAt }], history: [id], votesByDevice: { dev: [id] } }
+let musicLoading = null;
+let musicWriting = false;
+let musicDirty = false;
+const musicPreviewCache = new Map(); // id -> { url, until }
+const musicSearchByIp = new Map(); // ip -> [t]
+
+function brtDay(t = Date.now()) {
+  return new Date(t + BRT_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+async function deezer(pathAndQuery) {
+  const r = await fetch(`${DEEZER_API}${pathAndQuery}`, { signal: AbortSignal.timeout(8000) });
+  const j = await r.json();
+  if (!r.ok || j.error) throw new Error((j.error && j.error.message) || `Deezer respondeu ${r.status}`);
+  return j;
+}
+
+function trackFromDeezer(t) {
+  return {
+    id: t.id,
+    title: String(t.title || ''),
+    artist: String((t.artist && t.artist.name) || ''),
+    album: String((t.album && t.album.title) || ''),
+    cover: (t.album && (t.album.cover_big || t.album.cover_medium)) || null,
+    coverSmall: (t.album && (t.album.cover_medium || t.album.cover_small)) || null,
+    link: t.link || null,
+  };
+}
+
+// O link do trecho do Deezer expira (tem "exp=" assinado) - pega um novo
+// quando estiver perto de vencer.
+async function musicPreviewUrl(id) {
+  const cached = musicPreviewCache.get(id);
+  if (cached && cached.until > Date.now()) return cached.url;
+  const t = await deezer(`/track/${id}`);
+  const url = t.preview || null;
+  const exp = Number((/exp=(\d+)/.exec(url || '') || [])[1]) * 1000;
+  musicPreviewCache.set(id, { url, until: exp ? exp - 10 * 60 * 1000 : Date.now() + 30 * 60 * 1000 });
+  return url;
+}
+
+async function pickFallbackTrack(history) {
+  const j = await deezer(`/playlist/${MUSIC_FALLBACK_PLAYLIST}/tracks?limit=100`);
+  const recent = new Set(history.slice(-30));
+  const pool = (j.data || []).filter((t) => t.preview && t.readable !== false);
+  const fresh = pool.filter((t) => !recent.has(t.id));
+  const list = fresh.length ? fresh : pool;
+  if (!list.length) throw new Error('playlist reserva vazia');
+  return trackFromDeezer(list[Math.floor(Math.random() * list.length)]);
+}
+
+async function loadMusic() {
+  if (musicState) return musicState;
+  if (musicLoading) return musicLoading;
+  musicLoading = (async () => {
+    let saved = null;
+    if (activityDbEnabled) {
+      const raw = await upstash(['GET', MUSIC_DB_KEY]); // erro aqui = tenta de novo no proximo pedido
+      saved = raw ? JSON.parse(raw) : null;
+    }
+    if (!saved || !saved.today) {
+      const seed = [];
+      for (const id of MUSIC_SEED) seed.push(trackFromDeezer(await deezer(`/track/${id}`)));
+      const now = Date.now();
+      saved = {
+        day: brtDay(),
+        today: seed[0] || await pickFallbackTrack([]),
+        queue: seed.slice(1).map((track, i) => ({ track, votes: 1, by: ['Bunny'], firstAt: now + i })),
+        history: seed.slice(0, 1).map((t) => t.id),
+        votesByDevice: {},
+      };
+      musicState = saved;
+      persistMusic();
+    }
+    musicState = saved;
+    return musicState;
+  })().finally(() => { musicLoading = null; });
+  return musicLoading;
+}
+
+function persistMusic() {
+  if (!activityDbEnabled) return;
+  musicDirty = true;
+  flushMusic();
+}
+async function flushMusic() {
+  if (musicWriting || !musicDirty || !musicState) return;
+  musicWriting = true;
+  try {
+    while (musicDirty) {
+      musicDirty = false;
+      try {
+        await upstash(['SET', MUSIC_DB_KEY, JSON.stringify(musicState)]);
+      } catch (err) {
+        console.error('[musica] falha ao salvar no banco (tentando de novo em 10s):', err.message);
+        musicDirty = true;
+        setTimeout(flushMusic, 10000).unref();
+        break;
+      }
+    }
+  } finally {
+    musicWriting = false;
+  }
+}
+
+// Passa pra proxima musica: primeira da fila, ou sorteio se vazia.
+async function advanceMusic(state) {
+  const next = state.queue.shift();
+  state.today = next ? next.track : await pickFallbackTrack(state.history);
+  state.history.push(state.today.id);
+  if (state.history.length > 200) state.history.splice(0, state.history.length - 200);
+}
+
+// Virou o dia desde a ultima vez? (se o servidor ficou dias dormindo, so
+// avanca uma - ninguem ouviu as outras mesmo)
+let musicAdvancing = null;
+async function currentMusic() {
+  const state = await loadMusic();
+  if (state.day === brtDay()) return state;
+  if (!musicAdvancing) {
+    musicAdvancing = (async () => {
+      await advanceMusic(state);
+      state.day = brtDay();
+      state.votesByDevice = {};
+      persistMusic();
+      console.log(`[musica] musica do dia ${state.day}: ${state.today.title} - ${state.today.artist}`);
+    })().finally(() => { musicAdvancing = null; });
+  }
+  await musicAdvancing;
+  return state;
+}
+
+function musicDeviceKey(deviceId) {
+  if (typeof deviceId !== 'string' || deviceId.length < 8 || deviceId.length > 100) return null;
+  return crypto.createHash('sha256').update(deviceId).digest('hex').slice(0, 24);
+}
+
+async function musicPublicView(state, deviceId) {
+  const dev = musicDeviceKey(deviceId);
+  const mine = (dev && state.votesByDevice[dev]) || [];
+  let preview = null;
+  try { preview = await musicPreviewUrl(state.today.id); } catch (err) { console.error('[musica] trecho:', err.message); }
+  return {
+    ok: true,
+    day: state.day,
+    today: { ...state.today, preview },
+    queue: state.queue.slice(0, 10).map((q, i) => ({ pos: i + 1, id: q.track.id, title: q.track.title, artist: q.track.artist, coverSmall: q.track.coverSmall, votes: q.votes })),
+    queueLength: state.queue.length,
+    votesPerDay: MUSIC_VOTES_PER_DAY,
+    votesLeft: Math.max(0, MUSIC_VOTES_PER_DAY - mine.length),
+    myVotes: mine,
+  };
+}
+
+function readJsonBody(req, max = 4096) {
+  return new Promise((resolve) => {
+    let raw = '';
+    req.on('data', (c) => { raw += c; if (raw.length > max) { req.destroy(); resolve(null); } });
+    req.on('end', () => { try { resolve(JSON.parse(raw)); } catch { resolve(null); } });
+  });
+}
+
+async function handleMusic(req, res, url) {
+  try {
+    if (req.method === 'GET' && url.pathname === '/musica') {
+      const state = await currentMusic();
+      return sendJson(res, 200, await musicPublicView(state, url.searchParams.get('d')));
+    }
+    if (req.method === 'GET' && url.pathname === '/musica/busca') {
+      const q = String(url.searchParams.get('q') || '').trim().slice(0, 100);
+      if (q.length < 2) return sendJson(res, 400, { ok: false, error: 'Digite o nome da música' });
+      const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      const now = Date.now();
+      const recent = (musicSearchByIp.get(ip) || []).filter((t) => now - t < 60000);
+      if (recent.length >= 30) return sendJson(res, 429, { ok: false, error: 'Muitas buscas seguidas - espera um pouquinho' });
+      recent.push(now);
+      musicSearchByIp.set(ip, recent);
+      const j = await deezer(`/search?q=${encodeURIComponent(q)}&limit=10`);
+      const results = (j.data || []).filter((t) => t.preview && t.readable !== false).slice(0, 5)
+        .map((t) => ({ ...trackFromDeezer(t), preview: t.preview }));
+      return sendJson(res, 200, { ok: true, results });
+    }
+    if (req.method === 'POST' && url.pathname === '/musica/voto') {
+      const body = await readJsonBody(req);
+      if (!body) return sendJson(res, 400, { ok: false, error: 'Pedido inválido' });
+      const dev = musicDeviceKey(body.deviceId);
+      const trackId = Number(body.trackId);
+      const name = (typeof body.name === 'string' ? body.name : '').trim().slice(0, MAX_NAME_LEN) || 'Anônimo';
+      if (!dev || !Number.isInteger(trackId) || trackId <= 0) return sendJson(res, 400, { ok: false, error: 'Pedido inválido' });
+      const state = await currentMusic();
+      const mine = state.votesByDevice[dev] || [];
+      if (mine.length >= MUSIC_VOTES_PER_DAY) return sendJson(res, 429, { ok: false, error: `Você já usou seus ${MUSIC_VOTES_PER_DAY} votos de hoje - volta amanhã!` });
+      if (mine.includes(trackId)) return sendJson(res, 409, { ok: false, error: 'Você já votou nessa hoje' });
+      if (state.today.id === trackId) return sendJson(res, 409, { ok: false, error: 'Essa já é a música de hoje!' });
+      let i = state.queue.findIndex((q) => q.track.id === trackId);
+      if (i >= 0) {
+        // ja esta na fila: o voto adianta ela uma posicao
+        const item = state.queue[i];
+        item.votes += 1;
+        if (!item.by.includes(name)) item.by.push(name);
+        if (i > 0) { state.queue.splice(i, 1); state.queue.splice(i - 1, 0, item); i -= 1; }
+      } else {
+        if (state.queue.length >= MUSIC_QUEUE_MAX) return sendJson(res, 429, { ok: false, error: 'A fila está cheia - tenta amanhã' });
+        const t = await deezer(`/track/${trackId}`);
+        if (!t.preview || t.readable === false) return sendJson(res, 400, { ok: false, error: 'Essa música não tem trecho pra tocar - escolhe outra versão' });
+        state.queue.push({ track: trackFromDeezer(t), votes: 1, by: [name], firstAt: Date.now() });
+        i = state.queue.length - 1;
+      }
+      state.votesByDevice[dev] = mine.concat(trackId);
+      persistMusic();
+      const view = await musicPublicView(state, body.deviceId);
+      return sendJson(res, 200, { ...view, position: i + 1 });
+    }
+    return sendJson(res, 404, { ok: false, error: 'não encontrado' });
+  } catch (err) {
+    console.error('[musica] falha:', err.message);
+    return sendJson(res, 502, { ok: false, error: 'Não deu pra falar com o Deezer agora. Tenta de novo daqui a pouco.' });
+  }
 }
 
 const INVITE_LOGO_URL ='https://raw.githubusercontent.com/RafaellMello/telinhafix/master/client/renderer/assets/logo.png';
@@ -1815,6 +2065,40 @@ io.on('connection', (socket) => {
     endGameTurn(game);
     broadcastGameState(roomId);
     if (ack) ack({ ok: true });
+  });
+
+  // Musica do dia (ver handleMusic): fila completa com quem votou.
+  const adminMusicView = (state) => ({
+    ok: true,
+    day: state.day,
+    today: state.today,
+    queue: state.queue.map((q, i) => ({ pos: i + 1, ...q.track, votes: q.votes, by: q.by, firstAt: q.firstAt })),
+    votersToday: Object.keys(state.votesByDevice).length,
+  });
+  socket.on('admin-music-get', async (_data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    try { if (ack) ack(adminMusicView(await currentMusic())); } catch (err) { if (ack) ack({ ok: false, error: err.message }); }
+  });
+  socket.on('admin-music-remove', async (data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    try {
+      const state = await currentMusic();
+      const i = state.queue.findIndex((q) => q.track.id === Number(data && data.trackId));
+      if (i < 0) { if (ack) ack({ ok: false, error: 'Essa música não está na fila' }); return; }
+      state.queue.splice(i, 1);
+      persistMusic();
+      if (ack) ack(adminMusicView(state));
+    } catch (err) { if (ack) ack({ ok: false, error: err.message }); }
+  });
+  socket.on('admin-music-skip', async (_data, ack) => {
+    if (!socket.data.isAdmin) { if (ack) ack({ ok: false, error: 'nao autorizado' }); return; }
+    try {
+      const state = await currentMusic();
+      await advanceMusic(state);
+      persistMusic();
+      console.log(`[musica] admin trocou a de hoje: ${state.today.title} - ${state.today.artist}`);
+      if (ack) ack(adminMusicView(state));
+    } catch (err) { if (ack) ack({ ok: false, error: err.message }); }
   });
 
   socket.on('admin-kick', (data, ack) => {
