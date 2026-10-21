@@ -1,18 +1,28 @@
 // Coordena qual fundo animado esta ativo atras da tela de login (Particulas/
-// Feixe de luz/Web, escolhido em Aparencia > Fundo animado) - so um roda
+// Web/Fluid Particles/Pixels/Aurora/Estatica/Brasas/Ondas, escolhido em Aparencia > Fundo animado) - so um roda
 // por vez, reaproveitando o mesmo <canvas>. Trocar de estilo destroi a
 // instancia antiga (desliga o loop de animacao, libera o contexto
 // WebGL/2D) e cria a nova do zero.
 import { createParticlesBackground } from './particles.js';
-import { createLightBeamBackground } from './lightbeam.js';
 import { createWebBackground } from './web.js';
+import { createFluidBackground } from './fluid.js';
+import { createPixelsBackground } from './pixels.js';
+import { createAuroraBackground, createEstaticaBackground, createBrasasBackground, createOndasBackground } from './ambient.js';
 
 const FACTORIES = {
   particulas: createParticlesBackground,
-  lightbeam: createLightBeamBackground,
   web: createWebBackground,
+  fluid: createFluidBackground,
+  pixels: createPixelsBackground,
+  aurora: createAuroraBackground,
+  estatica: createEstaticaBackground,
+  brasas: createBrasasBackground,
+  ondas: createOndasBackground,
 };
 const DEFAULT_STYLE = 'particulas';
+// Fundos que sairam do app -> o que entra no lugar (quem tinha escolhido o
+// antigo continua com um fundo parecido, sem cair no padrao).
+const RETIRED_STYLES = { lightbeam: 'brasas' };
 
 const initialCanvas = document.getElementById('login-background-canvas');
 if (initialCanvas) {
@@ -41,7 +51,8 @@ if (initialCanvas) {
   function readStyle() {
     try {
       const saved = JSON.parse(localStorage.getItem('telinhafix-theme'));
-      return (saved && saved.background) || DEFAULT_STYLE;
+      const style = (saved && saved.background) || DEFAULT_STYLE;
+      return RETIRED_STYLES[style] || style;
     } catch (err) {
       return DEFAULT_STYLE;
     }
@@ -67,5 +78,5 @@ if (initialCanvas) {
 
   // Chamado pelo menu de configuracoes (Aparencia > Fundo animado) quando a
   // pessoa troca de estilo.
-  window.__setBackgroundStyle = (style) => mount(style);
+  window.__setBackgroundStyle = (style) => mount(RETIRED_STYLES[style] || style);
 }

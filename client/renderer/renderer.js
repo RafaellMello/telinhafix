@@ -170,6 +170,11 @@ function loadTheme() {
     // ficaria congelado pra sempre no cache dessa pessoa.
     if (!merged.modeExplicit) merged.mode = DEFAULT_THEME.mode;
     if (!merged.loginOpacityExplicit) merged.loginOpacity = DEFAULT_THEME.loginOpacity;
+    // "Feixe de luz" saiu do app (4.2.0): quem usava passa pro Brasas
+    if (merged.background === 'lightbeam') {
+      merged.background = 'brasas';
+      saveTheme(merged);
+    }
     return merged;
   } catch (err) {
     return { ...DEFAULT_THEME, keybinds: { ...DEFAULT_KEYBINDS }, volumes: { ...DEFAULT_VOLUMES } };

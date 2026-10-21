@@ -4,6 +4,16 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.2.0',
+    date: '21/10/2026',
+    title: 'Fundos animados novos',
+    items: [
+      'Seis fundos novos em Configurações > Aparência > Fundo animado: Fluid Particles, Pixels (o TELINHAFIX feito de pixels na sua cor principal), Aurora, Estática, Brasas e Ondas.',
+      'Todos seguem a cor principal que você escolher. Pixels, Brasas e Ondas reagem ao mouse.',
+      'O fundo "Feixe de luz" saiu - quem estava usando passou pro Brasas.',
+    ],
+  },
+  {
     version: '4.1.2',
     date: '20/10/2026',
     title: 'Música do dia mais audível',
