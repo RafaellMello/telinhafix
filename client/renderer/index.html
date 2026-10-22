@@ -791,7 +791,15 @@
   <div id="music-vote-overlay" class="settings-overlay music-vote-overlay hidden">
     <div class="settings-panel music-vote-panel" role="dialog" aria-labelledby="music-vote-title">
       <h2 id="music-vote-title">Vote na sua música</h2>
-      <p id="music-votes-left" class="settings-hint">Cada voto coloca a música na fila da música do dia.</p>
+      <div class="music-votes-box">
+        <div class="music-votes-meter-top">
+          <span id="music-votes-used"></span>
+          <span id="music-votes-note"></span>
+        </div>
+        <div id="music-votes-segs" class="music-votes-segs"></div>
+        <div id="music-vote-slots" class="music-vote-slots"></div>
+      </div>
+      <p id="music-votes-left" class="settings-hint">Cada voto coloca a música na fila (votar numa que já está na fila adianta ela).</p>
       <form id="music-search-form" class="music-search-row" autocomplete="off">
         <input id="music-search" type="text" maxlength="100" placeholder="Nome da música ou do artista" />
         <button id="btn-music-search" type="submit">Buscar</button>

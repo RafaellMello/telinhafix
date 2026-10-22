@@ -5780,6 +5780,7 @@ const MUSIC_AUTOPLAY_DAY_KEY = 'telinhafix-music-autoplay-day';
 const MUSIC_VOLUME_KEY = 'telinhafix-music-volume';
 const MUSIC_DEFAULT_VOLUME = 50; // % do slider (curva em dB - ver musicGain)
 const MUSIC_DEVICE_KEY = 'telinhafix-device-id';
+const MUSIC_VOTED_TRACKS_KEY = 'telinhafix-music-voted-tracks'; // nome/capa das musicas votadas hoje
 const MUSIC_ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>';
 const MUSIC_ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></svg>';
 let musicOfDay = null;
@@ -5995,10 +5996,74 @@ function closeMusicVote() {
     status.classList.toggle('suggestion-error', kind === 'error');
     status.classList.toggle('suggestion-ok', kind === 'ok');
   };
-  const renderLeft = () => {
-    left.textContent = musicVotesLeft > 0
-      ? `Você ainda tem ${musicVotesLeft} ${musicVotesLeft === 1 ? 'voto' : 'votos'} hoje. Cada voto coloca a música na fila (votar numa que já está na fila adianta ela).`
-      : 'Você já usou seus 3 votos de hoje - amanhã tem mais!';
+  // Barra em 3 partes + uma vaga por voto (capa e nome da musica votada).
+  // O servidor so devolve os ids votados: o nome/capa vem da fila (top 10)
+  // ou do que ficou guardado aqui quando a pessoa votou.
+  const segs = document.getElementById('music-votes-segs');
+  const slots = document.getElementById('music-vote-slots');
+  const voteTrackInfo = (id) => {
+    const q = musicOfDay && musicOfDay.queue.find((x) => x.id === id);
+    if (q) return q;
+    try {
+      const saved = JSON.parse(localStorage.getItem(MUSIC_VOTED_TRACKS_KEY) || 'null');
+      if (saved && musicOfDay && saved.day === musicOfDay.day && saved.tracks[id]) return saved.tracks[id];
+    } catch {}
+    return null;
+  };
+  const rememberVotedTrack = (day, t) => {
+    try {
+      let saved = JSON.parse(localStorage.getItem(MUSIC_VOTED_TRACKS_KEY) || 'null');
+      if (!saved || saved.day !== day) saved = { day, tracks: {} };
+      saved.tracks[t.id] = { title: t.title, artist: t.artist, coverSmall: t.coverSmall || t.cover || '' };
+      localStorage.setItem(MUSIC_VOTED_TRACKS_KEY, JSON.stringify(saved));
+    } catch {}
+  };
+  const renderLeft = (justVotedId = null) => {
+    const total = (musicOfDay && musicOfDay.votesPerDay) || 3;
+    const used = Math.min(total, musicMyVotes.length);
+    const remaining = Math.max(0, total - used);
+    document.getElementById('music-votes-used').innerHTML = `<b>${used} de ${total}</b> votos usados`;
+    document.getElementById('music-votes-note').textContent = used === 0
+      ? `Você pode votar em até ${total} músicas hoje`
+      : remaining > 0
+        ? `Ainda dá pra votar em mais ${remaining} ${remaining === 1 ? 'música' : 'músicas'}`
+        : 'Pronto! Amanhã tem mais';
+    segs.style.setProperty('--n', total);
+    slots.style.setProperty('--n', total);
+    segs.innerHTML = Array.from({ length: total }, (_, i) => `<i class="${i < used ? 'on' : ''}"></i>`).join('');
+    slots.innerHTML = '';
+    for (let i = 0; i < total; i++) {
+      const slot = document.createElement('div');
+      slot.className = 'music-vote-slot';
+      const n = document.createElement('span');
+      n.className = 'music-slot-n';
+      n.textContent = `voto ${i + 1}`;
+      const id = musicMyVotes[i];
+      if (id === undefined) {
+        slot.append(n, document.createTextNode('livre'));
+      } else {
+        const info = voteTrackInfo(id);
+        slot.classList.add('filled');
+        if (id === justVotedId) slot.classList.add('just');
+        let cover;
+        if (info && info.coverSmall) {
+          cover = document.createElement('img');
+          cover.src = info.coverSmall;
+          cover.alt = '';
+        } else {
+          cover = document.createElement('div');
+          cover.className = 'music-slot-cover';
+        }
+        const name = document.createElement('b');
+        name.textContent = info ? info.title : 'Música votada';
+        if (info) slot.title = `${info.title} - ${info.artist}`;
+        slot.append(cover, name, n);
+      }
+      slots.appendChild(slot);
+    }
+    left.textContent = remaining > 0
+      ? 'Cada voto coloca a música na fila (votar numa que já está na fila adianta ela).'
+      : `Você já usou seus ${total} votos de hoje - amanhã tem mais!`;
   };
   let lastResults = [];
   let listeningId = null;
@@ -6043,6 +6108,7 @@ function closeMusicVote() {
       vote.addEventListener('click', async () => {
         vote.disabled = true;
         setStatus('Votando...');
+        let votedId = null;
         try {
           const r = await fetch(`${DEFAULT_SERVER_URL}/musica/voto`, {
             method: 'POST',
@@ -6051,12 +6117,14 @@ function closeMusicVote() {
           });
           const data = await r.json();
           if (!data.ok) throw new Error(data.error || 'Não deu pra votar');
+          rememberVotedTrack(data.day, t);
           applyMusicState(data);
           setStatus(`Votado! "${t.title}" está em ${data.position}º na fila.`, 'ok');
+          votedId = t.id;
         } catch (err) {
           setStatus(err.message, 'error');
         }
-        renderLeft();
+        renderLeft(votedId);
         renderResults();
       });
       row.append(img, text, listen, vote);

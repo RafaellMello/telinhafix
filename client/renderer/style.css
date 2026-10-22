@@ -606,6 +606,20 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .music-result .music-result-listen { flex-shrink: 0; width: 34px; height: 34px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
 .music-result-listen svg { width: 14px; height: 14px; }
 .music-result .music-result-vote { flex-shrink: 0; padding: 7px 12px; }
+.music-votes-box { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); }
+.music-votes-meter-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: calc(12px * var(--font-scale)); color: var(--text-muted); }
+.music-votes-meter-top b { color: #fff; }
+.music-votes-segs { display: grid; grid-template-columns: repeat(var(--n, 3), 1fr); gap: 4px; }
+.music-votes-segs i { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); transition: background 0.3s; }
+.music-votes-segs i.on { background: var(--red); }
+.music-vote-slots { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 6px; }
+.music-vote-slot { min-width: 0; min-height: 86px; padding: 7px; border-radius: 10px; border: 1.5px dashed rgba(255, 255, 255, 0.18); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; font-size: calc(11px * var(--font-scale)); color: var(--text-muted); }
+.music-vote-slot.filled { border: 1.5px solid rgba(61, 220, 115, 0.45); background: rgba(61, 220, 115, 0.06); color: #fff; }
+.music-vote-slot.just { animation: music-slot-in 0.25s ease-out; }
+@keyframes music-slot-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.music-vote-slot img, .music-vote-slot .music-slot-cover { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; background: rgba(255, 255, 255, 0.08); }
+.music-vote-slot b { max-width: 100%; font-size: calc(11px * var(--font-scale)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.music-vote-slot .music-slot-n { font-size: calc(10px * var(--font-scale)); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 .music-vote-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 /* "Apoie o Projeto" - card do lado direito da tela inicial, espelhando o

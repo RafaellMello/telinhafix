@@ -4,6 +4,15 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.4',
+    date: '21/10/2026',
+    title: 'Votos da Música do dia mais claros',
+    items: [
+      'Ao votar na Música do dia, uma barra mostra quantos dos seus 3 votos você já usou.',
+      'Cada voto ocupa uma vaga com a capa e o nome da música, e as vagas livres mostram quantos votos ainda sobram.',
+    ],
+  },
+  {
     version: '4.3.3',
     date: '21/10/2026',
     title: 'Site novo: telinhafix.site',
