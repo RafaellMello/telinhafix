@@ -27,6 +27,9 @@ const DEFAULT_THEME = {
   volumeStyle: 'abre', // visual do controle de volume das transmissoes: 'abre' | 'degraus'
   shareNotify: 'ligado', // notificacao do Windows quando alguem comeca a transmitir
   allowPings: 'ligado', // deixar quem assiste apontar na sua tela (Alt + clique)
+  discordStatus: 'ligado', // mostrar o TelinhaFix no perfil do Discord (Rich Presence)
+  discordRoom: 'ligado', // ...com o nome da sala (senao "Sala Privada")
+  discordPeople: 'ligado', // ...e quantas pessoas estao nela
   background: 'particulas', loginOpacity: 0.25, volumes: { ...DEFAULT_VOLUMES },
   // false ate a pessoa mexer de proposito (clicar num modo, arrastar o
   // slider de transparencia) - diferencia "nunca escolheu" (recebe o
@@ -219,6 +222,9 @@ function setupSettingsPanel() {
   const soundOptions = document.querySelectorAll('.sound-option');
   const shareNotifyOptions = document.querySelectorAll('.share-notify-option');
   const pingPermissionOptions = document.querySelectorAll('.ping-permission-option');
+  const discordStatusOptions = document.querySelectorAll('.discord-status-option');
+  const discordRoomOptions = document.querySelectorAll('.discord-room-option');
+  const discordPeopleOptions = document.querySelectorAll('.discord-people-option');
   const hotkeyOptions = document.querySelectorAll('.hotkeys-option');
   const priorityOptions = document.querySelectorAll('.priority-option');
   const fontOptions = document.querySelectorAll('.font-option');
@@ -247,6 +253,9 @@ function setupSettingsPanel() {
     soundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.sound === currentTheme.sound));
     shareNotifyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.shareNotify === (currentTheme.shareNotify || 'ligado')));
     pingPermissionOptions.forEach((el) => el.classList.toggle('selected', el.dataset.pingPermission === (currentTheme.allowPings || 'ligado')));
+    discordStatusOptions.forEach((el) => el.classList.toggle('selected', el.dataset.discordStatus === (currentTheme.discordStatus || 'ligado')));
+    discordRoomOptions.forEach((el) => el.classList.toggle('selected', el.dataset.discordRoom === (currentTheme.discordRoom || 'ligado')));
+    discordPeopleOptions.forEach((el) => el.classList.toggle('selected', el.dataset.discordPeople === (currentTheme.discordPeople || 'ligado')));
     hotkeyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.hotkeys === currentTheme.hotkeys));
     priorityOptions.forEach((el) => el.classList.toggle('selected', el.dataset.priority === currentTheme.priority));
     fontOptions.forEach((el) => el.classList.toggle('selected', el.dataset.font === currentTheme.font));
@@ -334,6 +343,18 @@ function setupSettingsPanel() {
   });
   shareNotifyOptions.forEach((el) => {
     el.addEventListener('click', () => updateTheme({ shareNotify: el.dataset.shareNotify }));
+  });
+  discordRoomOptions.forEach((el) => {
+    el.addEventListener('click', () => { updateTheme({ discordRoom: el.dataset.discordRoom }); updateDiscordPresence(); });
+  });
+  discordPeopleOptions.forEach((el) => {
+    el.addEventListener('click', () => { updateTheme({ discordPeople: el.dataset.discordPeople }); updateDiscordPresence(); });
+  });
+  discordStatusOptions.forEach((el) => {
+    el.addEventListener('click', () => {
+      updateTheme({ discordStatus: el.dataset.discordStatus });
+      updateDiscordPresence();
+    });
   });
   pingPermissionOptions.forEach((el) => {
     el.addEventListener('click', () => {
@@ -4212,6 +4233,65 @@ async function stopShare() {
   refreshGameAvatarVideos();
 }
 
+// --- Status no Discord ------------------------------------------------------
+// O card no perfil do Discord (ver discord-presence.js no main) mostra o que
+// a pessoa esta fazendo: na tela inicial, em call, transmitindo, jogando.
+// O nome da sala so aparece se a pessoa deixar (Configuracoes > Transmissao)
+// - quem ve o perfil consegue entrar com ele.
+// Recalcula a cada 5s e quando a opcao muda; o main so manda pro Discord o
+// que mudou, respeitando o limite de atualizacoes dele.
+let roomJoinedAt = null;
+const DISCORD_GAME_NAMES = { codenames: 'Codenames', stop: 'Stop', sketch: '"A ou B"' };
+
+let lastDiscordPresence = null; // o ultimo status mandado (pros testes conferirem)
+function sendDiscordPresence(payload) {
+  lastDiscordPresence = payload;
+  window.appLinks.discordPresence(payload);
+}
+// Linha de cima (o que a pessoa esta fazendo), por prioridade: jogando >
+// transmitindo > assistindo > em call. Linha de baixo: a sala (se a pessoa
+// deixar) e quantas pessoas (se deixar). O tempo do card conta desde que o
+// app conectou no Discord (ver discord-presence.js).
+const DISCORD_TEAM_LABELS = { red: 'Vermelha', blue: 'Azul', green: 'Verde' };
+function discordCodenamesScore() {
+  const rem = (gameState && gameState.remaining) || {};
+  const teams = ['red', 'blue', 'green'].filter((t) => typeof rem[t] === 'number' && gameState.teams && gameState.teams[t]);
+  if (teams.length < 2) return '';
+  if (teams.length === 2) return `${DISCORD_TEAM_LABELS[teams[0]]} ${rem[teams[0]]} x ${rem[teams[1]]} ${DISCORD_TEAM_LABELS[teams[1]]}`;
+  return teams.map((t) => `${DISCORD_TEAM_LABELS[t]} ${rem[t]}`).join(' x ');
+}
+function discordActivityLine() {
+  // partida de Codenames rolando e eu dentro (num time ou assistindo)
+  const inMatch = gameState && gameState.status === 'playing' && (myGameRole() || mySpectatorEntry());
+  if (inMatch) {
+    const score = discordCodenamesScore();
+    return score ? `Jogando Codenames · ${score}` : 'Jogando Codenames';
+  }
+  if (gameOverlayOpen && DISCORD_GAME_NAMES[currentGameView]) return `Jogando ${DISCORD_GAME_NAMES[currentGameView]}`;
+  if (localStream) return shareMode === 'camera' ? 'Transmitindo Câmera' : 'Transmitindo Tela';
+  if ([...peerShareModes.values()].some(Boolean)) return 'Assistindo Tela';
+  return 'Em call';
+}
+function updateDiscordPresence() {
+  if (currentTheme.discordStatus === 'desligado') {
+    sendDiscordPresence({ enabled: false });
+    return;
+  }
+  if (!currentRoomId || !roomJoinedAt) {
+    sendDiscordPresence({ enabled: true, details: 'Na tela inicial' });
+    return;
+  }
+  const people = peerNames.size + 1;
+  let state = 'Sala Privada';
+  if (currentTheme.discordRoom !== 'desligado') {
+    state = currentRoomId;
+    if (currentTheme.discordPeople !== 'desligado') state += ` · ${people} ${people === 1 ? 'pessoa' : 'pessoas'}`;
+  }
+  sendDiscordPresence({ enabled: true, details: discordActivityLine(), state });
+}
+setInterval(updateDiscordPresence, 5000);
+setTimeout(updateDiscordPresence, 1500);
+
 // --- Apontar na tela -------------------------------------------------------
 // Alt + clique na transmissao de TELA de alguem: uma seta grande com o seu
 // nome aparece naquele ponto pra todo mundo da sala e, pra quem transmite,
@@ -4620,6 +4700,7 @@ document.getElementById('btn-reconnect-leave').addEventListener('click', () => {
 
 async function leaveRoom() {
   currentRoomId = null;
+  roomJoinedAt = null;
   myRejoinToken = null;
   myRoomPassword = null;
   currentRoomPassword = null;
@@ -5527,6 +5608,7 @@ btnJoin.addEventListener('click', async () => {
     const { selfId: id, peers: existingPeers, iceServers: serverIceServers, rejoinToken, chatHistory, lock } = joinRes;
     currentRoomPassword = typedRoomPassword || null;
     selfId = id;
+    roomJoinedAt = Date.now();
     applyRoomLockState(lock);
     currentRoomId = roomId;
     myRejoinToken = rejoinToken || null;

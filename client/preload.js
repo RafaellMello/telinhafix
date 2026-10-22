@@ -435,6 +435,10 @@ contextBridge.exposeInMainWorld('appLinks', {
   notifyShare(title, body) {
     return ipcRenderer.invoke('share-notify', { title, body });
   },
+  // Status no Discord: { enabled, details, state, startTimestamp }
+  discordPresence(payload) {
+    ipcRenderer.send('discord-presence', payload);
+  },
   // Print da live (PNG em data URL) pra area de transferencia.
   copyImage(dataUrl) {
     return ipcRenderer.invoke('copy-image', dataUrl);

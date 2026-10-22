@@ -1033,7 +1033,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   flex-wrap: wrap;
 }
 
-.mode-option, .border-option, .sound-option, .share-notify-option, .ping-permission-option, .hotkeys-option, .priority-option, .background-option, .game-mode-option, .volume-style-option {
+.mode-option, .border-option, .sound-option, .share-notify-option, .ping-permission-option, .discord-status-option, .discord-room-option, .discord-people-option, .hotkeys-option, .priority-option, .background-option, .game-mode-option, .volume-style-option {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 8px;
@@ -1044,7 +1044,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 700;
 }
 
-.mode-option.selected, .border-option.selected, .sound-option.selected, .share-notify-option.selected, .ping-permission-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected, .game-mode-option.selected, .volume-style-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.mode-option.selected, .border-option.selected, .sound-option.selected, .share-notify-option.selected, .ping-permission-option.selected, .discord-status-option.selected, .discord-room-option.selected, .discord-people-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected, .game-mode-option.selected, .volume-style-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 .game-mode-option:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .settings-hint {
@@ -1991,6 +1991,9 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .mode-serio .sound-option,
 .mode-serio .share-notify-option,
 .mode-serio .ping-permission-option,
+.mode-serio .discord-status-option,
+.mode-serio .discord-room-option,
+.mode-serio .discord-people-option,
 .mode-serio .hotkeys-option,
 .mode-serio .priority-option,
 .mode-serio .quality-btn,

@@ -4,6 +4,15 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.1',
+    date: '21/10/2026',
+    title: 'TelinhaFix no seu perfil do Discord',
+    items: [
+      'Com o Discord do computador aberto, seu perfil mostra o TelinhaFix como um jogo: na tela inicial, transmitindo, assistindo, ou "Jogando Codenames" com o placar da partida.',
+      'Embaixo aparece a sala e quantas pessoas estão nela. Em Configurações > Transmissão dá pra esconder a sala (vira "Sala Privada"), esconder o número de pessoas ou desligar o status no Discord.',
+    ],
+  },
+  {
     version: '4.3.0',
     date: '21/10/2026',
     title: 'Senha na sala, apontar na tela e Perfil',

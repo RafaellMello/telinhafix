@@ -2,6 +2,7 @@ const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, dialog, gl
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const { autoUpdater } = require('electron-updater');
+const { createDiscordPresence } = require('./discord-presence');
 
 // Ja tentamos desativar o WGC (Windows Graphics Capture, o backend padrao
 // do Chromium no Windows) pra tentar resolver o cursor "fantasma" na
@@ -453,6 +454,31 @@ function showPingOverlay(ping) {
   pingOverlayWin.loadFile(path.join(__dirname, 'renderer', 'ping-overlay.html'));
 }
 
+// --- Status no Discord (Rich Presence) ---------------------------------------
+// O renderer manda o que a pessoa esta fazendo (ver updateDiscordPresence) e
+// aqui vira o card no perfil do Discord. A logo e a arte "logo" enviada no
+// portal do Discord (Rich Presence > Art Assets, 512x512).
+const DISCORD_LOGO_ASSET = 'logo';
+const DISCORD_DOWNLOAD_URL = 'https://github.com/RafaellMello/telinhafix/releases/latest';
+const discordPresence = createDiscordPresence({ log: (...a) => console.log(...a) });
+let discordStarted = false;
+
+function applyDiscordPresence(p) {
+  if (!p || p.enabled === false) {
+    discordPresence.setEnabled(false);
+    return;
+  }
+  if (!discordStarted) { discordStarted = true; discordPresence.start(); }
+  discordPresence.setEnabled(true);
+  const text = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : undefined);
+  discordPresence.setActivity({
+    details: text(p.details),
+    state: text(p.state),
+    assets: { large_image: DISCORD_LOGO_ASSET, large_text: 'TelinhaFix' },
+    buttons: [{ label: 'Baixar o TelinhaFix', url: DISCORD_DOWNLOAD_URL }],
+  });
+}
+
 // Notificacao do Windows "Fulano comecou a transmitir" (o renderer decide
 // quando - ver notifyShareStarted). So aparece se a janela NAO estiver na
 // frente da pessoa; clicar nela traz o app pra frente.
@@ -638,6 +664,7 @@ function createWindow() {
   // entao funciona direto.
   ipcMain.handle('share-notify', (_event, payload) => showShareNotification(payload));
   ipcMain.on('ping-overlay-show', (_event, ping) => showPingOverlay(ping));
+  ipcMain.on('discord-presence', (_event, payload) => applyDiscordPresence(payload));
   ipcMain.on('ping-overlay-clear', () => clearPingOverlay());
   ipcMain.on('ping-alt-click', () => { suppressNextAltUp = true; });
   ipcMain.handle('copy-image', (_event, dataUrl) => {
