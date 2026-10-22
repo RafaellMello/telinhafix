@@ -591,6 +591,12 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .music-next-title { margin-top: 2px; font-size: calc(12px * var(--font-scale)); font-weight: 800; color: #fff; line-height: 1.3; }
 
 .music-vote-overlay { z-index: 70; }
+.update-installing-overlay { z-index: 200; }
+.settings-panel.update-installing-panel { width: 380px; max-width: calc(100vw - 32px); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.update-installing-panel h2 { margin: 0; }
+.update-installing-panel .settings-hint { margin: 0; }
+.update-installing-spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.15); border-top-color: var(--red); animation: update-spin 0.8s linear infinite; }
+@keyframes update-spin { to { transform: rotate(360deg); } }
 .settings-panel.music-vote-panel { width: 520px; max-width: calc(100vw - 32px); display: flex; flex-direction: column; gap: 10px; }
 .music-vote-panel h2 { margin: 0; }
 .music-vote-panel .settings-hint { margin: 0; }

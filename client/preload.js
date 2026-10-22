@@ -477,6 +477,9 @@ contextBridge.exposeInMainWorld('appInfo', {
   onUpdateStatus(cb) {
     ipcRenderer.on('update-status', (_event, status) => cb(status));
   },
+  onUpdateInstalling(cb) {
+    ipcRenderer.on('update-installing', (_event, info) => cb(info));
+  },
 });
 
 // Atalhos de teclado globais (funcionam com o app em segundo plano).

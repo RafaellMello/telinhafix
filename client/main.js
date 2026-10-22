@@ -750,16 +750,56 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
-// Atualizacao - decisao do Rafael: NUNCA reiniciar o app de ninguem sozinho
-// (tem gente usando). Fluxo:
-// - ao abrir o app: se tiver versao nova, baixa e pergunta "Reiniciar agora /
-//   Depois" (Depois = instala quando a pessoa fechar o app);
-// - "Procurar atualizacoes" (botao do login / menu Ajuda): o mesmo, com avisos;
-// - com o app aberto: so CONFERE de tempos em tempos se tem versao nova (sem
-//   baixar, sem perguntar) e avisa a tela pra fazer o botao piscar.
-let updateCheckMode = null; // 'startup' | 'manual' | 'background' - quem pediu a checagem em andamento
+// Atualizacao - decisao do Rafael: NUNCA reiniciar o app de ninguem no meio
+// do uso (tem gente usando). Fluxo:
+// - ao abrir o app (e de tempos em tempos com ele aberto): se tiver versao
+//   nova, BAIXA quieto, sem perguntar nada. Ela fica guardada e e instalada
+//   na PROXIMA vez que a pessoa abrir o app (logo na abertura, antes de entrar
+//   em sala - o app fecha e reabre sozinho ja atualizado) ou quando fechar;
+// - "Procurar atualizacoes" (botao do login / menu Ajuda) e o "Pedir pra
+//   atualizar" do admin: baixa e pergunta "Reiniciar agora / Depois".
+// Pra saber se a versao ja tinha sido baixada numa abertura anterior, o app
+// anota a versao baixada em pending-update.json (o electron-updater reaproveita
+// o instalador que ja esta no disco e avisa "baixado" em segundos).
+let updateCheckMode = null; // 'startup' | 'manual' | 'background' | 'prompt' - quem pediu a checagem em andamento
 let updateDownloadStarted = false;
+let updateDownloadMode = null; // quem pediu o download em andamento
 let availableUpdateVersion = null;
+let downloadedUpdateVersion = null; // versao ja baixada (pronta pra instalar) nesta abertura
+const PENDING_UPDATE_FILE = () => path.join(app.getPath('userData'), 'pending-update.json');
+// versao que ja estava baixada quando o app abriu (anotada numa abertura anterior)
+let pendingUpdateAtStartup = null;
+// so instala sozinho se o "baixado" chegar logo depois de abrir - depois disso
+// a pessoa ja pode estar usando, ai fica pra proxima abertura
+const STARTUP_INSTALL_WINDOW_MS = 2 * 60 * 1000;
+const appStartedAt = Date.now();
+
+function readPendingUpdate() {
+  try { return JSON.parse(require('fs').readFileSync(PENDING_UPDATE_FILE(), 'utf8')).version || null; } catch { return null; }
+}
+function writePendingUpdate(version) {
+  try { require('fs').writeFileSync(PENDING_UPDATE_FILE(), JSON.stringify({ version, at: Date.now() })); } catch {}
+}
+function clearPendingUpdate() {
+  try { require('fs').rmSync(PENDING_UPDATE_FILE(), { force: true }); } catch {}
+}
+
+// Abriu o app e a versao nova ja estava baixada: avisa na tela e instala
+// (silencioso, reabre sozinho). Se por algum motivo a pessoa ja entrou numa
+// sala, nao mexe - instala quando ela fechar o app.
+async function installPendingUpdateAtStartup(version) {
+  let inRoom = false;
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) inRoom = !!(await mainWindow.webContents.executeJavaScript('typeof currentRoomId !== "undefined" && !!currentRoomId', true));
+  } catch {}
+  if (inRoom) {
+    console.log(`[updater] ${version} ja baixada, mas a pessoa ja esta numa sala - instala ao fechar`);
+    return;
+  }
+  console.log(`[updater] instalando ${version} (baixada na abertura anterior)`);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-installing', { version });
+  setTimeout(() => autoUpdater.quitAndInstall(true, true), 1500);
+}
 
 function setAvailableUpdate(version) {
   if (availableUpdateVersion === version) return;
@@ -779,6 +819,25 @@ function runUpdateCheck(mode) {
     if (mode === 'manual') showUpdateError(err);
     updateCheckMode = null;
   });
+}
+
+function askRestartToInstall(version) {
+  dialog
+    .showMessageBox({
+      type: 'info',
+      title: 'Atualização disponível',
+      message: `Uma versão nova do TelinhaFix (${version}) foi baixada. Reiniciar agora para instalar?`,
+      detail: 'Se escolher "Depois", ela é instalada quando você fechar ou abrir o app de novo.',
+      buttons: ['Reiniciar agora', 'Depois'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    .then((result) => {
+      // isSilent=true: usa o instalador ja baixado sem telas pra clicar;
+      // isForceRunAfter=true: reabre o app no final.
+      if (result.response === 0) autoUpdater.quitAndInstall(true, true);
+    });
 }
 
 function showUpdateError(err) {
@@ -814,7 +873,11 @@ function setupAutoUpdater() {
     updateCheckMode = null;
     console.log(`[updater] atualizacao disponivel: ${info.version} (${mode})`);
     setAvailableUpdate(info.version);
-    if (mode === 'background') return; // so faz o botao piscar
+    if (downloadedUpdateVersion === info.version) {
+      // ja baixada nesta abertura: nao baixa de novo; so pergunta se foi a pessoa que pediu
+      if (mode === 'manual' || mode === 'prompt') askRestartToInstall(info.version);
+      return;
+    }
     if (mode === 'manual') {
       dialog.showMessageBox({
         type: 'info',
@@ -825,11 +888,14 @@ function setupAutoUpdater() {
     }
     if (!updateDownloadStarted) {
       updateDownloadStarted = true;
+      updateDownloadMode = mode;
       autoUpdater.downloadUpdate().catch((err) => {
         updateDownloadStarted = false;
         console.error('[updater] Falha ao baixar atualizacao:', err);
         if (mode === 'manual') showUpdateError(err);
       });
+    } else if (mode === 'manual' || mode === 'prompt') {
+      updateDownloadMode = mode; // download automatico ja em andamento: pergunta quando terminar
     }
   });
   autoUpdater.on('update-not-available', (info) => {
@@ -837,6 +903,7 @@ function setupAutoUpdater() {
     updateCheckMode = null;
     console.log(`[updater] ja esta na versao mais recente (${info.version})`);
     setAvailableUpdate(null);
+    clearPendingUpdate();
     if (mode === 'manual') {
       dialog.showMessageBox({
         type: 'info',
@@ -859,25 +926,22 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-downloaded', (info) => {
     updateDownloadStarted = false;
-    console.log(`[updater] atualizacao ${info.version} baixada - pronta pra instalar`);
-    dialog
-      .showMessageBox({
-        type: 'info',
-        title: 'Atualização disponível',
-        message: `Uma versão nova do TelinhaFix (${info.version}) foi baixada. Reiniciar agora para instalar?`,
-        detail: 'Se escolher "Depois", ela é instalada quando você fechar o app.',
-        buttons: ['Reiniciar agora', 'Depois'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-      })
-      .then((result) => {
-        // isSilent=true: usa o instalador ja baixado sem telas pra clicar;
-        // isForceRunAfter=true: reabre o app no final.
-        if (result.response === 0) autoUpdater.quitAndInstall(true, true);
-      });
+    const mode = updateDownloadMode;
+    updateDownloadMode = null;
+    downloadedUpdateVersion = info.version;
+    console.log(`[updater] atualizacao ${info.version} baixada - pronta pra instalar (${mode})`);
+    const fromLastOpen = pendingUpdateAtStartup === info.version;
+    writePendingUpdate(info.version);
+    if (mode === 'manual' || mode === 'prompt') { askRestartToInstall(info.version); return; }
+    // baixou sozinha: nada de pergunta. Se ja estava baixada desde a abertura
+    // anterior, instala agora (o app acabou de abrir); se nao, fica pra
+    // proxima abertura (ou instala quando a pessoa fechar o app).
+    if (fromLastOpen && Date.now() - appStartedAt < STARTUP_INSTALL_WINDOW_MS) installPendingUpdateAtStartup(info.version);
   });
 
+  pendingUpdateAtStartup = readPendingUpdate();
+  // a versao anotada ja foi instalada: limpa a anotacao
+  if (pendingUpdateAtStartup === app.getVersion()) { clearPendingUpdate(); pendingUpdateAtStartup = null; }
   runUpdateCheck('startup');
   setInterval(() => runUpdateCheck('background'), 60 * 1000);
 }

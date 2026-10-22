@@ -5559,6 +5559,12 @@ function applyUpdateStatus(status) {
 }
 window.appInfo.onUpdateStatus(applyUpdateStatus);
 window.appInfo.getUpdateStatus().then(applyUpdateStatus).catch(() => {});
+// Abriu o app com a versao nova ja baixada: o main instala e reabre sozinho.
+window.appInfo.onUpdateInstalling((info) => {
+  document.getElementById('update-installing-version').textContent = info && info.version ? `versão ${info.version}` : 'versão nova';
+  document.getElementById('update-installing-overlay').classList.remove('hidden');
+  btnJoin.disabled = true;
+});
 
 btnJoin.addEventListener('click', async () => {
   setLoginError('');

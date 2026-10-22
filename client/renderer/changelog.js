@@ -4,12 +4,19 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.5',
+    date: '22/10/2026',
+    title: 'Atualizações',
+    items: [
+      'Atualização automática: a versão nova é baixada sozinha e instalada na próxima vez que você abrir o app.',
+    ],
+  },
+  {
     version: '4.3.4',
     date: '21/10/2026',
-    title: 'Votos da Música do dia mais claros',
+    title: 'Música do dia',
     items: [
-      'Ao votar na Música do dia, uma barra mostra quantos dos seus 3 votos você já usou.',
-      'Cada voto ocupa uma vaga com a capa e o nome da música, e as vagas livres mostram quantos votos ainda sobram.',
+      'Reformulação na interface dos votos: agora dá pra ver quantos votos sobram.',
     ],
   },
   {
