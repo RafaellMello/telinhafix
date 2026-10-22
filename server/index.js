@@ -465,7 +465,7 @@ async function handleMusic(req, res, url) {
 }
 
 const INVITE_LOGO_URL ='https://raw.githubusercontent.com/RafaellMello/telinhafix/master/client/renderer/assets/logo.png';
-const DOWNLOAD_URL = 'https://github.com/RafaellMello/telinhafix/releases/latest';
+const DOWNLOAD_URL = 'https://telinhafix.site'; // site do TelinhaFix (tem o download)
 
 function escapeHtml(text) {
   return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

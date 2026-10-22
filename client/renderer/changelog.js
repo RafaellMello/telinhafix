@@ -4,6 +4,14 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.3',
+    date: '21/10/2026',
+    title: 'Site novo: telinhafix.site',
+    items: [
+      'O TelinhaFix tem endereço próprio: telinhafix.site.',
+    ],
+  },
+  {
     version: '4.3.2',
     date: '21/10/2026',
     title: 'Botão do Discord leva pro site',
