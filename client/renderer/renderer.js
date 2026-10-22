@@ -2049,6 +2049,7 @@ function renderGameActivityBadge() {
   if (stopState && (stopState.status === 'lobby' || stopState.status === 'playing')) active.push('stop');
   if (sketchState && sketchState.status === 'voting') active.push('sketch');
 
+  renderGamePlayingBadge();
   container.innerHTML = '';
   container.classList.toggle('hidden', active.length === 0);
   active.forEach((name) => {
@@ -2067,6 +2068,28 @@ function renderGameActivityBadge() {
     pill.addEventListener('click', () => jumpToGame(name));
     container.appendChild(pill);
   });
+}
+
+// Selo "N jogando" no botao de fliperama da Sala de jogos: quantas pessoas
+// estao numa partida agora (quem so assiste o Codenames nao conta).
+function gamePlayersNow() {
+  let n = 0;
+  if (gameState && gameState.status === 'playing') {
+    for (const t of Object.values(gameState.teams || {})) n += (t.spymaster ? 1 : 0) + (t.agents || []).length;
+  }
+  if (stopState && stopState.status === 'playing') n += (stopState.players || []).length;
+  else if (stopState && stopState.status === 'lobby') n += (stopState.lobbyPlayers || []).filter((p) => p.ready).length;
+  if (sketchState && sketchState.status === 'voting') n += (sketchState.total || 0) + 1; // quem votou + quem criou
+  return n;
+}
+
+function renderGamePlayingBadge() {
+  const badge = document.getElementById('game-playing-badge');
+  if (!badge) return;
+  const n = gamePlayersNow();
+  badge.classList.toggle('hidden', n === 0);
+  document.getElementById('game-playing-count').textContent = `${n} jogando`;
+  document.getElementById('btn-toggle-game').title = n ? `Minijogos - ${n} ${n === 1 ? 'pessoa jogando' : 'pessoas jogando'} agora` : 'Minijogos';
 }
 
 function myGameRole() {

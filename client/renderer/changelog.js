@@ -4,6 +4,15 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.6',
+    date: '22/10/2026',
+    title: 'Sala de jogos',
+    items: [
+      'Botão novo da Sala de jogos: estilo fliperama, mostrando quantas pessoas estão jogando.',
+      'Ajustes na tela inicial: texto novo embaixo do nome e card de apoio mais limpo.',
+    ],
+  },
+  {
     version: '4.3.5',
     date: '22/10/2026',
     title: 'Atualizações',
