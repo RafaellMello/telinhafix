@@ -4,6 +4,14 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.2',
+    date: '21/10/2026',
+    title: 'Botão do Discord leva pro site',
+    items: [
+      'O botão "Baixar o TelinhaFix" no seu card do Discord agora leva pro site do TelinhaFix (telinhafix.vercel.app).',
+    ],
+  },
+  {
     version: '4.3.1',
     date: '21/10/2026',
     title: 'TelinhaFix no seu perfil do Discord',

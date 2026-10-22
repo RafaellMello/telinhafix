@@ -459,7 +459,7 @@ function showPingOverlay(ping) {
 // aqui vira o card no perfil do Discord. A logo e a arte "logo" enviada no
 // portal do Discord (Rich Presence > Art Assets, 512x512).
 const DISCORD_LOGO_ASSET = 'logo';
-const DISCORD_DOWNLOAD_URL = 'https://github.com/RafaellMello/telinhafix/releases/latest';
+const DISCORD_DOWNLOAD_URL = 'https://telinhafix.vercel.app'; // site do TelinhaFix (landing page)
 const discordPresence = createDiscordPresence({ log: (...a) => console.log(...a) });
 let discordStarted = false;
 
