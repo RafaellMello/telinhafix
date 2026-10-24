@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('picker', {
   listApps() {
     return ipcRenderer.invoke('list-running-apps');
   },
-  choose(sourceId, quality, audioMode, audioTarget) {
-    ipcRenderer.send('screen-picker:choice', { sourceId, quality, audioMode, audioTarget });
+  choose(sourceId, quality, audioMode, audioTarget, encodeMode) {
+    ipcRenderer.send('screen-picker:choice', { sourceId, quality, audioMode, audioTarget, encodeMode });
   },
 });

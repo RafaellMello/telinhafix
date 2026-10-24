@@ -134,6 +134,7 @@
     }
 
     .quality-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .mode-hint { margin: 6px 0 0; text-align: center; font-size: 11.5px; color: #9a9499; }
     .quality-btn {
       background: var(--bg-elevated);
       border: 2px solid var(--border);
@@ -271,6 +272,13 @@
     <div class="quality-btn" data-fps="120">120fps</div>
   </div>
 
+  <h2>Modo</h2>
+  <div class="quality-row" id="mode-row">
+    <div class="quality-btn" data-mode="leve">Leve</div>
+    <div class="quality-btn" data-mode="qualidade">Qualidade máxima</div>
+  </div>
+  <p class="mode-hint" id="mode-hint"></p>
+
   <h2>Audio da transmissao</h2>
   <div class="audio-row">
     <div class="audio-btn selected" data-audio="exclude">Sistema, sem o Discord</div>
@@ -318,6 +326,26 @@
         // sem teste salvo ou localStorage indisponivel - fica no padrao.
       }
     })();
+
+    // Modo de codificacao (ver preferVideoCodecs no renderer): "Leve" usa
+    // H264 pela placa de video, "Qualidade maxima" usa VP9 no processador.
+    // Vem marcado o ultimo usado (na primeira vez, Leve).
+    const ENCODE_MODE_KEY = 'telinhafix-encode-mode';
+    const MODE_HINTS = {
+      leve: 'Usa a placa de vídeo: gasta pouco processador. Melhor pra PC mais simples ou pra jogar enquanto transmite.',
+      qualidade: 'Imagem mais nítida, mas o processador faz todo o trabalho: só pra PC forte.',
+    };
+    const modeBtns = document.querySelectorAll('#mode-row .quality-btn');
+    let selectedMode = 'leve';
+    try { if (localStorage.getItem(ENCODE_MODE_KEY) === 'qualidade') selectedMode = 'qualidade'; } catch (err) {}
+    function renderMode() {
+      modeBtns.forEach((b) => b.classList.toggle('selected', b.dataset.mode === selectedMode));
+      document.getElementById('mode-hint').textContent = MODE_HINTS[selectedMode];
+    }
+    modeBtns.forEach((btn) => {
+      btn.addEventListener('click', () => { selectedMode = btn.dataset.mode; renderMode(); });
+    });
+    renderMode();
 
     function selectedQualityKey() {
       return selectedResolution + selectedFps;
@@ -416,7 +444,8 @@
     confirmBtn.addEventListener('click', () => {
       if (!selectedSourceId) return;
       const audioTarget = selectedAudioMode === 'include' ? appSelect.value : 'Discord';
-      window.picker.choose(selectedSourceId, selectedQualityKey(), selectedAudioMode, audioTarget);
+      try { localStorage.setItem(ENCODE_MODE_KEY, selectedMode); } catch (err) {}
+      window.picker.choose(selectedSourceId, selectedQualityKey(), selectedAudioMode, audioTarget, selectedMode);
     });
 
     window.picker.onSources((sources) => {

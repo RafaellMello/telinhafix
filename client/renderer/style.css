@@ -1060,7 +1060,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   flex-wrap: wrap;
 }
 
-.mode-option, .border-option, .sound-option, .share-notify-option, .ping-permission-option, .discord-status-option, .discord-room-option, .discord-people-option, .hotkeys-option, .priority-option, .background-option, .game-mode-option, .volume-style-option {
+.mode-option, .border-option, .sound-option, .share-notify-option, .ping-permission-option, .ping-view-option, .discord-status-option, .discord-room-option, .discord-people-option, .hotkeys-option, .priority-option, .background-option, .game-mode-option, .volume-style-option {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 8px;
@@ -1071,7 +1071,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
   font-weight: 700;
 }
 
-.mode-option.selected, .border-option.selected, .sound-option.selected, .share-notify-option.selected, .ping-permission-option.selected, .discord-status-option.selected, .discord-room-option.selected, .discord-people-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected, .game-mode-option.selected, .volume-style-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
+.mode-option.selected, .border-option.selected, .sound-option.selected, .share-notify-option.selected, .ping-permission-option.selected, .ping-view-option.selected, .discord-status-option.selected, .discord-room-option.selected, .discord-people-option.selected, .hotkeys-option.selected, .priority-option.selected, .background-option.selected, .game-mode-option.selected, .volume-style-option.selected { border-color: var(--red-bright); background: rgba(var(--red-rgb), 0.12); }
 .game-mode-option:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .settings-hint {
@@ -2083,6 +2083,7 @@ button.ghost:hover { filter: none; border-color: var(--red); }
 .mode-serio .sound-option,
 .mode-serio .share-notify-option,
 .mode-serio .ping-permission-option,
+.mode-serio .ping-view-option,
 .mode-serio .discord-status-option,
 .mode-serio .discord-room-option,
 .mode-serio .discord-people-option,
@@ -3449,9 +3450,6 @@ input.locked-input { cursor: not-allowed; opacity: 0.6; user-select: none; }
 .reconnect-banner[data-state="ok"] { border-color: #2fae6b; }
 .reconnect-banner[data-state="ok"] .admin-notice-label { background: #2fae6b; }
 #reconnect-banner-text { white-space: pre-wrap; word-break: break-word; }
-/* PC no limite durante a transmissao (ver checkCpuLimitation) */
-.cpu-limit-banner { border-color: #e0a63a; }
-.cpu-limit-banner .admin-notice-label { background: #e0a63a; color: #111; }
 /* Historico do chat (mensagens de antes de voce entrar) */
 .chat-message.chat-history { opacity: 0.6; }
 .admin-notice-close { flex-shrink: 0; width: 28px; height: 28px; padding: 0; border-radius: 8px; font-size: 18px; line-height: 1; }

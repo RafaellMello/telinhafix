@@ -253,6 +253,11 @@ let lastPickedQuality = QUALITY_PRESETS['1080p30'];
 // Configuracao de audio escolhida no seletor: { mode: 'exclude'|'include'|'system', target }
 let lastPickedAudioConfig = { mode: 'exclude', target: 'Discord' };
 
+// Modo escolhido no seletor: 'leve' (H264, placa de video) | 'qualidade'
+// (VP9, processador). null = nao passou pelo seletor (atalho de compartilhar
+// rapido) - ai o renderer usa o ultimo modo que a pessoa escolheu.
+let lastPickedEncodeMode = null;
+
 // Abre uma janelinha propria com miniaturas de cada monitor/janela (ou
 // programa especifico) pra escolher o que compartilhar, junto com a
 // qualidade (resolucao + fps). O seletor nativo do Windows (useSystemPicker)
@@ -305,8 +310,9 @@ function pickScreenSource(parentWin) {
       resolve(source);
     };
 
-    const onChoice = (event, { sourceId, quality, audioMode, audioTarget }) => {
+    const onChoice = (event, { sourceId, quality, audioMode, audioTarget, encodeMode }) => {
       lastPickedQuality = QUALITY_PRESETS[quality] || QUALITY_PRESETS['1080p30'];
+      lastPickedEncodeMode = encodeMode === 'qualidade' ? 'qualidade' : 'leve';
       lastPickedAudioConfig =
         audioMode === 'include' || audioMode === 'system'
           ? { mode: audioMode, target: audioTarget }
@@ -596,6 +602,7 @@ function createWindow() {
         source = await getPrimaryScreenSource();
         lastPickedQuality = QUALITY_PRESETS['1080p60'];
         lastPickedAudioConfig = { mode: 'exclude', target: 'Discord' };
+        lastPickedEncodeMode = null;
       } else {
         source = await pickScreenSource(win);
       }
@@ -648,6 +655,7 @@ function createWindow() {
   ipcMain.handle('get-last-picked-quality', () => lastPickedQuality);
   ipcMain.handle('get-camera-quality', () => CAMERA_QUALITY_PRESET);
   ipcMain.handle('get-last-picked-audio-config', () => lastPickedAudioConfig);
+  ipcMain.handle('get-last-picked-encode-mode', () => lastPickedEncodeMode);
   ipcMain.handle('list-running-apps', () => listRunningApps());
 
   // Link fixo de credito - so abre essa URL especifica no navegador padrao

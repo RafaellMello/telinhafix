@@ -374,6 +374,9 @@ contextBridge.exposeInMainWorld('screenPicker', {
   getQuality() {
     return ipcRenderer.invoke('get-last-picked-quality');
   },
+  getEncodeMode() {
+    return ipcRenderer.invoke('get-last-picked-encode-mode');
+  },
   getCameraQuality() {
     return ipcRenderer.invoke('get-camera-quality');
   },

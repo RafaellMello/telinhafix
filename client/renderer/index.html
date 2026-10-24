@@ -16,11 +16,6 @@
     <span id="reconnect-banner-text"></span>
     <button type="button" id="btn-reconnect-leave" class="invite-banner-accept hidden">Sair da sala</button>
   </div>
-  <div id="cpu-limit-banner" class="admin-notice-banner cpu-limit-banner hidden" role="status">
-    <span class="admin-notice-label">Desempenho</span>
-    <span>Seu PC está no limite pra transmitir nessa qualidade. Pra ficar mais leve, pare e compartilhe de novo em 720p 30fps.</span>
-    <button type="button" id="btn-cpu-limit-close" class="admin-notice-close" aria-label="Fechar aviso">&times;</button>
-  </div>
   <div id="snapshot-toast" class="snapshot-toast hidden" role="status"></div>
   <div id="invite-banner" class="admin-notice-banner hidden" role="alert">
     <span class="admin-notice-label">Convite</span>
@@ -359,6 +354,14 @@
               <div class="ping-permission-option" data-ping-permission="desligado">Não permitir</div>
             </div>
             <p class="settings-hint">Quando você compartilha a tela, quem assiste pode segurar Alt e clicar num ponto da sua transmissão: aparece uma seta com o nome da pessoa ali, pra todo mundo e por cima do seu monitor (se você estiver compartilhando um monitor inteiro). Não vale pra câmera.</p>
+          </div>
+          <div class="settings-group">
+            <label>Ver pings nas telas</label>
+            <div id="ping-view-options" class="share-notify-options">
+              <div class="ping-view-option" data-ping-view="ligado">Mostrar</div>
+              <div class="ping-view-option" data-ping-view="desligado">Não mostrar</div>
+            </div>
+            <p class="settings-hint">Em "Não mostrar", você não vê nenhuma seta: nem nas transmissões que assiste, nem por cima do seu monitor. Você também não consegue apontar.</p>
           </div>
           <div class="settings-group">
             <label>Status no Discord</label>

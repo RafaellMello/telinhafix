@@ -27,6 +27,7 @@ const DEFAULT_THEME = {
   volumeStyle: 'abre', // visual do controle de volume das transmissoes: 'abre' | 'degraus'
   shareNotify: 'ligado', // notificacao do Windows quando alguem comeca a transmitir
   allowPings: 'ligado', // deixar quem assiste apontar na sua tela (Alt + clique)
+  showPings: 'ligado', // ver as setas de quem aponta (desligado: nao ve nenhuma e nao aponta)
   discordStatus: 'ligado', // mostrar o TelinhaFix no perfil do Discord (Rich Presence)
   discordRoom: 'ligado', // ...com o nome da sala (senao "Sala Privada")
   discordPeople: 'ligado', // ...e quantas pessoas estao nela
@@ -222,6 +223,7 @@ function setupSettingsPanel() {
   const soundOptions = document.querySelectorAll('.sound-option');
   const shareNotifyOptions = document.querySelectorAll('.share-notify-option');
   const pingPermissionOptions = document.querySelectorAll('.ping-permission-option');
+  const pingViewOptions = document.querySelectorAll('.ping-view-option');
   const discordStatusOptions = document.querySelectorAll('.discord-status-option');
   const discordRoomOptions = document.querySelectorAll('.discord-room-option');
   const discordPeopleOptions = document.querySelectorAll('.discord-people-option');
@@ -253,6 +255,7 @@ function setupSettingsPanel() {
     soundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.sound === currentTheme.sound));
     shareNotifyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.shareNotify === (currentTheme.shareNotify || 'ligado')));
     pingPermissionOptions.forEach((el) => el.classList.toggle('selected', el.dataset.pingPermission === (currentTheme.allowPings || 'ligado')));
+    pingViewOptions.forEach((el) => el.classList.toggle('selected', el.dataset.pingView === (currentTheme.showPings || 'ligado')));
     discordStatusOptions.forEach((el) => el.classList.toggle('selected', el.dataset.discordStatus === (currentTheme.discordStatus || 'ligado')));
     discordRoomOptions.forEach((el) => el.classList.toggle('selected', el.dataset.discordRoom === (currentTheme.discordRoom || 'ligado')));
     discordPeopleOptions.forEach((el) => el.classList.toggle('selected', el.dataset.discordPeople === (currentTheme.discordPeople || 'ligado')));
@@ -360,6 +363,12 @@ function setupSettingsPanel() {
     el.addEventListener('click', () => {
       updateTheme({ allowPings: el.dataset.pingPermission });
       if (currentRoomId) window.rtc.setPingPermission(pingsAllowedByMe());
+    });
+  });
+  pingViewOptions.forEach((el) => {
+    el.addEventListener('click', () => {
+      updateTheme({ showPings: el.dataset.pingView });
+      if (!pingsVisibleToMe()) clearVisiblePings();
     });
   });
   hotkeyOptions.forEach((el) => {
@@ -1001,6 +1010,15 @@ async function applyBitrateToSender(sender, quality, tries = 0) {
 // pessoa) - num PC fraco (ex: i3 de 4 nucleos) o VP9 travava a transmissao.
 // Depois do H264 vem o resultado do teste automatico de qualidade, se a
 // pessoa rodou (ver quality-test.js), e o palpite padrao VP9 > AV1 > VP8.
+// No modo "Qualidade maxima" (escolhido no seletor de tela) o H264 vai pro
+// fim da lista: imagem mais nitida com a mesma internet, mas tudo no
+// processador - so pra PC forte.
+const ENCODE_MODE_KEY = 'telinhafix-encode-mode';
+let currentEncodeMode = 'leve'; // 'leve' | 'qualidade' - da transmissao atual
+
+function savedEncodeMode() {
+  try { return localStorage.getItem(ENCODE_MODE_KEY) === 'qualidade' ? 'qualidade' : 'leve'; } catch { return 'leve'; }
+}
 function getRecommendedCodec() {
   try {
     const raw = localStorage.getItem('telinhafix-quality-profile');
@@ -1025,7 +1043,8 @@ function preferVideoCodecs(pc) {
   const recvKeys = new Set(((recvCaps && recvCaps.codecs) || []).map((c) => `${c.mimeType}|${c.sdpFmtpLine || ''}`));
   const recommended = getRecommendedCodec();
   const fallbackOrder = ['video/VP9', 'video/AV1', 'video/VP8'];
-  const order = ['video/H264', ...(recommended ? [recommended, ...fallbackOrder.filter((c) => c !== recommended)] : fallbackOrder)];
+  const vpOrder = recommended ? [recommended, ...fallbackOrder.filter((c) => c !== recommended)] : fallbackOrder;
+  const order = currentEncodeMode === 'qualidade' ? [...vpOrder, 'video/H264'] : ['video/H264', ...vpOrder];
 
   const filtered = caps.codecs.filter((c) => recvKeys.has(`${c.mimeType}|${c.sdpFmtpLine || ''}`));
   const preferred = filtered
@@ -3825,6 +3844,10 @@ async function startShare() {
 
   shareMode = 'screen';
   currentQuality = await window.screenPicker.getQuality();
+  // escolhido no seletor; pelo atalho de compartilhar rapido vem null e
+  // vale o ultimo modo que a pessoa escolheu
+  const pickedMode = await window.screenPicker.getEncodeMode();
+  currentEncodeMode = pickedMode || savedEncodeMode();
   await finishStartingShare('Você (compartilhando)');
 
   btnToggleCamera.classList.remove('hidden');
@@ -4194,7 +4217,6 @@ async function finishStartingShare(selfLabel) {
   localStream = new MediaStream(tracks);
 
   attachLocalStreamToAllPeers(localStream);
-  startCpuLimitWatch();
   // Suprime o audio dos outros participantes enquanto voce compartilha -
   // senao o que toca nas suas caixas de som entraria na sua propria
   // captura de sistema e viraria eco pra quem esta assistindo.
@@ -4216,57 +4238,9 @@ async function finishStartingShare(selfLabel) {
   refreshGameAvatarVideos();
 }
 
-// Aviso "PC no limite": o proprio WebRTC conta quando esta segurando a
-// qualidade porque o processador nao da conta (qualityLimitationReason
-// 'cpu'). Se isso durar ~15s seguidos numa transmissao, avisa quem esta
-// transmitindo (uma vez por transmissao) pra baixar a qualidade.
-const CPU_LIMIT_CHECK_MS = 5000;
-const CPU_LIMIT_STRIKES = 3;
-let cpuLimitTimer = null;
-let cpuLimitStrikes = 0;
-let cpuLimitWarned = false;
-
-async function checkCpuLimitation() {
-  if (!localStream || cpuLimitWarned) return;
-  let limited = false;
-  for (const [, state] of peers) {
-    for (const sender of state.pc.getSenders()) {
-      if (!sender.track || sender.track.kind !== 'video') continue;
-      try {
-        (await sender.getStats()).forEach((s) => {
-          if (s.type === 'outbound-rtp' && s.qualityLimitationReason === 'cpu') limited = true;
-        });
-      } catch {}
-    }
-  }
-  cpuLimitStrikes = limited ? cpuLimitStrikes + 1 : 0;
-  if (cpuLimitStrikes >= CPU_LIMIT_STRIKES && localStream) {
-    cpuLimitWarned = true;
-    document.getElementById('cpu-limit-banner').classList.remove('hidden');
-  }
-}
-
-function startCpuLimitWatch() {
-  stopCpuLimitWatch();
-  cpuLimitStrikes = 0;
-  cpuLimitWarned = false;
-  cpuLimitTimer = setInterval(checkCpuLimitation, CPU_LIMIT_CHECK_MS);
-}
-
-function stopCpuLimitWatch() {
-  clearInterval(cpuLimitTimer);
-  cpuLimitTimer = null;
-  document.getElementById('cpu-limit-banner').classList.add('hidden');
-}
-
-document.getElementById('btn-cpu-limit-close').addEventListener('click', () => {
-  document.getElementById('cpu-limit-banner').classList.add('hidden');
-});
-
 async function stopShare() {
   if (!localStream) return;
   window.pingOverlay.clear();
-  stopCpuLimitWatch();
 
   if (cameraActive) await disableCamera();
 
@@ -4289,6 +4263,7 @@ async function stopShare() {
   localStream = null;
   localVideoStream = null;
   currentQuality = null;
+  currentEncodeMode = 'leve'; // camera e "sem cursor" nao tem seletor de modo: ficam no leve
   shareMode = null;
   window.rtc.setShareMode(null);
   refreshAllGainsForSharingState();
@@ -4380,6 +4355,15 @@ let lastPingSentAt = 0;
 function pingsAllowedByMe() {
   return currentTheme.allowPings !== 'desligado';
 }
+// "Ver pings nas telas" (Configuracoes > Transmissao): desligado, nao mostra
+// nenhuma seta (nem nas tiles, nem por cima do meu monitor) e nao aponta.
+function pingsVisibleToMe() {
+  return currentTheme.showPings !== 'desligado';
+}
+function clearVisiblePings() {
+  document.querySelectorAll('.tile-ping').forEach((el) => el.remove());
+  window.pingOverlay.clear();
+}
 function pingColorFor(name) {
   let h = 0;
   for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -4399,6 +4383,11 @@ function videoContentRect(video) {
 
 async function handleTilePing(peerId, tile, video, e) {
   const name = peerNames.get(peerId) || 'Essa pessoa';
+  if (!pingsVisibleToMe()) {
+    window.pingOverlay.altClick();
+    showRoomLockToast('Os pings estão desligados (Configurações > Transmissão)');
+    return;
+  }
   const mode = peerShareModes.get(peerId);
   if (mode !== 'screen' && mode !== 'screen-native') { showRoomLockToast('Só dá pra apontar em transmissão de tela'); return; }
   if (peerPingAllowed.get(peerId) === false) { showRoomLockToast(`${name} não deixa apontar na tela`); return; }
@@ -4440,6 +4429,7 @@ function showTilePing(targetId, ping) {
 
 function onScreenPing(ping) {
   if (!ping || typeof ping.x !== 'number' || typeof ping.y !== 'number') return;
+  if (!pingsVisibleToMe()) return;
   showTilePing(ping.target, ping);
   // apontaram na MINHA tela: seta por cima do monitor que eu transmito
   if (ping.target === selfId && localStream && (shareMode === 'screen' || shareMode === 'screen-native')) {
@@ -4452,7 +4442,7 @@ function markPingableTiles(on) {
   document.querySelectorAll('.video-tile').forEach((tile) => {
     const peerId = tile.id.replace(/^tile-/, '');
     const mode = peerShareModes.get(peerId);
-    tile.classList.toggle('ping-ready', on && peerId !== selfId && (mode === 'screen' || mode === 'screen-native') && peerPingAllowed.get(peerId) !== false);
+    tile.classList.toggle('ping-ready', on && pingsVisibleToMe() && peerId !== selfId && (mode === 'screen' || mode === 'screen-native') && peerPingAllowed.get(peerId) !== false);
   });
 }
 window.addEventListener('keydown', (e) => { if (e.key === 'Alt') markPingableTiles(true); });

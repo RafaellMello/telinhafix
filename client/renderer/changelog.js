@@ -4,6 +4,15 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.8',
+    date: '24/10/2026',
+    title: 'Transmissão',
+    items: [
+      'Modo Leve ou Qualidade máxima ao compartilhar a tela: escolha conforme o seu PC. Pedido do usuário renan.',
+      'Opção de esconder os pings: em Transmissão, dá pra não ver as setas de ninguém.',
+    ],
+  },
+  {
     version: '4.3.7',
     date: '24/10/2026',
     title: 'Transmissão',
