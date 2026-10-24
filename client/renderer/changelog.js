@@ -4,6 +4,14 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.9',
+    date: '24/10/2026',
+    title: 'Transmissão',
+    items: [
+      'Apontar na tela vem desligado: pra deixarem apontar na sua transmissão, marque em Configurações > Transmissão.',
+    ],
+  },
+  {
     version: '4.3.8',
     date: '24/10/2026',
     title: 'Transmissão',

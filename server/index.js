@@ -1591,6 +1591,17 @@ function notifyMinigameStarted(socket, roomId, gameId) {
 // aparecem pra ninguem, so recebem video/audio dos outros).
 const spectatorsByRoom = new Map();
 
+// "Apontar na tela": cada pessoa aponta no maximo 1 vez por minuto (em
+// qualquer tela). socket.id -> hora do ultimo ping; passa pro socket novo
+// quando a pessoa volta sozinha pra sala (ver join-room). Limpa de tempos em
+// tempos o que ja passou do minuto.
+const PING_COOLDOWN_MS = 60 * 1000;
+const lastPingBySocket = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, t] of lastPingBySocket) if (now - t >= PING_COOLDOWN_MS) lastPingBySocket.delete(id);
+}, 5 * 60 * 1000).unref();
+
 // Sockets autenticados com a ADMIN_PASSWORD - recebem o snapshot de todas as
 // salas em tempo real e podem entrar em qualquer uma.
 const adminSockets = new Set();
@@ -2414,6 +2425,9 @@ io.on('connection', (socket) => {
       roomLocks.set(roomId, makeRoomLock(restore));
     }
 
+    // voltou sozinho pra sala: a espera do "apontar na tela" vem junto
+    if (validRejoin && lastPingBySocket.has(rejoin.sid)) lastPingBySocket.set(socket.id, lastPingBySocket.get(rejoin.sid));
+
     const game = codenamesGames.get(roomId);
     let gameChanged = false;
     if (validRejoin && game) {
@@ -2477,8 +2491,8 @@ io.on('connection', (socket) => {
 
   // Apontar na tela: Alt + clique na transmissao de tela de alguem mostra
   // uma seta pra sala toda (e por cima do monitor de quem transmite). Quem
-  // transmite pode desligar (Configuracoes > Transmissao).
-  let lastPingAt = 0;
+  // transmite pode desligar (Configuracoes > Transmissao). Cada pessoa aponta
+  // no maximo 1 vez por minuto, em qualquer tela (ver PING_COOLDOWN_MS).
   socket.on('set-ping-permission', (data) => {
     const info = currentRoom && rooms.get(currentRoom)?.get(socket.id);
     if (!info) return;
@@ -2494,13 +2508,17 @@ io.on('connection', (socket) => {
     const y = Number(data && data.y);
     if (!me || !target || targetId === socket.id) { if (ack) ack({ ok: false, error: 'Pessoa não encontrada' }); return; }
     if (target.shareMode !== 'screen' && target.shareMode !== 'screen-native') { if (ack) ack({ ok: false, error: 'Só dá pra apontar em transmissão de tela' }); return; }
-    if (target.allowPings === false) { if (ack) ack({ ok: false, error: `${target.name} não deixa apontar na tela`, denied: true }); return; }
+    if (target.allowPings === false) { if (ack) ack({ ok: false, error: `${target.name} não deixa apontar na tela. Peça pra marcar em Configurações > Transmissão.`, denied: true }); return; }
     if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) { if (ack) ack({ ok: false, error: 'Ponto inválido' }); return; }
     const now = Date.now();
-    if (now - lastPingAt < 300) { if (ack) ack({ ok: false, error: 'Calma' }); return; }
-    lastPingAt = now;
+    const waitMs = PING_COOLDOWN_MS - (now - (lastPingBySocket.get(socket.id) || 0));
+    if (waitMs > 0) {
+      if (ack) ack({ ok: false, error: `Você pode apontar de novo em ${Math.ceil(waitMs / 1000)}s`, cooldown: true, retryInMs: waitMs });
+      return;
+    }
+    lastPingBySocket.set(socket.id, now);
     io.to(currentRoom).emit('screen-ping', { target: targetId, from: socket.id, name: me.name, x, y });
-    if (ack) ack({ ok: true });
+    if (ack) ack({ ok: true, cooldownMs: PING_COOLDOWN_MS });
   });
 
   // Senha da sala (ver roomLocks): so o dono poe, troca ou tira.

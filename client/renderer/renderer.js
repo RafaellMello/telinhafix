@@ -26,7 +26,7 @@ const DEFAULT_THEME = {
   sound: 'ligado', hotkeys: 'ligado', keybinds: { ...DEFAULT_KEYBINDS }, priority: 'nitidez',
   volumeStyle: 'abre', // visual do controle de volume das transmissoes: 'abre' | 'degraus'
   shareNotify: 'ligado', // notificacao do Windows quando alguem comeca a transmitir
-  allowPings: 'ligado', // deixar quem assiste apontar na sua tela (Alt + clique)
+  allowPings: 'desligado', // deixar quem assiste apontar na sua tela (Alt + clique) - so liga marcando
   showPings: 'ligado', // ver as setas de quem aponta (desligado: nao ve nenhuma e nao aponta)
   discordStatus: 'ligado', // mostrar o TelinhaFix no perfil do Discord (Rich Presence)
   discordRoom: 'ligado', // ...com o nome da sala (senao "Sala Privada")
@@ -175,6 +175,10 @@ function loadTheme() {
     // ficaria congelado pra sempre no cache dessa pessoa.
     if (!merged.modeExplicit) merged.mode = DEFAULT_THEME.mode;
     if (!merged.loginOpacityExplicit) merged.loginOpacity = DEFAULT_THEME.loginOpacity;
+    // "Deixar apontarem na minha tela" vem desmarcado pra todo mundo (4.3.9):
+    // so vale o que a pessoa marcar a partir dessa versao - ate quem tinha
+    // "Permitir" salvo de antes comeca em "Nao permitir".
+    if (!merged.allowPingsExplicit) merged.allowPings = DEFAULT_THEME.allowPings;
     // "Feixe de luz" saiu do app (4.2.0): quem usava passa pro Brasas
     if (merged.background === 'lightbeam') {
       merged.background = 'brasas';
@@ -254,7 +258,7 @@ function setupSettingsPanel() {
     borderOptions.forEach((el) => el.classList.toggle('selected', el.dataset.border === currentTheme.border));
     soundOptions.forEach((el) => el.classList.toggle('selected', el.dataset.sound === currentTheme.sound));
     shareNotifyOptions.forEach((el) => el.classList.toggle('selected', el.dataset.shareNotify === (currentTheme.shareNotify || 'ligado')));
-    pingPermissionOptions.forEach((el) => el.classList.toggle('selected', el.dataset.pingPermission === (currentTheme.allowPings || 'ligado')));
+    pingPermissionOptions.forEach((el) => el.classList.toggle('selected', el.dataset.pingPermission === (currentTheme.allowPings || 'desligado')));
     pingViewOptions.forEach((el) => el.classList.toggle('selected', el.dataset.pingView === (currentTheme.showPings || 'ligado')));
     discordStatusOptions.forEach((el) => el.classList.toggle('selected', el.dataset.discordStatus === (currentTheme.discordStatus || 'ligado')));
     discordRoomOptions.forEach((el) => el.classList.toggle('selected', el.dataset.discordRoom === (currentTheme.discordRoom || 'ligado')));
@@ -361,7 +365,7 @@ function setupSettingsPanel() {
   });
   pingPermissionOptions.forEach((el) => {
     el.addEventListener('click', () => {
-      updateTheme({ allowPings: el.dataset.pingPermission });
+      updateTheme({ allowPings: el.dataset.pingPermission, allowPingsExplicit: true });
       if (currentRoomId) window.rtc.setPingPermission(pingsAllowedByMe());
     });
   });
@@ -4353,7 +4357,7 @@ const PING_COOLDOWN_MS = 60 * 1000;
 let lastPingSentAt = 0;
 
 function pingsAllowedByMe() {
-  return currentTheme.allowPings !== 'desligado';
+  return currentTheme.allowPings === 'ligado';
 }
 // "Ver pings nas telas" (Configuracoes > Transmissao): desligado, nao mostra
 // nenhuma seta (nem nas tiles, nem por cima do meu monitor) e nao aponta.
@@ -4390,7 +4394,7 @@ async function handleTilePing(peerId, tile, video, e) {
   }
   const mode = peerShareModes.get(peerId);
   if (mode !== 'screen' && mode !== 'screen-native') { showRoomLockToast('Só dá pra apontar em transmissão de tela'); return; }
-  if (peerPingAllowed.get(peerId) === false) { showRoomLockToast(`${name} não deixa apontar na tela`); return; }
+  if (peerPingAllowed.get(peerId) === false) { showRoomLockToast(`${name} não deixa apontar na tela. Peça pra marcar em Configurações > Transmissão.`); return; }
   const r = videoContentRect(video);
   const x = (e.clientX - r.left) / r.width;
   const y = (e.clientY - r.top) / r.height;
