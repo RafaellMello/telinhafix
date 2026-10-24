@@ -992,15 +992,15 @@ async function applyBitrateToSender(sender, quality, tries = 0) {
   }
 }
 
-// Se a pessoa ja rodou o teste automatico de qualidade (opcional, no
-// seletor de aparencia - ver quality-test.js), ele mede qual codec essa
-// maquina especifica consegue codificar em tempo real de verdade (testa
-// AV1/VP9/VP8 numa conexao local e mede o fps real via getStats, em vez
-// de supor) e usa esse resultado aqui. Sem teste, cai no palpite padrao:
-// VP9 primeiro (bom equilibrio, acelerado por hardware na maioria das
-// placas recentes), AV1 depois (comprime melhor mas a codificacao pra
-// WebRTC ainda e via software na maioria das maquinas - arriscado como
-// primeira opcao sem saber se a maquina aguenta).
+// H264 vem SEMPRE primeiro: e o unico codec que o Chromium codifica na placa
+// de video no Windows (MediaFoundation - Intel, NVIDIA, AMD). Medido no
+// Electron 33, 1080p30: VP9 e AV1 saem sempre por software (libvpx/libaom)
+// e gastavam ~3x mais processador; sem placa que codifique, o H264 cai pro
+// OpenH264 (software), que ainda assim pesa menos que o VP9. Isso importa
+// porque cada pessoa assistindo e uma codificacao a mais (uma conexao por
+// pessoa) - num PC fraco (ex: i3 de 4 nucleos) o VP9 travava a transmissao.
+// Depois do H264 vem o resultado do teste automatico de qualidade, se a
+// pessoa rodou (ver quality-test.js), e o palpite padrao VP9 > AV1 > VP8.
 function getRecommendedCodec() {
   try {
     const raw = localStorage.getItem('telinhafix-quality-profile');
@@ -1016,18 +1016,18 @@ function preferVideoCodecs(pc) {
   const caps = RTCRtpSender.getCapabilities('video');
   if (!caps || !caps.codecs) return;
 
-  // O Chromium (testado no Electron 33) rejeita setCodecPreferences com
-  // "InvalidModificationError: invalid codec with name H264" quando a
-  // lista reordenada inclui as variantes de H264 que getCapabilities
-  // devolve (parece validar mal os varios perfis/packetization-mode). Como
-  // os dois lados sempre rodam o mesmo Electron embutido, H264 nunca faz
-  // falta como fallback de compatibilidade - so tira ele da lista em vez
-  // de tentar descobrir qual variante exata passaria na validacao.
+  // O Chromium (Electron 33) valida setCodecPreferences contra os codecs de
+  // RECEBIMENTO: a lista de envio traz um perfil de H264 (640032) que nao
+  // existe na de recebimento, e por causa dele recusava a lista inteira
+  // ("invalid codec with name H264"). Entao so usa as entradas de envio que
+  // tambem existem no recebimento.
+  const recvCaps = RTCRtpReceiver.getCapabilities ? RTCRtpReceiver.getCapabilities('video') : null;
+  const recvKeys = new Set(((recvCaps && recvCaps.codecs) || []).map((c) => `${c.mimeType}|${c.sdpFmtpLine || ''}`));
   const recommended = getRecommendedCodec();
-  const defaultOrder = ['video/VP9', 'video/AV1', 'video/VP8'];
-  const order = recommended ? [recommended, ...defaultOrder.filter((c) => c !== recommended)] : defaultOrder;
+  const fallbackOrder = ['video/VP9', 'video/AV1', 'video/VP8'];
+  const order = ['video/H264', ...(recommended ? [recommended, ...fallbackOrder.filter((c) => c !== recommended)] : fallbackOrder)];
 
-  const filtered = caps.codecs.filter((c) => c.mimeType !== 'video/H264');
+  const filtered = caps.codecs.filter((c) => recvKeys.has(`${c.mimeType}|${c.sdpFmtpLine || ''}`));
   const preferred = filtered
     .filter((c) => order.includes(c.mimeType))
     .sort((a, b) => order.indexOf(a.mimeType) - order.indexOf(b.mimeType));
@@ -4194,6 +4194,7 @@ async function finishStartingShare(selfLabel) {
   localStream = new MediaStream(tracks);
 
   attachLocalStreamToAllPeers(localStream);
+  startCpuLimitWatch();
   // Suprime o audio dos outros participantes enquanto voce compartilha -
   // senao o que toca nas suas caixas de som entraria na sua propria
   // captura de sistema e viraria eco pra quem esta assistindo.
@@ -4215,9 +4216,57 @@ async function finishStartingShare(selfLabel) {
   refreshGameAvatarVideos();
 }
 
+// Aviso "PC no limite": o proprio WebRTC conta quando esta segurando a
+// qualidade porque o processador nao da conta (qualityLimitationReason
+// 'cpu'). Se isso durar ~15s seguidos numa transmissao, avisa quem esta
+// transmitindo (uma vez por transmissao) pra baixar a qualidade.
+const CPU_LIMIT_CHECK_MS = 5000;
+const CPU_LIMIT_STRIKES = 3;
+let cpuLimitTimer = null;
+let cpuLimitStrikes = 0;
+let cpuLimitWarned = false;
+
+async function checkCpuLimitation() {
+  if (!localStream || cpuLimitWarned) return;
+  let limited = false;
+  for (const [, state] of peers) {
+    for (const sender of state.pc.getSenders()) {
+      if (!sender.track || sender.track.kind !== 'video') continue;
+      try {
+        (await sender.getStats()).forEach((s) => {
+          if (s.type === 'outbound-rtp' && s.qualityLimitationReason === 'cpu') limited = true;
+        });
+      } catch {}
+    }
+  }
+  cpuLimitStrikes = limited ? cpuLimitStrikes + 1 : 0;
+  if (cpuLimitStrikes >= CPU_LIMIT_STRIKES && localStream) {
+    cpuLimitWarned = true;
+    document.getElementById('cpu-limit-banner').classList.remove('hidden');
+  }
+}
+
+function startCpuLimitWatch() {
+  stopCpuLimitWatch();
+  cpuLimitStrikes = 0;
+  cpuLimitWarned = false;
+  cpuLimitTimer = setInterval(checkCpuLimitation, CPU_LIMIT_CHECK_MS);
+}
+
+function stopCpuLimitWatch() {
+  clearInterval(cpuLimitTimer);
+  cpuLimitTimer = null;
+  document.getElementById('cpu-limit-banner').classList.add('hidden');
+}
+
+document.getElementById('btn-cpu-limit-close').addEventListener('click', () => {
+  document.getElementById('cpu-limit-banner').classList.add('hidden');
+});
+
 async function stopShare() {
   if (!localStream) return;
   window.pingOverlay.clear();
+  stopCpuLimitWatch();
 
   if (cameraActive) await disableCamera();
 
@@ -4322,6 +4371,11 @@ setTimeout(updateDiscordPresence, 1500);
 // transmite pode desligar em Configuracoes > Transmissao.
 const peerPingAllowed = new Map(); // peerId -> bool
 const PING_SHOW_MS = 3600;
+// 1 ping por minuto no total (em qualquer tela). O servidor tambem barra
+// (vale pra quem esta em versao antiga); aqui so evita a ida e volta e
+// mostra quanto falta.
+const PING_COOLDOWN_MS = 60 * 1000;
+let lastPingSentAt = 0;
 
 function pingsAllowedByMe() {
   return currentTheme.allowPings !== 'desligado';
@@ -4353,8 +4407,11 @@ async function handleTilePing(peerId, tile, video, e) {
   const y = (e.clientY - r.top) / r.height;
   if (x < 0 || x > 1 || y < 0 || y > 1) return; // clicou na faixa preta
   window.pingOverlay.altClick();
+  const waitMs = PING_COOLDOWN_MS - (Date.now() - lastPingSentAt);
+  if (waitMs > 0) { showRoomLockToast(`Você pode apontar de novo em ${Math.ceil(waitMs / 1000)}s`); return; }
   try {
     await window.rtc.screenPing(peerId, x, y);
+    lastPingSentAt = Date.now();
   } catch (err) {
     if (err && err.message && err.message !== 'Calma') showRoomLockToast(err.message);
   }

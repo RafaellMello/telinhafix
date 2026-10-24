@@ -4,6 +4,16 @@
 // sozinha na primeira vez que a pessoa abre o app depois de atualizar.
 window.TELINHAFIX_CHANGELOG = [
   {
+    version: '4.3.7',
+    date: '24/10/2026',
+    title: 'Transmissão',
+    items: [
+      'Transmissão mais leve: o vídeo passa a ser codificado pela placa de vídeo quando o PC suporta.',
+      'Aviso de PC no limite: sugere baixar a qualidade quando o processador não dá conta.',
+      'Apontar na tela: agora 1 vez por minuto por pessoa.',
+    ],
+  },
+  {
     version: '4.3.6',
     date: '22/10/2026',
     title: 'Sala de jogos',

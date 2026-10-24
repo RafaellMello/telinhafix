@@ -3449,6 +3449,9 @@ input.locked-input { cursor: not-allowed; opacity: 0.6; user-select: none; }
 .reconnect-banner[data-state="ok"] { border-color: #2fae6b; }
 .reconnect-banner[data-state="ok"] .admin-notice-label { background: #2fae6b; }
 #reconnect-banner-text { white-space: pre-wrap; word-break: break-word; }
+/* PC no limite durante a transmissao (ver checkCpuLimitation) */
+.cpu-limit-banner { border-color: #e0a63a; }
+.cpu-limit-banner .admin-notice-label { background: #e0a63a; color: #111; }
 /* Historico do chat (mensagens de antes de voce entrar) */
 .chat-message.chat-history { opacity: 0.6; }
 .admin-notice-close { flex-shrink: 0; width: 28px; height: 28px; padding: 0; border-radius: 8px; font-size: 18px; line-height: 1; }
